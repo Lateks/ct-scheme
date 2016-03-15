@@ -33,8 +33,6 @@ module Parsing =
         | Success(result, _, _)   -> printfn "Success: %A" result
         | Failure(errorMsg, _, _) -> printfn "Failure: %s" errorMsg
 
-    let str s = pstring s
-
     let parseBoolean = skipChar '#' >>. (((pstring "true" <|> pstring "t") >>% CTBool true)
                                 <|> ((pstring "false" <|> pstring "f") >>% CTBool false))
 
@@ -60,10 +58,6 @@ module Parsing =
                 (stringsSepBy normalCharSeq escapedChar)
         |>> CTString
 
-    test parseStringLiteral "\"\""
-    test parseStringLiteral "\"foobar\""
-    test parseStringLiteral "\"lol\\\\bal\\n\\r\\t\\\"foo\\\"\""
-
     // This parser currently accepts a subset of the
     // identifiers specified by the R7RS grammar.
     let parseSymbolOrIdentifier =
@@ -75,20 +69,9 @@ module Parsing =
         let regularIdentifierFormat = IdentifierOptions(isAsciiIdStart = isInitialChar,
                                                     isAsciiIdContinue = isSubsequentChar)
         let parseRegularIdentifier = identifier regularIdentifierFormat
-        let parsePeculiarIdentifier = manyStrings2 (many1Chars2 (satisfy isExplicitSign) (satisfy isSignSubsequent))
-                                               parseRegularIdentifier
+        let parsePeculiarIdentifier = many1Strings2 (many1Chars2 (satisfy isExplicitSign) (satisfy isSignSubsequent))
+                                                    parseRegularIdentifier
         parseRegularIdentifier <|> parsePeculiarIdentifier
-
-    test parseSymbolOrIdentifier "+"
-    test parseSymbolOrIdentifier "-"
-    test parseSymbolOrIdentifier ">"
-    test parseSymbolOrIdentifier ">10"
-    test parseSymbolOrIdentifier "fib"
-    test parseSymbolOrIdentifier "call-with-current-continuation"
-    test parseSymbolOrIdentifier "+$30"
-    test parseSymbolOrIdentifier "+fib+"
-    test parseSymbolOrIdentifier "42" // should return empty string
-    test parseSymbolOrIdentifier "+1" // should return +
 
     let parseSymbol = parseSymbolOrIdentifier |>> CTSymbol
 
@@ -97,7 +80,7 @@ module Parsing =
     let wspace = spaces
 
     let parseList = between (pstring "(") (pstring ")")
-                        (wspace >>. sepBy parseDatum spaces1 .>> wspace)
+                            (wspace >>. sepEndBy parseDatum spaces1 .>> wspace)
                 |>> CTList
 
     do parseDatumRef := choice [parseList
@@ -106,10 +89,3 @@ module Parsing =
                                 parseStringLiteral
                                 parseSymbol]
 
-    test parseList "(1 2 3)"
-    test parseList "((1 2 3) (a b c))"
-    test parseDatum "+3.14159"
-    test parseDatum "\"Hello, world!\""
-    test parseDatum "#true"
-    test parseDatum "call-with-current-continuation"
-    test parseDatum "+"
