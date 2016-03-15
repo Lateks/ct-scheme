@@ -77,11 +77,20 @@ module Parsing =
 
     let parseDatum, private parseDatumRef = createParserForwardedToRef<CTDatum, unit>()
 
-    let private wspace = spaces
+    // TODO: when should this be used?
+    // commented lines can be e.g. inside lists
+    let private singleLineComment = pchar ';' >>. restOfLine true
+    let private whitespace = manyChars (anyOf " \n\r\t")
+    let private whitespaceOrComment = singleLineComment <|> whitespace
+
+    let private ws = skipMany whitespaceOrComment
+    let private ws1 = skipMany1 whitespaceOrComment
 
     let parseList = between (pstring "(") (pstring ")")
-                            (wspace >>. sepEndBy parseDatum spaces1 .>> wspace)
+                            (ws >>. sepEndBy parseDatum ws1 .>> ws)
                 |>> CTList
+
+    test parseList "(; starting list\n\t1 ; first element \n\t2 ; second element \n\t3 ; third element\n\t)"
 
     do parseDatumRef := choice [parseList
                                 parseBoolean
@@ -89,3 +98,9 @@ module Parsing =
                                 parseStringLiteral
                                 parseSymbol]
 
+    let parseSugaredQuotation = skipChar '\'' >>. parseDatum
+
+    test parseSugaredQuotation "'(1 2 3)"
+    test parseSugaredQuotation "'()"
+    test parseSugaredQuotation "'foo"
+    test parseSugaredQuotation "'#t"
