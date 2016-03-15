@@ -72,8 +72,8 @@ module Parsing =
 
     let parseDatum, private parseDatumRef = createParserForwardedToRef<CTDatum, unit>()
 
-    let private singleLineComment = pchar ';' >>. restOfLine true
-    let private whitespace = many1Chars (anyOf " \n\r\t")
+    let private singleLineComment = satisfyL (isAnyOf ";") "comment" >>. restOfLine true
+    let private whitespace = many1SatisfyL (isAnyOf " \n\r\t") "whitespace"
     let private whitespaceOrComment = singleLineComment <|> whitespace
 
     let private ws = skipMany whitespaceOrComment
@@ -108,9 +108,15 @@ module Parsing =
     let parseIfExpression = skipString "if" >>. pipe3 parseExpression parseExpression (opt parseExpression)
                                                       (fun cond e t -> CTConditionalExpression (cond, e, t))
 
+    let parseAssignmentExpression = skipString "set!" >>. ws >>. parseIdentifier .>>. parseExpression
+                                    |>> CTAssignmentExpression
+
     // TODO: other kinds of parenthesised expressions
     // TODO: where should definitions be parsed?
-    let parseParenthesisedExpression = betweenStrings "(" ")" (ws >>. choice [parseIfExpression] .>> ws)
+    let parseParenthesisedExpression =
+        betweenStrings "(" ")" (ws >>. choice [parseIfExpression
+                                               parseAssignmentExpression]
+                                  .>> ws)
 
     parseExpressionRef := ws >>. choice [parseParenthesisedExpression
                                          parseLiteral
