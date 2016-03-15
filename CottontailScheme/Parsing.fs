@@ -28,7 +28,7 @@ type CTTopLevelCommand = CTTopLevelDefinition of CTDefinition
 type CTProgram = CTProgram of CTTopLevelCommand list
 
 module Parsing =
-    let test p str =
+    let private test p str =
         match run p str with
         | Success(result, _, _)   -> printfn "Success: %A" result
         | Failure(errorMsg, _, _) -> printfn "Failure: %s" errorMsg
@@ -60,7 +60,7 @@ module Parsing =
 
     // This parser currently accepts a subset of the
     // identifiers specified by the R7RS grammar.
-    let parseSymbolOrIdentifier =
+    let private parseSymbolOrIdentifier =
         let isSpecialChar = isAnyOf "!$%&*/:<=>?^_~"
         let isExplicitSign = isAnyOf "+-"
         let isInitialChar c = isAsciiLetter c || isSpecialChar c
@@ -75,9 +75,9 @@ module Parsing =
 
     let parseSymbol = parseSymbolOrIdentifier |>> CTSymbol
 
-    let parseDatum, parseDatumRef = createParserForwardedToRef<CTDatum, unit>()
+    let parseDatum, private parseDatumRef = createParserForwardedToRef<CTDatum, unit>()
 
-    let wspace = spaces
+    let private wspace = spaces
 
     let parseList = between (pstring "(") (pstring ")")
                             (wspace >>. sepEndBy parseDatum spaces1 .>> wspace)
