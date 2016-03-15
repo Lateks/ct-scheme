@@ -22,10 +22,10 @@ type CTExpression = CTIdentifierExpression of CTIdentifier
 
 and CTDefinition = CTDefinition of CTIdentifier * CTExpression
 
-type CTTopLevelCommand = CTTopLevelDefinition of CTDefinition
-                       | CTTopLevelExpression of CTExpression
+type CTCommand = CTCommandDefinition of CTDefinition
+               | CTCommandExpression of CTExpression
 
-type CTProgram = CTProgram of CTTopLevelCommand list
+type CTProgram = CTProgram of CTCommand list
 
 module Parsing =
     let parseBoolean = skipChar '#' >>. (((pstring "true" <|> pstring "t") >>% CTBool true)
@@ -79,9 +79,10 @@ module Parsing =
     let private ws = skipMany whitespaceOrComment
     let private ws1 = skipMany1 whitespaceOrComment
 
-    let parseList = between (pstring "(") (pstring ")")
-                            (ws >>. sepEndBy parseDatum ws1 .>> ws)
-                |>> CTList
+    let private betweenStrings s1 s2 p = between (pstring s1) (pstring s2) p
+
+    let parseList = betweenStrings "(" ")" (ws >>. sepEndBy parseDatum ws1 .>> ws)
+                    |>> CTList
 
     do parseDatumRef := choice [parseList
                                 parseBoolean
@@ -90,3 +91,27 @@ module Parsing =
                                 parseSymbol]
 
     let parseSugaredQuotation = skipChar '\'' >>. parseDatum
+
+    let parseIdentifier = parseSymbolOrIdentifier |>> CTIdentifier
+
+    // Expression parsers start here (split into another module?)
+    let parseExpression, private parseExpressionRef = createParserForwardedToRef<CTExpression, unit>()
+
+    let parseIdentifierExpression = parseIdentifier |>> CTIdentifierExpression
+
+    let parseLiteral = choice [parseSugaredQuotation
+                               parseBoolean
+                               parseNumber
+                               parseStringLiteral]
+                       |>> CTLiteralExpression
+
+    let parseIfExpression = skipString "if" >>. pipe3 parseExpression parseExpression (opt parseExpression)
+                                                      (fun cond e t -> CTConditionalExpression (cond, e, t))
+
+    // TODO: other kinds of parenthesised expressions
+    // TODO: where should definitions be parsed?
+    let parseParenthesisedExpression = betweenStrings "(" ")" (ws >>. choice [parseIfExpression] .>> ws)
+
+    parseExpressionRef := ws >>. choice [parseParenthesisedExpression
+                                         parseLiteral
+                                         parseIdentifierExpression]

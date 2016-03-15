@@ -10,9 +10,7 @@ let test p str =
     | Success(result, _, _)   -> printfn "Success: %A" result
     | Failure(errorMsg, _, _) -> printfn "Failure: %s" errorMsg
 
-test parseList "(; starting list\n\t1 ; first element \n\t2 ; second element \n\t3 ; third element\n\t)"
-
-test parseSugaredQuotation "'(1 2 3)"
-test parseSugaredQuotation "'()"
-test parseSugaredQuotation "'foo"
-test parseSugaredQuotation "'#t"
+test parseIfExpression "if foo bar baz"
+test parseIfExpression "if #false '(1 2 3 4) 42"
+test parseIfExpression "if #t 42"
+test parseIfExpression "if (< 1 2) (display \"less than\") (display \"greater than\")" // not working yet!
