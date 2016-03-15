@@ -80,9 +80,10 @@ module Parsing =
     let private ws1 = skipMany1 whitespaceOrComment
 
     let private betweenStrings s1 s2 p = between (pstring s1) (pstring s2) p
+    let private parseListOf p = (ws >>. sepEndBy p ws1 .>> ws)
+    let private parseParenthesisedListOf p = betweenStrings "(" ")" (parseListOf p)
 
-    let parseList = betweenStrings "(" ")" (ws >>. sepEndBy parseDatum ws1 .>> ws)
-                    |>> CTList
+    let parseList = parseParenthesisedListOf parseDatum |>> CTList
 
     do parseDatumRef := choice [parseList
                                 parseBoolean
@@ -94,8 +95,12 @@ module Parsing =
 
     let parseIdentifier = parseSymbolOrIdentifier |>> CTIdentifier
 
+    let private skipKeyword kw = attempt (skipString kw >>. ws1)
+
     // Expression parsers start here (split into another module?)
     let parseExpression, private parseExpressionRef = createParserForwardedToRef<CTExpression, unit>()
+
+    let parseDefinition = betweenStrings "(" ")" (skipKeyword "define" >>. parseIdentifier .>>. parseExpression |>> CTDefinition)
 
     let parseIdentifierExpression = parseIdentifier |>> CTIdentifierExpression
 
@@ -105,10 +110,8 @@ module Parsing =
                                parseStringLiteral]
                        |>> CTLiteralExpression
 
-    let private skipKeyword kw = attempt (skipString kw >>. ws1)
-
-    let parseIfExpression = skipString "if" >>. pipe3 parseExpression parseExpression (opt parseExpression)
-                                                      (fun cond e t -> CTConditionalExpression (cond, e, t))
+    let parseIfExpression = skipKeyword "if" >>. pipe3 parseExpression parseExpression (opt parseExpression)
+                                                       (fun cond e t -> CTConditionalExpression (cond, e, t))
 
     let parseAssignmentExpression = skipKeyword "set!" >>. parseIdentifier .>>. parseExpression
                                     |>> CTAssignmentExpression
@@ -118,12 +121,17 @@ module Parsing =
     let parseProcedureCallExpression = parseExpression .>>. (sepEndBy parseExpression ws1)
                                        |>> CTProcedureCallExpression
 
-    // TODO: other kinds of parenthesised expressions
-    // TODO: where should definitions be parsed?
+    let private parseLambdaExpressionFormals = (parseParenthesisedListOf parseIdentifier |>> CTFormalsList) <|>
+                                               (parseIdentifier |>> CTFormalsSingle)
+
+    let parseLambdaExpression = skipKeyword "lambda" >>. pipe3 parseLambdaExpressionFormals (parseListOf (attempt parseDefinition)) (parseListOf parseExpression)
+                                                               (fun formals defs exprs -> CTLambdaExpression (formals, defs, exprs))
+
     let parseParenthesisedExpression =
         betweenStrings "(" ")" (ws >>. choice [parseIfExpression
                                                parseAssignmentExpression
                                                parseQuotationExpression
+                                               parseLambdaExpression
                                                parseProcedureCallExpression]
                                   .>> ws)
 

@@ -21,7 +21,16 @@ test parseAssignmentExpression "set! #f #t"
 
 test parseQuotationExpression "quote (1 2 3)"
 
+test parseProcedureCallExpression "display \"Hello, world!\""
+
+test parseLambdaExpression "lambda (a b c) (display a) (display b) (display c)"
+test parseLambdaExpression "lambda (a) (define b (* a 2)) (display b)"
+test parseLambdaExpression "lambda l (display (car l))"
+
 test parseParenthesisedExpression "(if foo bar baz)"
 test parseParenthesisedExpression "(set! answer 42)"
 test parseParenthesisedExpression "(quote (1 2 3))"
 test parseParenthesisedExpression "(quoter 1 2 3)"
+test parseParenthesisedExpression "(lambda l (display l))"
+
+test parseDefinition "(define pi 3.14159)"
