@@ -47,10 +47,6 @@ module Parsing =
         numberLiteral numberFormat "number"
         |>> fun nl -> CTNumber (float nl.String)
 
-    test parseNumber "3.14159"
-    test parseNumber "+5"
-    test parseNumber "-42"
-
     let parseStringLiteral =
         let escape = anyOf "\"\\tnr"
                      |>> function
