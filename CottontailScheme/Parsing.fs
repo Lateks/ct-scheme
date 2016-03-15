@@ -28,11 +28,6 @@ type CTTopLevelCommand = CTTopLevelDefinition of CTDefinition
 type CTProgram = CTProgram of CTTopLevelCommand list
 
 module Parsing =
-    let private test p str =
-        match run p str with
-        | Success(result, _, _)   -> printfn "Success: %A" result
-        | Failure(errorMsg, _, _) -> printfn "Failure: %s" errorMsg
-
     let parseBoolean = skipChar '#' >>. (((pstring "true" <|> pstring "t") >>% CTBool true)
                                 <|> ((pstring "false" <|> pstring "f") >>% CTBool false))
 
@@ -77,10 +72,8 @@ module Parsing =
 
     let parseDatum, private parseDatumRef = createParserForwardedToRef<CTDatum, unit>()
 
-    // TODO: when should this be used?
-    // commented lines can be e.g. inside lists
     let private singleLineComment = pchar ';' >>. restOfLine true
-    let private whitespace = manyChars (anyOf " \n\r\t")
+    let private whitespace = many1Chars (anyOf " \n\r\t")
     let private whitespaceOrComment = singleLineComment <|> whitespace
 
     let private ws = skipMany whitespaceOrComment
@@ -90,8 +83,6 @@ module Parsing =
                             (ws >>. sepEndBy parseDatum ws1 .>> ws)
                 |>> CTList
 
-    test parseList "(; starting list\n\t1 ; first element \n\t2 ; second element \n\t3 ; third element\n\t)"
-
     do parseDatumRef := choice [parseList
                                 parseBoolean
                                 parseNumber
@@ -99,8 +90,3 @@ module Parsing =
                                 parseSymbol]
 
     let parseSugaredQuotation = skipChar '\'' >>. parseDatum
-
-    test parseSugaredQuotation "'(1 2 3)"
-    test parseSugaredQuotation "'()"
-    test parseSugaredQuotation "'foo"
-    test parseSugaredQuotation "'#t"

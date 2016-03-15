@@ -125,6 +125,10 @@ type ``List parser`` () =
         testParsesAs (CTList [CTNumber 1.0; CTNumber 2.0; CTNumber 3.0]) "(\n\r\t 1\n\r\t 2\n\r\t 3\n\r\t )"
 
     [<Test>]
+    member x.``allows single line comments between elements`` () =
+        testParsesAs (CTList [CTNumber 1.0; CTNumber 2.0; CTNumber 3.0]) "(; starting list\n\t1 ; first element \n\t2 ; second element \n\t3 ; third element\n\t)"
+
+    [<Test>]
     member x.``rejects ill formed lists and lists of invalid datum objects`` () =
         let testRejects = ParserTest.testRejects parseList
         testRejects ""
@@ -153,3 +157,23 @@ type ``Datum parser`` () =
         testRejects "#bar"
         testRejects "(foo"
         testParsesAs (CTNumber 1.0) "1+"
+
+
+[<TestFixture>]
+type ``Parsing quotations`` () =
+    [<Test>]
+    member x.``parses syntax sugared quotations`` () =
+        let testParsesAs = ParserTest.testEquals parseSugaredQuotation
+        testParsesAs (CTList []) "'()"
+        testParsesAs (CTNumber 3.14159) "'+3.14159"
+        testParsesAs (CTString "Hello, world!") "'\"Hello, world!\""
+        testParsesAs (CTBool true) "'#true"
+        testParsesAs (CTSymbol "call-with-current-continuation") "'call-with-current-continuation"
+        testParsesAs (CTSymbol "+") "'+"
+
+    [<Test>]
+    member x.``rejects pieces of code that are not quotations`` () =
+        let testRejects = ParserTest.testRejects parseSugaredQuotation
+        testRejects ""
+        testRejects "()"
+        testRejects "foo"
