@@ -105,17 +105,26 @@ module Parsing =
                                parseStringLiteral]
                        |>> CTLiteralExpression
 
+    let private skipKeyword kw = attempt (skipString kw >>. ws1)
+
     let parseIfExpression = skipString "if" >>. pipe3 parseExpression parseExpression (opt parseExpression)
                                                       (fun cond e t -> CTConditionalExpression (cond, e, t))
 
-    let parseAssignmentExpression = skipString "set!" >>. ws >>. parseIdentifier .>>. parseExpression
+    let parseAssignmentExpression = skipKeyword "set!" >>. parseIdentifier .>>. parseExpression
                                     |>> CTAssignmentExpression
+
+    let parseQuotationExpression = skipKeyword "quote" >>. parseDatum |>> CTLiteralExpression
+
+    let parseProcedureCallExpression = parseExpression .>>. (sepEndBy parseExpression ws1)
+                                       |>> CTProcedureCallExpression
 
     // TODO: other kinds of parenthesised expressions
     // TODO: where should definitions be parsed?
     let parseParenthesisedExpression =
         betweenStrings "(" ")" (ws >>. choice [parseIfExpression
-                                               parseAssignmentExpression]
+                                               parseAssignmentExpression
+                                               parseQuotationExpression
+                                               parseProcedureCallExpression]
                                   .>> ws)
 
     parseExpressionRef := ws >>. choice [parseParenthesisedExpression

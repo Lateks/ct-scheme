@@ -13,11 +13,15 @@ let test p str =
 test parseIfExpression "if foo bar baz"
 test parseIfExpression "if #false '(1 2 3 4) 42"
 test parseIfExpression "if #t 42"
-test parseIfExpression "if (< 1 2) (display \"less than\") (display \"greater than\")" // not working yet!
+test parseIfExpression "if (< 1 2) (display \"less than\") (display \"greater than\")"
 
 test parseAssignmentExpression "set! answer 42"
 test parseAssignmentExpression "set! +string \"plus\""
 test parseAssignmentExpression "set! #f #t"
 
+test parseQuotationExpression "quote (1 2 3)"
+
 test parseParenthesisedExpression "(if foo bar baz)"
 test parseParenthesisedExpression "(set! answer 42)"
+test parseParenthesisedExpression "(quote (1 2 3))"
+test parseParenthesisedExpression "(quoter 1 2 3)"
