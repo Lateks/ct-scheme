@@ -10,22 +10,11 @@ type CTDatum = CTBool of bool
 
 type CTIdentifier = CTIdentifier of string
 
-type CTLambdaExpressionFormals = CTFormalsSingle of CTIdentifier
-                               | CTFormalsList of CTIdentifier list
-
 type CTExpression = CTIdentifierExpression of CTIdentifier
                   | CTLiteralExpression of CTDatum
-                  | CTProcedureCallExpression of CTExpression * CTExpression list
-                  | CTLambdaExpression of CTLambdaExpressionFormals * CTDefinition list * CTExpression list
-                  | CTConditionalExpression of CTExpression * CTExpression * CTExpression option
-                  | CTAssignmentExpression of CTIdentifier * CTExpression
+                  | CTListExpression of CTExpression list
 
-and CTDefinition = CTDefinition of CTIdentifier * CTExpression
-
-type CTCommand = CTCommandDefinition of CTDefinition
-               | CTCommandExpression of CTExpression
-
-type CTProgram = CTProgram of CTCommand list
+type CTProgram = CTProgram of CTExpression list
 
 module Parsing =
     let parseBoolean = skipChar '#' >>. (((pstring "true" <|> pstring "t") >>% CTBool true)
@@ -95,12 +84,7 @@ module Parsing =
 
     let parseIdentifier = parseSymbolOrIdentifier |>> CTIdentifier
 
-    let private skipKeyword kw = attempt (skipString kw >>. ws1)
-
-    // Expression parsers start here (split into another module?)
     let parseExpression, private parseExpressionRef = createParserForwardedToRef<CTExpression, unit>()
-
-    let parseDefinition = betweenStrings "(" ")" (skipKeyword "define" >>. parseIdentifier .>>. parseExpression |>> CTDefinition)
 
     let parseIdentifierExpression = parseIdentifier |>> CTIdentifierExpression
 
@@ -110,31 +94,9 @@ module Parsing =
                                parseStringLiteral]
                        |>> CTLiteralExpression
 
-    let parseIfExpression = skipKeyword "if" >>. pipe3 parseExpression parseExpression (opt parseExpression)
-                                                       (fun cond e t -> CTConditionalExpression (cond, e, t))
+    let parseListExpression = parseParenthesisedListOf parseExpression
+                              |>> CTListExpression
 
-    let parseAssignmentExpression = skipKeyword "set!" >>. parseIdentifier .>>. parseExpression
-                                    |>> CTAssignmentExpression
-
-    let parseQuotationExpression = skipKeyword "quote" >>. parseDatum |>> CTLiteralExpression
-
-    let parseProcedureCallExpression = parseExpression .>>. (sepEndBy parseExpression ws1)
-                                       |>> CTProcedureCallExpression
-
-    let private parseLambdaExpressionFormals = (parseParenthesisedListOf parseIdentifier |>> CTFormalsList) <|>
-                                               (parseIdentifier |>> CTFormalsSingle)
-
-    let parseLambdaExpression = skipKeyword "lambda" >>. pipe3 parseLambdaExpressionFormals (parseListOf (attempt parseDefinition)) (parseListOf parseExpression)
-                                                               (fun formals defs exprs -> CTLambdaExpression (formals, defs, exprs))
-
-    let parseParenthesisedExpression =
-        betweenStrings "(" ")" (ws >>. choice [parseIfExpression
-                                               parseAssignmentExpression
-                                               parseQuotationExpression
-                                               parseLambdaExpression
-                                               parseProcedureCallExpression]
-                                  .>> ws)
-
-    parseExpressionRef := ws >>. choice [parseParenthesisedExpression
+    parseExpressionRef := ws >>. choice [parseListExpression
                                          parseLiteral
                                          parseIdentifierExpression]
