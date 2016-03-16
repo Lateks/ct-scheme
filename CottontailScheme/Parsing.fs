@@ -65,8 +65,7 @@ module Parsing =
                          |  c  -> string c
         let escapedChar = pstring "\\" >>. escape
         let normalCharSeq = manySatisfy (fun c -> c <> '"' && c <> '\\')
-        between (pstring "\"") (pstring "\"")
-                (stringsSepBy normalCharSeq escapedChar)
+        betweenStrings "\"" "\"" (stringsSepBy normalCharSeq escapedChar)
         |>> CTString
 
     let parseSymbol = parseSymbolOrIdentifier |>> CTSymbol
