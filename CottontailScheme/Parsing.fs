@@ -16,7 +16,7 @@ type CTProgram = CTProgram of CTExpression list
 
 module Parsing =
     // Parsing whitespace and comments
-    let private singleLineComment = satisfyL (isAnyOf ";") "comment" >>. restOfLine true
+    let private singleLineComment = pchar ';' <?> "comment" >>. restOfLine true
     let private whitespace = many1SatisfyL (isAnyOf " \n\r\t") "whitespace"
     let private whitespaceOrComment = singleLineComment <|> whitespace
     let private ws = skipMany whitespaceOrComment
