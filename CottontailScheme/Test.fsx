@@ -10,10 +10,4 @@ let test p str =
     | Success(result, _, _)   -> printfn "Success: %A" result
     | Failure(errorMsg, _, _) -> printfn "Failure: %s" errorMsg
 
-test parseExpression "(if foo bar baz)"
-test parseExpression "(set! answer 42)"
-test parseExpression "(quote (1 2 3))"
-test parseExpression "(quoter 1 2 3)"
-test parseExpression "(lambda l (display l))"
 
-test parseExpression "(define pi 3.14159)"

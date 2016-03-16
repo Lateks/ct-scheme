@@ -177,3 +177,18 @@ type ``Parsing quotations`` () =
         testRejects ""
         testRejects "()"
         testRejects "foo"
+
+[<TestFixture>]
+type ``List expression parser`` () =
+    let testParsesAs = ParserTest.testEquals parseListExpression
+
+    [<Test>]
+    member x.``accepts nonempty lists of expressions`` () =
+        testParsesAs (CTListExpression [CTIdentifierExpression (CTIdentifier "if")
+                                        CTLiteralExpression (CTBool true)
+                                        CTListExpression [CTIdentifierExpression (CTIdentifier "display"); CTLiteralExpression (CTString "Hello")]
+                                        CTLiteralExpression (CTNumber 42.0)]) "(if #t (display \"Hello\") 42)"
+
+    [<Test>]
+    member x.``accepts empty lists of expressions`` () =
+        testParsesAs (CTListExpression []) "()"
