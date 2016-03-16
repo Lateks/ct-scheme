@@ -184,11 +184,40 @@ type ``List expression parser`` () =
 
     [<Test>]
     member x.``accepts nonempty lists of expressions`` () =
-        testParsesAs (CTListExpression [CTIdentifierExpression (CTIdentifier "if")
+        testParsesAs (CTListExpression [CTIdentifierExpression "if"
                                         CTLiteralExpression (CTBool true)
-                                        CTListExpression [CTIdentifierExpression (CTIdentifier "display"); CTLiteralExpression (CTString "Hello")]
+                                        CTListExpression [CTIdentifierExpression "display"; CTLiteralExpression (CTString "Hello")]
                                         CTLiteralExpression (CTNumber 42.0)]) "(if #t (display \"Hello\") 42)"
 
     [<Test>]
     member x.``accepts empty lists of expressions`` () =
         testParsesAs (CTListExpression []) "()"
+
+[<TestFixture>]
+type ``Whole program parser`` () =
+    let testParsesAs = ParserTest.testEquals parseProgram
+
+    [<Test>]
+    member x.``parses a small program`` () =
+        let program = "(define pi 3.14159) ; the definition of pi\n"+
+                      "(define circle-area (lambda (r) (* pi (* r r)))) ; area of circle = pi * r^2\n"+
+                      "(display (circle-area 5))\n"+
+                      "42"
+        let expectedParse = CTProgram [CTListExpression [CTIdentifierExpression "define"
+                                                         CTIdentifierExpression "pi"
+                                                         CTLiteralExpression (CTNumber 3.14159)]
+                                       CTListExpression [CTIdentifierExpression "define"
+                                                         CTIdentifierExpression "circle-area"
+                                                         CTListExpression [CTIdentifierExpression "lambda"
+                                                                           CTListExpression [CTIdentifierExpression "r"]
+                                                                           CTListExpression [CTIdentifierExpression "*"
+                                                                                             CTIdentifierExpression "pi"
+                                                                                             CTListExpression [CTIdentifierExpression "*"
+                                                                                                               CTIdentifierExpression "r"
+                                                                                                               CTIdentifierExpression "r"]]]]
+                                       CTListExpression [CTIdentifierExpression "display"
+                                                         CTListExpression [CTIdentifierExpression "circle-area"
+                                                                           CTLiteralExpression (CTNumber 5.0)]]
+                                       CTLiteralExpression (CTNumber 42.0)]
+        testParsesAs expectedParse program
+
