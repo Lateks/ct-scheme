@@ -69,7 +69,6 @@ let rec buildFromList =
                    | "if" -> failwith "Not implemented yet: if"
                    | "lambda" -> failwith "Not implemented yet: lambda"
                    | "set!" -> buildAssignment args
-                   | "quote" -> failwith "Not implemented yet: quote"
                    | x -> buildFromIdentifier x |> buildProcCall
                match x with
                | CTIdentifierExpression id -> buildCallToIdentifier id

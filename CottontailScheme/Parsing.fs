@@ -75,6 +75,8 @@ let parseList = parseParenthesisedListOf parseDatum |>> CTList
 
 let parseSugaredQuotation = skipChar '\'' >>. parseDatum
 
+let parseParenthesisedQuotation = betweenStrings "(" ")" (pstring "quote" >>. ws1 >>. parseDatum)
+
 let parseIdentifierExpression = parseSymbolOrIdentifier |>> CTIdentifierExpression
 
 let parseLiteral = choice [parseSugaredQuotation
@@ -83,8 +85,8 @@ let parseLiteral = choice [parseSugaredQuotation
                            parseStringLiteral]
                    |>> CTLiteralExpression
 
-let parseListExpression = parseParenthesisedListOf parseExpression
-                          |>> CTListExpression
+let parseListExpression = attempt (parseParenthesisedQuotation |>> CTLiteralExpression)
+                          <|> (parseParenthesisedListOf parseExpression |>> CTListExpression)
 
 parseDatumRef := choice [parseList
                          parseBoolean

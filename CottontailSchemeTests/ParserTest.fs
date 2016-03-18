@@ -152,6 +152,12 @@ type ``List expression parser`` () =
     member x.``accepts empty lists of expressions`` () =
         testParsesAs (CTListExpression []) "()"
 
+    [<Test>]
+    member x.``parses quotations as datum objects`` () =
+        testParsesAs (CTLiteralExpression
+                        (CTList [CTNumber 1.0; CTNumber 2.0; CTNumber 3.0]))
+                     "(quote (1 2 3))"
+
 [<TestFixture>]
 type ``Whole program parser`` () =
     let testParsesAs = ParserTest.testEquals parseProgram
