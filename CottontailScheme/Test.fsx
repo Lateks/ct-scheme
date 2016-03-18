@@ -18,4 +18,6 @@ let analyse str = match run parseProgram str with
 
 analyse "(display \"Hello, world!\")\n42\n"
 analyse "(define pi 3.14159)"
-analyse "(define foo (define bar \"error\"))"
+analyse "(define foo (set! bar \"error\"))"
+analyse "(set! pi 3.14159)"
+analyse "(set! lambda (display \"error\"))"

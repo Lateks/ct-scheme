@@ -36,21 +36,23 @@ let hasUndefinedReturnValue =
     | AssignmentExpression _ -> true
     | _ -> false
 
-// TODO: prevent redefining built-in functions?
-let buildDefinition =
+let buildBinding name =
     function
     | x::y::[] ->
         match x with
         | IdentifierExpression id ->
             let (Identifier name) = id
             if isSpecialFunction name then
-                failwithf "Redefining built-in function %s" name
+                failwithf "Redefining built-in procedure %s" name
             elif hasUndefinedReturnValue y then
-                failwithf "Function define or set! used in unexpected context"
+                failwithf "Procedure define or set! used in unexpected context"
             else
-                Definition (id, y)
-        | _ -> failwith "Invalid identifier: %A" x
-    | _        -> failwith "Invalid number of arguments to define"
+                (id, y)
+        | _ -> failwith "Not an identifier: %A" x
+    | _  -> failwithf "Invalid number of arguments to %s" name
+
+let buildDefinition = buildBinding "define" >> Definition
+let buildAssignment = buildBinding "set!" >> AssignmentExpression
 
 // TODO: proper error handling and error positions
 // TODO: printing datum objects properly
@@ -66,7 +68,7 @@ let rec buildFromList =
                    | "define" -> buildDefinition args
                    | "if" -> failwith "Not implemented yet: if"
                    | "lambda" -> failwith "Not implemented yet: lambda"
-                   | "set!" -> failwith "Not implemented yet: set!"
+                   | "set!" -> buildAssignment args
                    | "quote" -> failwith "Not implemented yet: quote"
                    | x -> buildFromIdentifier x |> buildProcCall
                match x with
