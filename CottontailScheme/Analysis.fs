@@ -16,9 +16,9 @@ type Expression =
     | ProcedureCallExpression of Expression * Expression list
     | Definition of Identifier * Expression
 
-let keywords = ["define"; "if"; "lambda"; "set!"; "cons"; "car"; "cdr"; "list"; "quote"]
+let specialFunctions = ["define"; "if"; "lambda"; "set!"] //; "cons"; "car"; "cdr"; "list"; "quote"; "display"]
 
-let isKeyword = List.contains keywords
+let isSpecialFunction name = List.contains name specialFunctions
 
 // TODO: alpha conversion
 let buildFromIdentifier = Identifier >> IdentifierExpression
@@ -29,6 +29,28 @@ let rec buildFromDatum = function
                          | CTString s -> StringLiteral s
                          | CTSymbol s -> SymbolLiteral s
                          | CTList l -> l |> List.map buildFromDatum |> ListLiteral
+
+let hasUndefinedReturnValue =
+    function
+    | Definition _
+    | AssignmentExpression _ -> true
+    | _ -> false
+
+// TODO: prevent redefining built-in functions?
+let buildDefinition =
+    function
+    | x::y::[] ->
+        match x with
+        | IdentifierExpression id ->
+            let (Identifier name) = id
+            if isSpecialFunction name then
+                failwithf "Redefining built-in function %s" name
+            elif hasUndefinedReturnValue y then
+                failwithf "Function define or set! used in unexpected context"
+            else
+                Definition (id, y)
+        | _ -> failwith "Invalid identifier: %A" x
+    | _        -> failwith "Invalid number of arguments to define"
 
 // TODO: proper error handling and error positions
 // TODO: printing datum objects properly
@@ -41,7 +63,7 @@ let rec buildFromList =
                let buildProcCall proc = ProcedureCallExpression (proc, args)
                let buildCallToIdentifier =
                    function
-                   | "define" -> failwith "Not implemented yet: define"
+                   | "define" -> buildDefinition args
                    | "if" -> failwith "Not implemented yet: if"
                    | "lambda" -> failwith "Not implemented yet: lambda"
                    | "set!" -> failwith "Not implemented yet: set!"
