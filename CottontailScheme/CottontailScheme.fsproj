@@ -60,6 +60,7 @@
     <Content Include="packages.config" />
     <Compile Include="Parsing.fsi" />
     <Compile Include="Parsing.fs" />
+    <Compile Include="Analysis.fs" />
     <None Include="Test.fsx" />
     <Compile Include="Program.fs" />
   </ItemGroup>
