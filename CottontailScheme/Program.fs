@@ -8,5 +8,5 @@ let testParser p str =
 
 [<EntryPoint>]
 let main args =
-    testParser parseBoolean "#true"
+    testParser parseExpression "#true"
     0

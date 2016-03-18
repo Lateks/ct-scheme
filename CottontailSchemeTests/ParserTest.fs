@@ -4,7 +4,6 @@ open NUnit.Framework
 open FsUnit
 open FParsec
 
-open CottontailScheme
 open CottontailScheme.Parsing
 
 module ParserTest =
@@ -22,30 +21,28 @@ module ParserTest =
 type ``Boolean literal parser`` () =
     [<Test>]
     member x.``accepts literal values representing true`` () =
-        let testAccepts = ParserTest.testEquals parseBoolean (CTBool true)
+        let testAccepts = ParserTest.testEquals parseDatum (CTBool true)
         testAccepts "#true"
         testAccepts "#t"
 
     [<Test>]
     member x.``accepts literal values representing false`` () =
-        let testAccepts = ParserTest.testEquals parseBoolean (CTBool false)
+        let testAccepts = ParserTest.testEquals parseDatum (CTBool false)
         testAccepts "#false"
         testAccepts "#f"
 
     [<Test>]
     member x.``rejects other inputs`` () =
-        let testRejects = ParserTest.testRejects parseBoolean
+        let testRejects = ParserTest.testRejects parseDatum
         testRejects "#False"
         testRejects "#"
-        testRejects "true"
-        testRejects "42"
-        testRejects ""
 
 [<TestFixture>]
 type ``Number parser`` () =
+    let testParsesAs = ParserTest.testEquals parseDatum
+
     [<Test>]
     member x.``accepts floating point and integer values with or without signs`` () =
-        let testParsesAs = ParserTest.testEquals parseNumber
         testParsesAs (CTNumber 3.14159) "3.14159"
         testParsesAs (CTNumber 42.0) "42"
         testParsesAs (CTNumber 9.5) "+9.5"
@@ -54,37 +51,34 @@ type ``Number parser`` () =
 
     [<Test>]
     member x.``rejects invalid numbers`` () =
-        let testRejects = ParserTest.testRejects parseNumber
-        let testParsesAs = ParserTest.testEquals parseNumber
-        testRejects ""
+        let testRejects = ParserTest.testRejects parseExpression
         testRejects ".59"
-        testRejects "AB"
         testParsesAs (CTNumber 0.0) "0xFF"
         testParsesAs (CTNumber 0.2) "0.2e10"
 
 [<TestFixture>]
 type ``String literal parser`` () =
+    let testParsesAs = ParserTest.testEquals parseDatum
+
     [<Test>]
     member x.``accepts well formed string literals with escapes`` () =
-        let testParsesAs = ParserTest.testEquals parseStringLiteral
         testParsesAs (CTString "Hello, world!") "\"Hello, world!\""
         testParsesAs (CTString "foo\nbar\tbaz\r") "\"foo\\nbar\\tbaz\\r\""
         testParsesAs (CTString "") "\"\""
 
     [<Test>]
     member x.``rejects invalid strings`` () =
-        let testRejects = ParserTest.testRejects parseStringLiteral
-        let testParsesAs = ParserTest.testEquals parseStringLiteral
+        let testRejects = ParserTest.testRejects parseExpression
+        testRejects ""
         testRejects "\"Hello"
-        testRejects "15"
-        testRejects "Hello"
         testParsesAs (CTString "She said, ") "\"She said, \"hello\"\""
 
 [<TestFixture>]
 type ``Symbol parser`` () =
+    let testParsesAs = ParserTest.testEquals parseDatum
+
     [<Test>]
     member x.``accepts well formed basic symbols`` () =
-        let testParsesAs = ParserTest.testEquals parseSymbol
         testParsesAs (CTSymbol "fib") "fib"
         testParsesAs (CTSymbol "call-with-current-continuation") "call-with-current-continuation"
         testParsesAs (CTSymbol "+") "+"
@@ -99,17 +93,13 @@ type ``Symbol parser`` () =
 
     [<Test>]
     member x.``rejects ill formed symbols`` () =
-        let testRejects = ParserTest.testRejects parseSymbol
-        let testParsesAs = ParserTest.testEquals parseSymbol
+        let testRejects = ParserTest.testRejects parseDatum
         testRejects ""
-        testRejects "42"
-        testRejects "1+"
-        testParsesAs (CTSymbol "+") "+1"
         testParsesAs (CTSymbol "x") "x'"
 
 [<TestFixture>]
 type ``List parser`` () =
-    let testParsesAs = ParserTest.testEquals parseList
+    let testParsesAs = ParserTest.testEquals parseDatum
 
     [<Test>]
     member x.``accepts well formed lists of datum objects (including recursive lists)`` () =
@@ -130,57 +120,26 @@ type ``List parser`` () =
 
     [<Test>]
     member x.``rejects ill formed lists and lists of invalid datum objects`` () =
-        let testRejects = ParserTest.testRejects parseList
-        testRejects ""
-        testRejects "('foo)"
-        testRejects "(foo bar"
-        testRejects "foo bar)"
-        testRejects "(#foo)"
-
-[<TestFixture>]
-type ``Datum parser`` () =
-    let testParsesAs = ParserTest.testEquals parseDatum
-
-    [<Test>]
-    member x.``accepts all kinds of datum objects`` () =
-        testParsesAs (CTList []) "()"
-        testParsesAs (CTNumber 3.14159) "+3.14159"
-        testParsesAs (CTString "Hello, world!") "\"Hello, world!\""
-        testParsesAs (CTBool true) "#true"
-        testParsesAs (CTSymbol "call-with-current-continuation") "call-with-current-continuation"
-        testParsesAs (CTSymbol "+") "+"
-
-    [<Test>]
-    member x.``rejects invalid datum objects`` () =
         let testRejects = ParserTest.testRejects parseDatum
-        testRejects ""
-        testRejects "#bar"
-        testRejects "(foo"
-        testParsesAs (CTNumber 1.0) "1+"
-
+        testRejects "('foo)" // TODO?
+        testRejects "(foo bar"
+        testRejects "(#foo)"
 
 [<TestFixture>]
 type ``Parsing quotations`` () =
     [<Test>]
     member x.``parses syntax sugared quotations`` () =
-        let testParsesAs = ParserTest.testEquals parseSugaredQuotation
-        testParsesAs (CTList []) "'()"
-        testParsesAs (CTNumber 3.14159) "'+3.14159"
-        testParsesAs (CTString "Hello, world!") "'\"Hello, world!\""
-        testParsesAs (CTBool true) "'#true"
-        testParsesAs (CTSymbol "call-with-current-continuation") "'call-with-current-continuation"
-        testParsesAs (CTSymbol "+") "'+"
-
-    [<Test>]
-    member x.``rejects pieces of code that are not quotations`` () =
-        let testRejects = ParserTest.testRejects parseSugaredQuotation
-        testRejects ""
-        testRejects "()"
-        testRejects "foo"
+        let testParsesAs = ParserTest.testEquals parseExpression
+        testParsesAs (CTLiteralExpression (CTList [])) "'()"
+        testParsesAs (CTLiteralExpression (CTNumber 3.14159)) "'+3.14159"
+        testParsesAs (CTLiteralExpression (CTString "Hello, world!")) "'\"Hello, world!\""
+        testParsesAs (CTLiteralExpression (CTBool true)) "'#true"
+        testParsesAs (CTLiteralExpression (CTSymbol "call-with-current-continuation")) "'call-with-current-continuation"
+        testParsesAs (CTLiteralExpression (CTSymbol "+")) "'+"
 
 [<TestFixture>]
 type ``List expression parser`` () =
-    let testParsesAs = ParserTest.testEquals parseListExpression
+    let testParsesAs = ParserTest.testEquals parseExpression
 
     [<Test>]
     member x.``accepts nonempty lists of expressions`` () =
