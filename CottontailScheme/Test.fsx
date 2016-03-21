@@ -19,6 +19,8 @@ let analyse str = match run parseProgram str with
 analyse "(display \"Hello, world!\")\n42\n"
 analyse "(define pi 3.14159)"
 analyse "(define foo (set! bar \"error\"))"
+analyse "(define foo (define bar \"error\"))"
+analyse "(define define (display \"error\"))"
 analyse "(set! pi 3.14159)"
 analyse "(set! lambda (display \"error\"))"
 analyse "(define lst (quote (1 2 3)))"

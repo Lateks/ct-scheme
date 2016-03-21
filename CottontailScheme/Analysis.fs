@@ -3,6 +3,7 @@
 open CottontailScheme.Parsing
 
 type Identifier = Identifier of string
+                | IdentifierError of string
 
 type LambdaFormals = MultiArgFormals of Identifier list
                    | SingleArgFormals of Identifier
@@ -15,10 +16,13 @@ type Expression =
     | SymbolLiteral of string
     | ListLiteral of Expression list
     | LambdaExpression of LambdaFormals * Expression list * Expression list
-    | AssignmentExpression of Identifier * Expression
+    | AssignmentExpression of Binding
     | ProcedureCallExpression of Expression * Expression list
     | ConditionalExpression of Expression * Expression * Expression option
-    | Definition of Identifier * Expression
+    | Definition of Binding
+    | ExpressionError of string
+and Binding = Binding of Identifier * Expression
+            | BindingError of string
 
 let specialFunctions = ["define"; "if"; "lambda"; "set!"] //; "cons"; "car"; "cdr"; "list"; "quote"; "display"]
 
@@ -44,15 +48,18 @@ let buildBinding name =
     | ident::expr::[] ->
         match ident with
         | IdentifierExpression id ->
-            let (Identifier name) = id
-            if isSpecialFunction name then
-                failwithf "Redefining built-in procedure %s" name
-            elif isDefinition expr then
-                failwithf "Procedure define used in a context where an expression was expected"
-            else
-                (id, expr)
-        | _ -> failwith "Not an identifier: %A" ident
-    | _  -> failwithf "Invalid number of arguments to %s" name
+            match id with
+            | Identifier name
+                -> if isSpecialFunction name then
+                       BindingError <| sprintf "Redefining built-in procedure %s" name
+                   elif isDefinition expr then
+                       BindingError "Procedure define used in a context where an expression was expected"
+                   else
+                       Binding (id, expr)
+            | IdentifierError msg
+                -> BindingError msg
+        | _ -> BindingError <| sprintf "Not an identifier: %A" ident
+    | _  -> BindingError <| sprintf "Invalid number of arguments to %s" name
 
 let buildDefinition = buildBinding "define" >> Definition
 let buildAssignment = buildBinding "set!" >> AssignmentExpression
@@ -62,20 +69,20 @@ let buildConditionalWith cond thenExpr elseExpr =
     | (Definition _, _, _)
     | (_, Definition _, _)
     | (_, _, Some (Definition _))
-        -> failwith "Procedure define used in a context where an expression was expected"
+        -> ExpressionError "Procedure define used in a context where an expression was expected"
     | _ -> ConditionalExpression (cond, thenExpr, elseExpr)
 
 let buildConditional =
     function
     | cond::thenExpr::[] -> buildConditionalWith cond thenExpr None
     | cond::thenExpr::elseExpr::[] -> buildConditionalWith cond thenExpr (Some elseExpr)
-    | _ -> failwith "Invalid number of arguments to if"
+    | _ -> ExpressionError "Invalid number of arguments to if"
 
 let buildLambdaWith formals body =
     let definitions = body |> List.takeWhile isDefinition
     let expressions = body |> List.skip definitions.Length
     if (expressions |> List.filter isDefinition |> fun lst -> not lst.IsEmpty) then
-        failwith "Definitions must be in the beginning of the lambda body"
+        ExpressionError "Definitions must be in the beginning of the lambda body"
     else
         LambdaExpression (formals, definitions, body)
 
@@ -85,7 +92,7 @@ let buildLambdaWith formals body =
 // TODO: identify tail recursive calls
 let rec buildFromList =
     function
-    | []    -> failwith "Empty procedure call expressions are not allowed"
+    | []    -> ExpressionError "Empty procedure call expressions are not allowed"
     | x::xs -> let args = lazy buildFromExprList xs
                let buildProcCall proc = ProcedureCallExpression (proc, args.Value)
                let buildCallToIdentifier =
@@ -106,18 +113,19 @@ and buildFromExpression = function
 and buildFromExprList = List.map buildFromExpression
 and buildLambda =
     function
-    | args::[] -> failwith "Lambda body is empty"
+    | args::[] -> ExpressionError "Lambda body is empty"
     | args::body ->
         let bodyExpressions = buildFromExprList body
         let build f = buildLambdaWith f bodyExpressions
         match args with
         | CTIdentifierExpression id -> id |> Identifier |> SingleArgFormals |> build
-        | CTListExpression lst -> lst |> List.map (function
-                                                   | CTIdentifierExpression id -> Identifier id
-                                                   | expr -> failwith "Invalid identifier used in lambda expression %A" expr)
-                                      |> MultiArgFormals
-                                      |> build
-        | CTLiteralExpression datum -> failwithf "Invalid identifier used in lambda expression: %A" datum
-    | [] -> failwith "Invalid lambda syntax: missing arguments and body"
+        | CTListExpression lst ->
+            lst |> List.map (function
+                             | CTIdentifierExpression id -> Identifier id
+                             | expr -> IdentifierError <| sprintf "Invalid identifier used in lambda expression %A" expr)
+                |> MultiArgFormals
+                |> build
+        | CTLiteralExpression datum -> ExpressionError <| sprintf "Invalid identifier used in lambda expression: %A" datum
+    | [] -> ExpressionError "Invalid lambda syntax: missing arguments and body"
 
 let buildAST (CTProgram lst) = buildFromExprList lst
