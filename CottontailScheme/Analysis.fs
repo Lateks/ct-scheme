@@ -104,7 +104,7 @@ let rec buildFromList =
                    | x -> buildFromIdentifier x |> buildProcCall
                match x with
                | CTIdentifierExpression id -> buildCallToIdentifier id
-               | CTLiteralExpression datum -> failwithf "Not a procedure: %A" datum
+               | CTLiteralExpression datum -> ExpressionError <| sprintf "Not a procedure: %A" datum
                | CTListExpression l -> buildFromList l |> buildProcCall
 and buildFromExpression = function
                           | CTIdentifierExpression id -> buildFromIdentifier id
