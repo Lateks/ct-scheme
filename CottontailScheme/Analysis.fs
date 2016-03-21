@@ -24,6 +24,10 @@ type Expression =
 and Binding = Binding of Identifier * Expression
             | BindingError of string
 
+type AnalysisError = { message: string; } //row: int; col: int }
+type AnalysisStatus = AnalysisSuccess of Expression list
+                    | AnalysisFailure of AnalysisError list
+
 let specialFunctions = ["define"; "if"; "lambda"; "set!"] //; "cons"; "car"; "cdr"; "list"; "quote"; "display"]
 
 let isSpecialFunction name = List.contains name specialFunctions
@@ -128,4 +132,46 @@ and buildLambda =
         | CTLiteralExpression datum -> ExpressionError <| sprintf "Invalid identifier used in lambda expression: %A" datum
     | [] -> ExpressionError "Invalid lambda syntax: missing arguments and body"
 
-let buildAST (CTProgram lst) = buildFromExprList lst
+let rec listErrors exprs =
+    let getIdError = function
+                     | IdentifierError msg -> [{ message = msg }]
+                     | _ -> []
+    let getErrorsFromFormals = function
+                               | MultiArgFormals ids -> List.map getIdError ids
+                                                     |> List.concat
+                               | SingleArgFormals id -> getIdError id
+    let getBindingError = function
+                          | BindingError msg -> [{ message = msg }]
+                          | _ -> []
+    exprs
+    |> List.map (function
+                 | ExpressionError msg -> [{ message = msg }]
+                 | IdentifierExpression id -> getIdError id
+                 | ListLiteral elist -> listErrors exprs
+                 | LambdaExpression (formals, defs, exprs) ->
+                    let idErrors = getErrorsFromFormals formals
+                    let defErrors = listErrors defs
+                    let exprErrors = listErrors exprs
+                    List.concat [idErrors; defErrors; exprErrors]
+                 | AssignmentExpression binding
+                 | Definition binding -> getBindingError binding
+                 | ProcedureCallExpression (expr, exprs) ->
+                    listErrors <| expr::exprs
+                 | ConditionalExpression (cond, thenBranch, elseBranch) ->
+                    match elseBranch with
+                    | Some expr ->
+                        cond::thenBranch::[expr]
+                    | None ->
+                        cond::[thenBranch]
+                    |> listErrors
+                 | _ -> []
+                )
+    |> List.concat
+
+let buildAST (CTProgram lst) =
+    let ast = buildFromExprList lst
+    let errors = listErrors ast
+    if errors.IsEmpty then
+        AnalysisSuccess ast
+    else
+        AnalysisFailure errors
