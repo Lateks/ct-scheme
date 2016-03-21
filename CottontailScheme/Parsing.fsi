@@ -1,5 +1,7 @@
 ﻿module CottontailScheme.Parsing
 
+type ParsePosition = { line: int64; column: int64 }
+
 type CTDatum =
     | CTBool of bool
     | CTNumber of float
@@ -8,9 +10,9 @@ type CTDatum =
     | CTList of CTDatum list
 
 type CTExpression =
-    | CTIdentifierExpression of string
-    | CTLiteralExpression of CTDatum
-    | CTListExpression of CTExpression list
+    | CTIdentifierExpression of ParsePosition * string
+    | CTLiteralExpression of ParsePosition * CTDatum
+    | CTListExpression of ParsePosition * CTExpression list
 
 type CTProgram = | CTProgram of CTExpression list
 

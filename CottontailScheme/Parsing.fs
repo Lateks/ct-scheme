@@ -2,17 +2,23 @@
 
 open FParsec
 
+type ParsePosition = { line: int64; column: int64 }
+
 type CTDatum = CTBool of bool
              | CTNumber of float
              | CTString of string
              | CTSymbol of string
              | CTList of CTDatum list
 
-type CTExpression = CTIdentifierExpression of string
-                  | CTLiteralExpression of CTDatum
-                  | CTListExpression of CTExpression list
+type CTExpression = CTIdentifierExpression of ParsePosition * string
+                  | CTLiteralExpression of ParsePosition * CTDatum
+                  | CTListExpression of ParsePosition * CTExpression list
 
 type CTProgram = CTProgram of CTExpression list
+
+let makePosition (fparsecPos: Position) = { line = fparsecPos.Line; column = fparsecPos.Column}
+
+let position = getPosition |>> makePosition
 
 // Parsing whitespace and comments
 let singleLineComment = pchar ';' <?> "comment" >>. restOfLine true
@@ -48,7 +54,7 @@ let parseSymbolOrIdentifier =
     parseRegularIdentifier <|> parsePeculiarIdentifier
 
 let parseBoolean = skipChar '#' >>. (((pstring "true" <|> pstring "t") >>% CTBool true)
-                            <|> ((pstring "false" <|> pstring "f") >>% CTBool false))
+                                <|> ((pstring "false" <|> pstring "f") >>% CTBool false))
 
 let parseNumber =
     let numberFormat =     NumberLiteralOptions.AllowMinusSign
@@ -77,16 +83,18 @@ let parseSugaredQuotation = skipChar '\'' >>. parseDatum
 
 let parseParenthesisedQuotation = betweenStrings "(" ")" (pstring "quote" >>. ws1 >>. parseDatum)
 
-let parseIdentifierExpression = parseSymbolOrIdentifier |>> CTIdentifierExpression
+let parseIdentifierExpression = position .>>. parseSymbolOrIdentifier
+                                |>> CTIdentifierExpression
 
-let parseLiteral = choice [parseSugaredQuotation
+let parseLiteral = position .>>.
+                   choice [parseSugaredQuotation
                            parseBoolean
                            parseNumber
                            parseStringLiteral]
                    |>> CTLiteralExpression
 
-let parseListExpression = attempt (parseParenthesisedQuotation |>> CTLiteralExpression)
-                          <|> (parseParenthesisedListOf parseExpression |>> CTListExpression)
+let parseListExpression = attempt (position .>>. parseParenthesisedQuotation |>> CTLiteralExpression)
+                          <|> (position .>>. parseParenthesisedListOf parseExpression |>> CTListExpression)
 
 parseDatumRef := choice [parseList
                          parseBoolean

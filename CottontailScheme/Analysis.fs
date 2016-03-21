@@ -108,13 +108,13 @@ let rec buildFromList =
                    | "set!" -> buildAssignment args.Value
                    | x -> buildFromIdentifier x |> buildProcCall
                match x with
-               | CTIdentifierExpression id -> buildCallToIdentifier id
-               | CTLiteralExpression datum -> ExpressionError { message = sprintf "Not a procedure: %A" datum }
-               | CTListExpression l -> buildFromList l |> buildProcCall
+               | CTIdentifierExpression (pos, id) -> buildCallToIdentifier id
+               | CTLiteralExpression (pos, datum) -> ExpressionError { message = sprintf "Not a procedure: %A" datum }
+               | CTListExpression (pos, l) -> buildFromList l |> buildProcCall
 and buildFromExpression = function
-                          | CTIdentifierExpression id -> buildFromIdentifier id
-                          | CTLiteralExpression datum -> buildFromDatum datum
-                          | CTListExpression exprs -> buildFromList exprs
+                          | CTIdentifierExpression (pos, id) -> buildFromIdentifier id
+                          | CTLiteralExpression (pos, datum) -> buildFromDatum datum
+                          | CTListExpression (pos, exprs) -> buildFromList exprs
 and buildFromExprList = List.map buildFromExpression
 and buildLambda =
     function
@@ -123,14 +123,14 @@ and buildLambda =
         let bodyExpressions = buildFromExprList body
         let build f = buildLambdaWith f bodyExpressions
         match args with
-        | CTIdentifierExpression id -> id |> Identifier |> SingleArgFormals |> build
-        | CTListExpression lst ->
+        | CTIdentifierExpression (pos, id) -> id |> Identifier |> SingleArgFormals |> build
+        | CTListExpression (pos, lst) ->
             lst |> List.map (function
-                             | CTIdentifierExpression id -> Identifier id
+                             | CTIdentifierExpression (pos, id) -> Identifier id
                              | expr -> IdentifierError { message = sprintf "Invalid identifier used in lambda expression %A" expr })
                 |> MultiArgFormals
                 |> build
-        | CTLiteralExpression datum -> ExpressionError { message = sprintf "Invalid identifier used in lambda expression: %A" datum }
+        | CTLiteralExpression (pos, datum) -> ExpressionError { message = sprintf "Invalid identifier used in lambda expression: %A" datum }
     | [] -> ExpressionError { message = "Invalid lambda syntax: missing arguments and body" }
 
 let rec listErrors exprs =
