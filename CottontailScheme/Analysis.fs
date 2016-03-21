@@ -2,8 +2,10 @@
 
 open CottontailScheme.Parsing
 
+type AnalysisError = { message: string; } //row: int; col: int }
+
 type Identifier = Identifier of string
-                | IdentifierError of string
+                | IdentifierError of AnalysisError
 
 type LambdaFormals = MultiArgFormals of Identifier list
                    | SingleArgFormals of Identifier
@@ -20,11 +22,10 @@ type Expression =
     | ProcedureCallExpression of Expression * Expression list
     | ConditionalExpression of Expression * Expression * Expression option
     | Definition of Binding
-    | ExpressionError of string
+    | ExpressionError of AnalysisError
 and Binding = Binding of Identifier * Expression
-            | BindingError of string
+            | BindingError of AnalysisError
 
-type AnalysisError = { message: string; } //row: int; col: int }
 type AnalysisStatus = AnalysisSuccess of Expression list
                     | AnalysisFailure of AnalysisError list
 
@@ -55,15 +56,15 @@ let buildBinding name =
             match id with
             | Identifier name
                 -> if isSpecialFunction name then
-                       BindingError <| sprintf "Redefining built-in procedure %s" name
+                       BindingError { message = sprintf "Redefining built-in procedure %s" name }
                    elif isDefinition expr then
-                       BindingError "Procedure define used in a context where an expression was expected"
+                       BindingError { message = "Procedure define used in a context where an expression was expected" }
                    else
                        Binding (id, expr)
             | IdentifierError msg
                 -> BindingError msg
-        | _ -> BindingError <| sprintf "Not an identifier: %A" ident
-    | _  -> BindingError <| sprintf "Invalid number of arguments to %s" name
+        | _ -> BindingError {message = sprintf "Not an identifier: %A" ident }
+    | _  -> BindingError { message = sprintf "Invalid number of arguments to %s" name }
 
 let buildDefinition = buildBinding "define" >> Definition
 let buildAssignment = buildBinding "set!" >> AssignmentExpression
@@ -73,20 +74,20 @@ let buildConditionalWith cond thenExpr elseExpr =
     | (Definition _, _, _)
     | (_, Definition _, _)
     | (_, _, Some (Definition _))
-        -> ExpressionError "Procedure define used in a context where an expression was expected"
+        -> ExpressionError { message = "Procedure define used in a context where an expression was expected" }
     | _ -> ConditionalExpression (cond, thenExpr, elseExpr)
 
 let buildConditional =
     function
     | cond::thenExpr::[] -> buildConditionalWith cond thenExpr None
     | cond::thenExpr::elseExpr::[] -> buildConditionalWith cond thenExpr (Some elseExpr)
-    | _ -> ExpressionError "Invalid number of arguments to if"
+    | _ -> ExpressionError { message = "Invalid number of arguments to if" }
 
 let buildLambdaWith formals body =
     let definitions = body |> List.takeWhile isDefinition
     let expressions = body |> List.skip definitions.Length
     if (expressions |> List.filter isDefinition |> fun lst -> not lst.IsEmpty) then
-        ExpressionError "Definitions must be in the beginning of the lambda body"
+        ExpressionError { message = "Definitions must be in the beginning of the lambda body" }
     else
         LambdaExpression (formals, definitions, body)
 
@@ -96,7 +97,7 @@ let buildLambdaWith formals body =
 // TODO: identify tail recursive calls
 let rec buildFromList =
     function
-    | []    -> ExpressionError "Empty procedure call expressions are not allowed"
+    | []    -> ExpressionError { message = "Empty procedure call expressions are not allowed" }
     | x::xs -> let args = lazy buildFromExprList xs
                let buildProcCall proc = ProcedureCallExpression (proc, args.Value)
                let buildCallToIdentifier =
@@ -108,7 +109,7 @@ let rec buildFromList =
                    | x -> buildFromIdentifier x |> buildProcCall
                match x with
                | CTIdentifierExpression id -> buildCallToIdentifier id
-               | CTLiteralExpression datum -> ExpressionError <| sprintf "Not a procedure: %A" datum
+               | CTLiteralExpression datum -> ExpressionError { message = sprintf "Not a procedure: %A" datum }
                | CTListExpression l -> buildFromList l |> buildProcCall
 and buildFromExpression = function
                           | CTIdentifierExpression id -> buildFromIdentifier id
@@ -117,7 +118,7 @@ and buildFromExpression = function
 and buildFromExprList = List.map buildFromExpression
 and buildLambda =
     function
-    | args::[] -> ExpressionError "Lambda body is empty"
+    | args::[] -> ExpressionError { message = "Lambda body is empty" }
     | args::body ->
         let bodyExpressions = buildFromExprList body
         let build f = buildLambdaWith f bodyExpressions
@@ -126,26 +127,26 @@ and buildLambda =
         | CTListExpression lst ->
             lst |> List.map (function
                              | CTIdentifierExpression id -> Identifier id
-                             | expr -> IdentifierError <| sprintf "Invalid identifier used in lambda expression %A" expr)
+                             | expr -> IdentifierError { message = sprintf "Invalid identifier used in lambda expression %A" expr })
                 |> MultiArgFormals
                 |> build
-        | CTLiteralExpression datum -> ExpressionError <| sprintf "Invalid identifier used in lambda expression: %A" datum
-    | [] -> ExpressionError "Invalid lambda syntax: missing arguments and body"
+        | CTLiteralExpression datum -> ExpressionError { message = sprintf "Invalid identifier used in lambda expression: %A" datum }
+    | [] -> ExpressionError { message = "Invalid lambda syntax: missing arguments and body" }
 
 let rec listErrors exprs =
     let getIdError = function
-                     | IdentifierError msg -> [{ message = msg }]
+                     | IdentifierError msg -> [msg]
                      | _ -> []
     let getErrorsFromFormals = function
                                | MultiArgFormals ids -> List.map getIdError ids
                                                      |> List.concat
                                | SingleArgFormals id -> getIdError id
     let getBindingError = function
-                          | BindingError msg -> [{ message = msg }]
+                          | BindingError msg -> [msg]
                           | _ -> []
     exprs
     |> List.map (function
-                 | ExpressionError msg -> [{ message = msg }]
+                 | ExpressionError msg -> [msg]
                  | IdentifierExpression id -> getIdError id
                  | ListLiteral elist -> listErrors exprs
                  | LambdaExpression (formals, defs, exprs) ->
