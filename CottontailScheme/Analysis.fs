@@ -2,7 +2,7 @@
 
 open CottontailScheme.Parsing
 
-type AnalysisError = { message: string; } //row: int; col: int }
+type AnalysisError = { message: string; position: ParsePosition }
 
 type Identifier = Identifier of string
                 | IdentifierError of AnalysisError
@@ -48,7 +48,7 @@ let isDefinition =
     | Definition _ -> true
     | _ -> false
 
-let buildBinding name =
+let buildBinding pos name =
     function
     | ident::expr::[] ->
         match ident with
@@ -56,38 +56,44 @@ let buildBinding name =
             match id with
             | Identifier name
                 -> if isSpecialFunction name then
-                       BindingError { message = sprintf "Redefining built-in procedure %s" name }
+                       BindingError { message = sprintf "Redefining built-in procedure %s" name;
+                                      position = pos }
                    elif isDefinition expr then
-                       BindingError { message = "Procedure define used in a context where an expression was expected" }
+                       BindingError { message = "Procedure define used in a context where an expression was expected";
+                                      position = pos }
                    else
                        Binding (id, expr)
             | IdentifierError msg
                 -> BindingError msg
-        | _ -> BindingError {message = sprintf "Not an identifier: %A" ident }
-    | _  -> BindingError { message = sprintf "Invalid number of arguments to %s" name }
+        | _ -> BindingError { message = sprintf "Not an identifier: %A" ident;
+                              position = pos }
+    | _  -> BindingError { message = sprintf "Invalid number of arguments to %s" name;
+                           position = pos }
 
-let buildDefinition = buildBinding "define" >> Definition
-let buildAssignment = buildBinding "set!" >> AssignmentExpression
+let buildDefinition pos = buildBinding pos "define" >> Definition
+let buildAssignment pos = buildBinding pos "set!" >> AssignmentExpression
 
-let buildConditionalWith cond thenExpr elseExpr =
+let buildConditionalWith pos cond thenExpr elseExpr =
     match cond, thenExpr, elseExpr with
     | (Definition _, _, _)
     | (_, Definition _, _)
     | (_, _, Some (Definition _))
-        -> ExpressionError { message = "Procedure define used in a context where an expression was expected" }
+        -> ExpressionError { message = "Procedure define used in a context where an expression was expected";
+                             position = pos }
     | _ -> ConditionalExpression (cond, thenExpr, elseExpr)
 
-let buildConditional =
+let buildConditional pos =
     function
-    | cond::thenExpr::[] -> buildConditionalWith cond thenExpr None
-    | cond::thenExpr::elseExpr::[] -> buildConditionalWith cond thenExpr (Some elseExpr)
-    | _ -> ExpressionError { message = "Invalid number of arguments to if" }
+    | cond::thenExpr::[] -> buildConditionalWith pos cond thenExpr None
+    | cond::thenExpr::elseExpr::[] -> buildConditionalWith pos cond thenExpr (Some elseExpr)
+    | _ -> ExpressionError { message = "Invalid number of arguments to if"; position = pos }
 
-let buildLambdaWith formals body =
+let buildLambdaWith pos formals body =
     let definitions = body |> List.takeWhile isDefinition
     let expressions = body |> List.skip definitions.Length
     if (expressions |> List.filter isDefinition |> fun lst -> not lst.IsEmpty) then
-        ExpressionError { message = "Definitions must be in the beginning of the lambda body" }
+        ExpressionError { message = "Definitions must be in the beginning of the lambda body";
+                          position = pos }
     else
         LambdaExpression (formals, definitions, body)
 
@@ -95,43 +101,48 @@ let buildLambdaWith formals body =
 // TODO: printing datum objects properly
 // TODO: identify tailcalls
 // TODO: identify tail recursive calls
-let rec buildFromList =
+let rec buildFromList pos =
     function
-    | []    -> ExpressionError { message = "Empty procedure call expressions are not allowed" }
+    | []    -> ExpressionError { message = "Empty procedure call expressions are not allowed";
+                                 position = pos }
     | x::xs -> let args = lazy buildFromExprList xs
                let buildProcCall proc = ProcedureCallExpression (proc, args.Value)
-               let buildCallToIdentifier =
+               let buildCallToIdentifier pos =
                    function
-                   | "define" -> buildDefinition args.Value
-                   | "if" -> buildConditional args.Value
-                   | "lambda" -> buildLambda xs
-                   | "set!" -> buildAssignment args.Value
+                   | "define" -> buildDefinition pos args.Value
+                   | "if" -> buildConditional pos args.Value
+                   | "lambda" -> buildLambda pos xs
+                   | "set!" -> buildAssignment pos args.Value
                    | x -> buildFromIdentifier x |> buildProcCall
                match x with
-               | CTIdentifierExpression (pos, id) -> buildCallToIdentifier id
-               | CTLiteralExpression (pos, datum) -> ExpressionError { message = sprintf "Not a procedure: %A" datum }
-               | CTListExpression (pos, l) -> buildFromList l |> buildProcCall
+               | CTIdentifierExpression (pos, id) -> buildCallToIdentifier pos id
+               | CTLiteralExpression (pos, datum) -> ExpressionError { message = sprintf "Not a procedure: %A" datum;
+                                                                       position = pos }
+               | CTListExpression (pos, l) -> buildFromList pos l |> buildProcCall
 and buildFromExpression = function
-                          | CTIdentifierExpression (pos, id) -> buildFromIdentifier id
-                          | CTLiteralExpression (pos, datum) -> buildFromDatum datum
-                          | CTListExpression (pos, exprs) -> buildFromList exprs
+                          | CTIdentifierExpression (_, id) -> buildFromIdentifier id
+                          | CTLiteralExpression (_, datum) -> buildFromDatum datum
+                          | CTListExpression (pos, exprs) -> buildFromList pos exprs
 and buildFromExprList = List.map buildFromExpression
-and buildLambda =
+and buildLambda pos =
     function
-    | args::[] -> ExpressionError { message = "Lambda body is empty" }
+    | args::[] -> ExpressionError { message = "Lambda body is empty"; position = pos }
     | args::body ->
         let bodyExpressions = buildFromExprList body
-        let build f = buildLambdaWith f bodyExpressions
+        let build pos f = buildLambdaWith pos f bodyExpressions
         match args with
-        | CTIdentifierExpression (pos, id) -> id |> Identifier |> SingleArgFormals |> build
+        | CTIdentifierExpression (pos, id) -> id |> Identifier |> SingleArgFormals |> build pos
         | CTListExpression (pos, lst) ->
             lst |> List.map (function
-                             | CTIdentifierExpression (pos, id) -> Identifier id
-                             | expr -> IdentifierError { message = sprintf "Invalid identifier used in lambda expression %A" expr })
+                             | CTIdentifierExpression (_, id) -> Identifier id
+                             | expr -> IdentifierError { message = sprintf "Invalid identifier used in lambda expression %A" expr;
+                                                         position = pos })
                 |> MultiArgFormals
-                |> build
-        | CTLiteralExpression (pos, datum) -> ExpressionError { message = sprintf "Invalid identifier used in lambda expression: %A" datum }
-    | [] -> ExpressionError { message = "Invalid lambda syntax: missing arguments and body" }
+                |> build pos
+        | CTLiteralExpression (pos, datum) -> ExpressionError { message = sprintf "Invalid identifier used in lambda expression: %A" datum;
+                                                                position = pos }
+    | [] -> ExpressionError { message = "Invalid lambda syntax: missing arguments and body";
+                              position = pos }
 
 let rec listErrors exprs =
     let getIdError = function
