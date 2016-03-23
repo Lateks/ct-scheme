@@ -26,8 +26,8 @@ type Expression =
 and Binding = Binding of Identifier * Expression
             | BindingError of ASTError
 
-type AnalysisStatus = AnalysisSuccess of Expression list
-                    | AnalysisFailure of ASTError list
+type ASTBuildStatus = ASTBuildSuccess of Expression list
+                    | ASTBuildFailure of ASTError list
 
 let specialFunctions = ["define"; "if"; "lambda"; "set!"] //; "cons"; "car"; "cdr"; "list"; "quote"; "display"]
 
@@ -95,7 +95,7 @@ let buildLambdaWith pos formals body =
         ExpressionError { message = "Definitions must be in the beginning of the lambda body";
                           position = pos }
     else
-        LambdaExpression (formals, definitions, body)
+        LambdaExpression (formals, definitions, expressions)
 
 // TODO: more exact error positions
 // TODO: printing datum objects properly in error messages
@@ -185,6 +185,6 @@ let buildAST (CTProgram lst) =
     let ast = buildFromExprList lst
     let errors = listErrors ast
     if errors.IsEmpty then
-        AnalysisSuccess ast
+        ASTBuildSuccess ast
     else
-        AnalysisFailure errors
+        ASTBuildFailure errors

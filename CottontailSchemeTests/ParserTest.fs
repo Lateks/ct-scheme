@@ -121,7 +121,7 @@ type ``List parser`` () =
     [<Test>]
     member x.``rejects ill formed lists and lists of invalid datum objects`` () =
         let testRejects = ParserTest.testRejects parseDatum
-        testRejects "('foo)" // TODO?
+        testRejects "('foo)"
         testRejects "(foo bar"
         testRejects "(#foo)"
 

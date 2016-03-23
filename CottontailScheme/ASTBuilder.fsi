@@ -26,7 +26,7 @@ type Expression =
 and Binding = Binding of Identifier * Expression
             | BindingError of ASTError
 
-type AnalysisStatus = AnalysisSuccess of Expression list
-                    | AnalysisFailure of ASTError list
+type ASTBuildStatus = ASTBuildSuccess of Expression list
+                    | ASTBuildFailure of ASTError list
 
-val buildAST: Parsing.CTProgram -> AnalysisStatus
+val buildAST: Parsing.CTProgram -> ASTBuildStatus
