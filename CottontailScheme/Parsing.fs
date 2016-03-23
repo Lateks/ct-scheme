@@ -35,7 +35,7 @@ let parseParenthesisedListOf p = betweenStrings "(" ")" (parseListOf p)
 // High level S-expression parsers
 let parseDatum, parseDatumRef = createParserForwardedToRef<CTDatum, unit>()
 let parseExpression, parseExpressionRef = createParserForwardedToRef<CTExpression, unit>()
-let parseProgram = parseListOf parseExpression
+let parseProgram = parseListOf parseExpression .>> eof
                    |>> CTProgram
 
 // This parser currently accepts a subset of the

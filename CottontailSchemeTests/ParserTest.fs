@@ -175,7 +175,7 @@ type ``Whole program parser`` () =
                       "  (lambda (r)\n"+
                       "    (* pi (* r r)))) ; area of circle = pi * r^2\n"+
                       "(display (circle-area 5))\n"+
-                      "42"
+                      "42\n"
         let expectedParse =
             CTProgram
                 [CTListExpression ({ line = 1L; column = 1L },
