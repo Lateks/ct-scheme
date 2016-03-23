@@ -160,7 +160,7 @@ let rec listErrors exprs =
     |> List.map (function
                  | ExpressionError msg -> [msg]
                  | IdentifierExpression id -> getIdError id
-                 | ListLiteral elist -> listErrors exprs
+                 | ListLiteral elist -> listErrors elist
                  | LambdaExpression (formals, defs, exprs) ->
                     let idErrors = getErrorsFromFormals formals
                     let defErrors = listErrors defs

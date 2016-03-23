@@ -29,10 +29,16 @@ analyse "(if (< (+ 1 2) 5) (display \"smaller\"))"
 analyse "(do-side-effect)"
 analyse "(lambda (a b) (display \"I was called!\") (+ a b))"
 analyse "(define average\n\
-                                 (lambda lst\n\
-                                    (define n (sum lst))\n\
-                                    (if (zero? n)\n\
-                                        0\n\
-                                        (/ n (length lst)))))\n\
-                              (display (average 1 2 3 4 5))\n"
-analyse "'(1 2 3)"
+            (lambda lst\n\
+            (define n (sum lst))\n\
+            (if (zero? n)\n\
+                0\n\
+                (/ n (length lst)))))\n\
+         (display (average 1 2 3 4 5))\n"
+analyse "(define foo '())"
+analyse "'()"
+
+test parseExpression "'()"
+test parseProgram "'()"
+test parseExpression "(quote (1 2 3))"
+test parseProgram "(quote (1 2 3))"
