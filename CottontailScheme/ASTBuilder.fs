@@ -1,11 +1,11 @@
-﻿module CottontailScheme.Analysis
+﻿module CottontailScheme.ASTBuilder
 
 open CottontailScheme.Parsing
 
-type AnalysisError = { message: string; position: ParsePosition }
+type ASTError = { message: string; position: ParsePosition }
 
 type Identifier = Identifier of string
-                | IdentifierError of AnalysisError
+                | IdentifierError of ASTError
 
 type LambdaFormals = MultiArgFormals of Identifier list
                    | SingleArgFormals of Identifier
@@ -22,12 +22,12 @@ type Expression =
     | ProcedureCallExpression of Expression * Expression list
     | ConditionalExpression of Expression * Expression * Expression option
     | Definition of Binding
-    | ExpressionError of AnalysisError
+    | ExpressionError of ASTError
 and Binding = Binding of Identifier * Expression
-            | BindingError of AnalysisError
+            | BindingError of ASTError
 
 type AnalysisStatus = AnalysisSuccess of Expression list
-                    | AnalysisFailure of AnalysisError list
+                    | AnalysisFailure of ASTError list
 
 let specialFunctions = ["define"; "if"; "lambda"; "set!"] //; "cons"; "car"; "cdr"; "list"; "quote"; "display"]
 
@@ -97,10 +97,11 @@ let buildLambdaWith pos formals body =
     else
         LambdaExpression (formals, definitions, body)
 
-// TODO: proper error handling and error positions
-// TODO: printing datum objects properly
+// TODO: more exact error positions
+// TODO: printing datum objects properly in error messages
 // TODO: identify tailcalls
 // TODO: identify tail recursive calls
+// TODO: identify invalid uses of set!
 let rec buildFromList pos =
     function
     | []    -> ExpressionError { message = "Empty procedure call expressions are not allowed";

@@ -1,11 +1,11 @@
 ﻿#r "..\\packages\\FParsec.1.0.2\\lib\\net40-client\\FParsecCS.dll"
 #r "..\\packages\\FParsec.1.0.2\\lib\\net40-client\\FParsec.dll"
 #load "Parsing.fs"
-#load "Analysis.fs"
+#load "ASTBuilder.fs"
 
 open FParsec
 open CottontailScheme.Parsing
-open CottontailScheme.Analysis
+open CottontailScheme.ASTBuilder
 
 let test p str =
     match run p str with
