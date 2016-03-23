@@ -29,7 +29,8 @@ let ws1 = skipMany1 whitespaceOrComment
 
 // Parsing lists
 let betweenStrings s1 s2 p = between (pstring s1) (pstring s2) p
-let parseListOf p = (ws >>. sepEndBy p ws1 .>> ws)
+let exprWs = ws1 <|> followedBy (pchar '(') <|> previousCharSatisfies (isAnyOf ")")
+let parseListOf p = (ws >>. sepEndBy p exprWs .>> ws)
 let parseParenthesisedListOf p = betweenStrings "(" ")" (parseListOf p)
 
 // High level S-expression parsers
