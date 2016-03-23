@@ -130,18 +130,19 @@ and buildLambda pos =
     | args::[] -> ExpressionError { message = "Lambda body is empty"; position = pos }
     | args::body ->
         let bodyExpressions = buildFromExprList body
-        let build pos f = buildLambdaWith pos f bodyExpressions
+        let build f = buildLambdaWith pos f bodyExpressions
         match args with
-        | CTIdentifierExpression (pos, id) -> id |> Identifier |> SingleArgFormals |> build pos
-        | CTListExpression (pos, lst) ->
+        | CTIdentifierExpression (_, id) -> id |> Identifier |> SingleArgFormals |> build
+        | CTListExpression (formalsPos, lst) ->
             lst |> List.map (function
                              | CTIdentifierExpression (_, id) -> Identifier id
-                             | expr -> IdentifierError { message = sprintf "Invalid identifier used in lambda expression %A" expr;
-                                                         position = pos })
+                             | expr -> IdentifierError { message = "Invalid syntax in lambda expression";
+                                                         position = formalsPos })
                 |> MultiArgFormals
-                |> build pos
-        | CTLiteralExpression (pos, datum) -> ExpressionError { message = sprintf "Invalid identifier used in lambda expression: %A" datum;
-                                                                position = pos }
+                |> build
+        | CTLiteralExpression (litPos, _) ->
+            ExpressionError { message = "Invalid syntax in lambda expression";
+                              position = litPos }
     | [] -> ExpressionError { message = "Invalid lambda syntax: missing arguments and body";
                               position = pos }
 
