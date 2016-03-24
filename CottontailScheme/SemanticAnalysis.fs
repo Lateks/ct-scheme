@@ -21,6 +21,17 @@
 // "Values" in tail position need to be identified to insert return statements.
 // Do we need to label expressions or is it redundant?
 
+type SymbolGenerator () =
+    let counters = new System.Collections.Generic.Dictionary<string, int>()
+
+    // TODO: use a prefix?
+    member this.generateSymbol name =
+        if not (counters.ContainsKey name) then
+            counters.Add (name, 1)
+        let counter = counters.[name]
+        counters.[name] <- counter + 1
+        sprintf "%s$%d" name counter
+
 type Identifier = { name: string; unique_name: string; }
 type VariableReferenceDetails = { id: Identifier; fromExternalScope: bool }
 type LiteralValue =
