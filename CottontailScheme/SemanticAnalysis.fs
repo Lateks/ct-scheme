@@ -72,10 +72,6 @@ let rec analyse exprs =
                  | ASTBuilder.Definition binding -> placeholder "definitions"
                  | ASTBuilder.ProcedureCallExpression (expr, exprs) -> placeholder "procedure calls"
                  | ASTBuilder.ConditionalExpression (cond, thenBranch, elseBranch) -> placeholder "conditionals"
-                 | ASTBuilder.BooleanLiteral b -> placeholder "boolean literals"
-                 | ASTBuilder.NumberLiteral n -> placeholder "number literals"
-                 | ASTBuilder.StringLiteral s -> placeholder "string literals"
-                 | ASTBuilder.SymbolLiteral s -> placeholder "symbol literals"
-                 | ASTBuilder.ListLiteral elist -> placeholder "list literals"
+                 | ASTBuilder.LiteralExpression lit -> placeholder "literals"
                  | ASTBuilder.ExpressionError err -> failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
                 )

@@ -18,7 +18,7 @@ type ``Builds AST for simple valid programs`` () =
         ASTBuilderTest.build "(display \"Hello, world!\")"
         |> should equal (ASTBuildSuccess
                             [ProcedureCallExpression
-                                (IdentifierExpression (Identifier "display"), [StringLiteral "Hello, world!"])])
+                                (IdentifierExpression (Identifier "display"), [LiteralExpression (String "Hello, world!")])])
 
     [<Test>]
     member x.``builds AST for a longer valid program`` () =
@@ -37,18 +37,18 @@ type ``Builds AST for simple valid programs`` () =
                                                                                                                    [IdentifierExpression (Identifier "lst")])))],
                                                                     [ConditionalExpression (ProcedureCallExpression (IdentifierExpression (Identifier "zero?"),
                                                                                                                      [IdentifierExpression (Identifier "n")]),
-                                                                                            NumberLiteral 0.0,
+                                                                                            (LiteralExpression (Number 0.0)),
                                                                                             Some (ProcedureCallExpression (IdentifierExpression (Identifier "/"),
                                                                                                                            [IdentifierExpression (Identifier "n")
                                                                                                                             ProcedureCallExpression (IdentifierExpression (Identifier "length"),
                                                                                                                                                      [IdentifierExpression (Identifier "lst")])])))])))
                              ProcedureCallExpression (IdentifierExpression (Identifier "display"),
                                                       [ProcedureCallExpression (IdentifierExpression (Identifier "average"),
-                                                                                [NumberLiteral 1.0;
-                                                                                 NumberLiteral 2.0;
-                                                                                 NumberLiteral 3.0;
-                                                                                 NumberLiteral 4.0;
-                                                                                 NumberLiteral 5.0;])])])
+                                                                                [LiteralExpression (Number 1.0);
+                                                                                 LiteralExpression (Number 2.0);
+                                                                                 LiteralExpression (Number 3.0);
+                                                                                 LiteralExpression (Number 4.0);
+                                                                                 LiteralExpression (Number 5.0)])])])
 
 [<TestFixture>]
 type ``Classifies different constructs correctly`` () =
@@ -57,35 +57,35 @@ type ``Classifies different constructs correctly`` () =
 
     [<Test>]
     member x.``classifies a numeric literal expression correctly`` () =
-        testSingleExpression "42" (NumberLiteral 42.0)
-        testSingleExpression "3.14159" (NumberLiteral 3.14159)
+        testSingleExpression "42" (LiteralExpression (Number 42.0))
+        testSingleExpression "3.14159" (LiteralExpression (Number 3.14159))
 
     [<Test>]
     member x.``classifies a boolean literal expression correctly`` () =
-        testSingleExpression "#t" (BooleanLiteral true)
-        testSingleExpression "#f" (BooleanLiteral false)
+        testSingleExpression "#t" (LiteralExpression (Boolean true))
+        testSingleExpression "#f" (LiteralExpression (Boolean false))
 
     [<Test>]
     member x.``classifies a (quoted) symbol literal expression correctly`` () =
-        testSingleExpression "'+" (SymbolLiteral "+")
-        testSingleExpression "(quote +)" (SymbolLiteral "+")
+        testSingleExpression "'+" (LiteralExpression (Symbol "+"))
+        testSingleExpression "(quote +)" (LiteralExpression (Symbol "+"))
 
     [<Test>]
     member x.``classifies a (quoted) list literal expression correctly`` () =
-        let expectedExpression = ListLiteral [NumberLiteral 1.0; NumberLiteral 2.0; NumberLiteral 3.0]
+        let expectedExpression = LiteralExpression (List [Number 1.0; Number 2.0; Number 3.0])
         testSingleExpression "'(1 2 3)" expectedExpression
         testSingleExpression "(quote (1 2 3))" expectedExpression
 
     [<Test>]
     member x.``classifies a string literal expression correctly`` () =
-        testSingleExpression "\"Hello, world!\"" (StringLiteral "Hello, world!")
+        testSingleExpression "\"Hello, world!\"" (LiteralExpression (String "Hello, world!"))
 
     [<Test>]
     member x.``classifies a lambda expression correctly`` () =
         testSingleExpression "(lambda (name) (display \"Hello, \") (display name))"
         <| LambdaExpression (MultiArgFormals [Identifier "name"],
                                              [],
-                                             [ProcedureCallExpression (IdentifierExpression (Identifier "display"), [StringLiteral "Hello, "])
+                                             [ProcedureCallExpression (IdentifierExpression (Identifier "display"), [LiteralExpression (String "Hello, ")])
                                               ProcedureCallExpression (IdentifierExpression (Identifier "display"), [IdentifierExpression (Identifier "name")])])
 
     [<Test>]
@@ -93,24 +93,24 @@ type ``Classifies different constructs correctly`` () =
         testSingleExpression "(set! say-hello (lambda () (display \"Hello!\")))"
         <| AssignmentExpression (Binding (Identifier "say-hello",
                                           LambdaExpression (MultiArgFormals [], [],
-                                                            [ProcedureCallExpression (IdentifierExpression (Identifier "display"), [StringLiteral "Hello!"])])))
+                                                            [ProcedureCallExpression (IdentifierExpression (Identifier "display"), [LiteralExpression (String "Hello!")])])))
 
     [<Test>]
     member x.``classifies a procedure call expression correctly`` () =
         testSingleExpression "(+ 5 2)"
-        <| ProcedureCallExpression (IdentifierExpression (Identifier "+"), [NumberLiteral 5.0; NumberLiteral 2.0])
+        <| ProcedureCallExpression (IdentifierExpression (Identifier "+"), [LiteralExpression (Number 5.0); LiteralExpression (Number 2.0)])
 
     [<Test>]
     member x.``classifies a conditional expression correctly`` () =
         testSingleExpression "(if (pred?) 1 0)"
         <| ConditionalExpression (ProcedureCallExpression (IdentifierExpression (Identifier "pred?"), []),
-                                  NumberLiteral 1.0,
-                                  Some (NumberLiteral 0.0))
+                                  LiteralExpression (Number 1.0),
+                                  Some (LiteralExpression (Number 0.0)))
 
     [<Test>]
     member x.``classifies a definition correctly`` () =
         testSingleExpression "(define pi 3.14159)"
-        <| Definition (Binding (Identifier "pi", NumberLiteral 3.14159))
+        <| Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
 
 [<TestFixture>]
 type ``Produces appropriate error messages when given a program with faulty semantics`` () =
@@ -168,7 +168,7 @@ type ``Produces appropriate error messages when given a program with faulty sema
 
     [<Test>]
     member x.``produces an error when attempting to use a literal in place of an identifier`` () =
-        testErrors "(define 42 0)" [{ message = "Not an identifier: NumberLiteral 42.0"; position = { line = 1L; column = 2L }}]
-        testErrors "(set! #true 0)" [{ message = "Not an identifier: BooleanLiteral true"; position = { line = 1L; column = 2L }}]
+        testErrors "(define 42 0)" [{ message = "Not an identifier: LiteralExpression (Number 42.0)"; position = { line = 1L; column = 2L }}]
+        testErrors "(set! #true 0)" [{ message = "Not an identifier: LiteralExpression (Boolean true)"; position = { line = 1L; column = 2L }}]
         testErrors "(lambda \"foo\" (display \"foo\"))" [{ message = "Invalid syntax in lambda expression"; position = { line = 1L; column = 9L }}]
         testErrors "(lambda (42) (display \"foo\"))" [{ message = "Invalid syntax in lambda expression"; position = { line = 1L; column = 9L }}]

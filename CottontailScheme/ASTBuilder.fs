@@ -10,13 +10,16 @@ type Identifier = Identifier of string
 type LambdaFormals = MultiArgFormals of Identifier list
                    | SingleArgFormals of Identifier
 
+type LiteralValue =
+    | Boolean of bool
+    | Number of float
+    | String of string
+    | Symbol of string
+    | List of LiteralValue list
+
 type Expression =
     | IdentifierExpression of Identifier
-    | BooleanLiteral of bool
-    | NumberLiteral of float
-    | StringLiteral of string
-    | SymbolLiteral of string
-    | ListLiteral of Expression list
+    | LiteralExpression of LiteralValue
     | LambdaExpression of LambdaFormals * Expression list * Expression list
     | AssignmentExpression of Binding
     | ProcedureCallExpression of Expression * Expression list
@@ -36,11 +39,13 @@ let isSpecialFunction name = List.contains name specialFunctions
 let buildFromIdentifier = Identifier >> IdentifierExpression
 
 let rec buildFromDatum = function
-                         | CTBool b -> BooleanLiteral b
-                         | CTNumber f -> NumberLiteral f
-                         | CTString s -> StringLiteral s
-                         | CTSymbol s -> SymbolLiteral s
-                         | CTList l -> l |> List.map buildFromDatum |> ListLiteral
+                         | CTBool b -> Boolean b
+                         | CTNumber f -> Number f
+                         | CTString s -> String s
+                         | CTSymbol s -> Symbol s
+                         | CTList l -> l |> List.map buildFromDatum |> List
+
+let buildLiteral = buildFromDatum >> LiteralExpression
 
 let isDefinition =
     function
@@ -124,7 +129,7 @@ let rec buildFromList pos =
                | CTListExpression (pos, l) -> buildFromList pos l |> buildProcCall
 and buildFromExpression = function
                           | CTIdentifierExpression (_, id) -> buildFromIdentifier id
-                          | CTLiteralExpression (_, datum) -> buildFromDatum datum
+                          | CTLiteralExpression (_, datum) -> buildLiteral datum
                           | CTListExpression (pos, exprs) -> buildFromList pos exprs
 and buildFromExprList = List.map buildFromExpression
 and buildLambda pos =
@@ -163,7 +168,7 @@ let rec listErrors exprs =
     |> List.map (function
                  | ExpressionError msg -> [msg]
                  | IdentifierExpression id -> getIdError id
-                 | ListLiteral elist -> listErrors elist
+                 | LiteralExpression elist -> []
                  | LambdaExpression (formals, defs, exprs) ->
                     let idErrors = getErrorsFromFormals formals
                     let defErrors = listErrors defs
@@ -180,7 +185,6 @@ let rec listErrors exprs =
                     | None ->
                         cond::[thenBranch]
                     |> listErrors
-                 | _ -> []
                 )
     |> List.concat
 
