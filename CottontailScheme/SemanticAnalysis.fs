@@ -36,6 +36,8 @@ type SymbolGenerator () =
         counters.[name] <- counter + 1
         sprintf "%s$%d" name counter
 
+exception AnalysisException of string
+
 type Identifier = { name: string; uniqueName: string; }
 
 type Expression =
@@ -58,12 +60,11 @@ and LoopDefinition = { test: Expression
                        returnVar: Identifier
                        loopBody: Expression list }
 
-type Scope = { definitions: Identifier list; parent: Scope option }
+type Program =
+    | ValidProgram of Expression list
+    | ProgramAnalysisError of string
 
-type IdentifierMatch =
-    | InCurrentScope of Identifier
-    | InSurroundingScope of Identifier
-    | NotFound
+type Scope = { definitions: Identifier list; parent: Scope option }
 
 let addDefinition scope identifier = { definitions = identifier::scope.definitions; parent = scope.parent}
 
@@ -91,12 +92,12 @@ let handleIdentifierExpression scope =
     function
     | Identifier name ->
         match findDefinitionRec scope name with
-        | None -> failwithf "Reference to undefined identifier %s" name
+        | None -> sprintf "Reference to undefined identifier %s" name |> AnalysisException |> raise
         | Some id -> VariableReference id, scope
     | IdentifierError err -> failWithErrorNode err
 
 // TODO: could definitions be handled separately?
-// TODO: source code positions for errors
+// TODO: source code positions for exceptions
 let rec handleExpression scope =
     function
     | IdentifierExpression id -> handleIdentifierExpression scope id
@@ -113,7 +114,7 @@ and handleDefinition scope binding =
         let name = getIdentifierName id
         match findDefinition scope name with
         | Some definition ->
-            failwithf "Duplicate definition for identifier %s" name
+            sprintf "Duplicate definition for identifier %s" name |> AnalysisException |> raise
         | None ->
             let identifier = { name = name; uniqueName = symbolGen.generateSymbol name; }
             let value, _ = handleExpression scope expr // The value expression cannot change the contents of the scope
@@ -143,8 +144,10 @@ let builtIns =
      makeBuiltInId "*"
      makeBuiltInId "/"]
 
-// TODO: exception handling
 let analyse exprs =
-    let builtInScope = { definitions = builtIns; parent = None }
-    let programRootScope = { definitions = []; parent = Some builtInScope }
-    handleExpressionList programRootScope exprs
+    try
+        let builtInScope = { definitions = builtIns; parent = None }
+        let programRootScope = { definitions = []; parent = Some builtInScope }
+        handleExpressionList programRootScope exprs |> ValidProgram
+    with
+        | AnalysisException msg -> ProgramAnalysisError msg
