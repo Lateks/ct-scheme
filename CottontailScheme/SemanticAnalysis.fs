@@ -35,6 +35,7 @@ type SymbolGenerator () =
         sprintf "%s$%d" name counter
 
 type Identifier = { name: string; uniqueName: string; }
+
 type VariableReferenceDetails = { id: Identifier; fromExternalScope: bool }
 
 type Expression =
@@ -57,6 +58,19 @@ and LoopDefinition = { test: Expression
                        returnVar: Identifier
                        loopBody: Expression list }
 
+type Scope = { definitions: Identifier list; parent: Scope option }
+
+let addDefinition scope identifier = { definitions = identifier::scope.definitions; parent = scope.parent}
+
+let rec findDefinition scope name =
+    scope.definitions |> List.tryFind (fun id -> id.name = name)
+and findDefinitionRec scope name =
+    let definition = findDefinition scope name
+    match definition, scope.parent with
+    | Some _, _ -> definition
+    | None, None -> None
+    | None, Some parent -> findDefinitionRec parent name
+
 let symbolGen = SymbolGenerator ()
 
 let placeholder name = failwithf "Not implemented yet: %s" name
@@ -68,26 +82,55 @@ let getIdentifierName =
     | Identifier id -> id
     | IdentifierError err -> failWithErrorNode err
 
-// TODO: scopes
-// TODO: prevent duplicate definitions
-let rec handleExpression =
+// TODO: could definitions be handled separately?
+// TODO: can formals parameters be shadowed?
+// TODO: source code positions for errors
+let rec handleExpression scope =
     function
     | IdentifierExpression id -> placeholder "identifier expressions"
     | LambdaExpression (formals, defs, exprs) -> placeholder "lambda expressions"
     | AssignmentExpression binding -> placeholder "assignments"
     | ProcedureCallExpression (expr, exprs) -> placeholder "procedure calls"
     | ConditionalExpression (cond, thenBranch, elseBranch) -> placeholder "conditionals"
-    | LiteralExpression lit -> ValueExpression lit
-    | Definition binding -> handleDefinition binding
+    | LiteralExpression lit -> ValueExpression lit, scope
+    | Definition binding -> handleDefinition scope binding
     | ExpressionError err -> failWithErrorNode err
-and handleDefinition binding =
+and handleDefinition scope binding =
     match binding with
     | Binding (id, expr) ->
         let name = getIdentifierName id
-        let identifier = { name = name; uniqueName = symbolGen.generateSymbol name; }
-        let value = handleExpression expr
-        IdentifierDefinition (identifier, value)
+        match findDefinition scope name with
+        | Some definition ->
+            failwithf "Duplicate definition for identifier %s" name
+        | None ->
+            let identifier = { name = name; uniqueName = symbolGen.generateSymbol name; }
+            let value, _ = handleExpression scope expr // This expression cannot change the contents of the scope
+            let newScope = addDefinition scope identifier
+            IdentifierDefinition (identifier, value), newScope
     | BindingError err -> failWithErrorNode err
 
-let analyse =
-    List.map handleExpression
+let rec handleExpressionList scope =
+    function
+    | [] -> []
+    | x::xs ->
+        let expr, newScope = handleExpression scope x
+        expr :: (handleExpressionList newScope xs)
+
+let makeBuiltInId name = { name = name; uniqueName = name }
+
+let builtIns =
+    [makeBuiltInId "display"
+     makeBuiltInId "list"
+     makeBuiltInId "car"
+     makeBuiltInId "cdr"
+     makeBuiltInId "cons"
+     makeBuiltInId "+"
+     makeBuiltInId "-"
+     makeBuiltInId "*"
+     makeBuiltInId "/"]
+
+// TODO: exception handling
+let analyse exprs =
+    let builtInScope = { definitions = builtIns; parent = None }
+    let programRootScope = { definitions = []; parent = Some builtInScope }
+    handleExpressionList programRootScope exprs

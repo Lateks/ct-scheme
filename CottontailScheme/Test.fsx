@@ -35,5 +35,6 @@ gensym.generateSymbol "myFunction"
 gensym.generateSymbol "myFunction"
 gensym.generateSymbol "display"
 
-handleExpression (LiteralExpression (Number 42.0))
 analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))]
+analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
+         Definition (Binding (Identifier "pi", LiteralExpression (Number 3.0)))]
