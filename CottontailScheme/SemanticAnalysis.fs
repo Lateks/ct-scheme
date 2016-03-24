@@ -109,12 +109,14 @@ and handleDefinition scope binding =
             IdentifierDefinition (identifier, value), newScope
     | BindingError err -> failWithErrorNode err
 
-let rec handleExpressionList scope =
-    function
-    | [] -> []
-    | x::xs ->
-        let expr, newScope = handleExpression scope x
-        expr :: (handleExpressionList newScope xs)
+let rec handleExpressionList scope exprs =
+    let rec f scope res =
+        function
+        | [] -> res
+        | x::xs ->
+            let expr, newScope = handleExpression scope x
+            f newScope (expr::res) xs
+    List.rev <| f scope [] exprs
 
 let makeBuiltInId name = { name = name; uniqueName = name }
 
