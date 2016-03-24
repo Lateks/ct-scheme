@@ -34,7 +34,7 @@ type SymbolGenerator () =
         counters.[name] <- counter + 1
         sprintf "%s$%d" name counter
 
-type Identifier = { name: string; unique_name: string; }
+type Identifier = { name: string; uniqueName: string; }
 type VariableReferenceDetails = { id: Identifier; fromExternalScope: bool }
 
 type Expression =
@@ -57,9 +57,20 @@ and LoopDefinition = { test: Expression
                        returnVar: Identifier
                        loopBody: Expression list }
 
+let symbolGen = SymbolGenerator ()
+
 let placeholder name = failwithf "Not implemented yet: %s" name
 
-let handleExpression =
+let failWithErrorNode err = failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
+
+let getIdentifierName =
+    function
+    | Identifier id -> id
+    | IdentifierError err -> failWithErrorNode err
+
+// TODO: scopes
+// TODO: prevent duplicate definitions
+let rec handleExpression =
     function
     | IdentifierExpression id -> placeholder "identifier expressions"
     | LambdaExpression (formals, defs, exprs) -> placeholder "lambda expressions"
@@ -67,7 +78,16 @@ let handleExpression =
     | ProcedureCallExpression (expr, exprs) -> placeholder "procedure calls"
     | ConditionalExpression (cond, thenBranch, elseBranch) -> placeholder "conditionals"
     | LiteralExpression lit -> ValueExpression lit
-    | Definition binding -> placeholder "definitions"
-    | ExpressionError err -> failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
+    | Definition binding -> handleDefinition binding
+    | ExpressionError err -> failWithErrorNode err
+and handleDefinition binding =
+    match binding with
+    | Binding (id, expr) ->
+        let name = getIdentifierName id
+        let identifier = { name = name; uniqueName = symbolGen.generateSymbol name; }
+        let value = handleExpression expr
+        IdentifierDefinition (identifier, value)
+    | BindingError err -> failWithErrorNode err
 
-let analyse = List.map handleExpression
+let analyse =
+    List.map handleExpression

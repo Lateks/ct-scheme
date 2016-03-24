@@ -14,7 +14,7 @@ let test p str =
     | Success(result, _, _)   -> printfn "Success: %A" result
     | Failure(errorMsg, _, _) -> printfn "Failure: %s" errorMsg
 
-let analyse str = match run parseProgram str with
+let makeAST str = match run parseProgram str with
                   | Success(result, _, _) -> printfn "Success: %A" (buildAST result)
                   | Failure(errorMsg, _, _) -> printfn "Failure: %s" errorMsg
 
@@ -25,8 +25,8 @@ test parseProgram "(quote (1 2 3))"
 test parseProgram "42(define pi 3.14159)(display pi)42"
 test parseProgram "#t#f42"
 test parseProgram "'42'52"
-analyse "(1)"
-analyse "(lambda () (define foo 42))"
+makeAST "(1)"
+makeAST "(lambda () (define foo 42))"
 
 let gensym = SymbolGenerator()
 gensym.generateSymbol "display"
@@ -34,3 +34,6 @@ gensym.generateSymbol "display"
 gensym.generateSymbol "myFunction"
 gensym.generateSymbol "myFunction"
 gensym.generateSymbol "display"
+
+handleExpression (LiteralExpression (Number 42.0))
+analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))]
