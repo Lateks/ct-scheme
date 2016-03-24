@@ -21,6 +21,8 @@
 // "Values" in tail position need to be identified to insert return statements.
 // Do we need to label expressions or is it redundant?
 
+open CottontailScheme.ASTBuilder
+
 type SymbolGenerator () =
     let counters = new System.Collections.Generic.Dictionary<string, int>()
 
@@ -34,26 +36,20 @@ type SymbolGenerator () =
 
 type Identifier = { name: string; unique_name: string; }
 type VariableReferenceDetails = { id: Identifier; fromExternalScope: bool }
-type LiteralValue =
-    | Boolean of bool
-    | Number of float
-    | String of string
-    | Symbol of string
-    | List of LiteralValue list
 
 type Expression =
      | VariableReference of VariableReferenceDetails
      | Closure of ClosureDefinition
      | ProcedureCall of Expression * Expression list
-     | LiteralExpression of LiteralValue
+     | ValueExpression of LiteralValue
      | Assignment of VariableReferenceDetails * Expression
      | Conditional of Expression * Expression * Expression option
      | Loop of LoopDefinition
-and NewIdentifier = NewIdentifier of Identifier * Expression
-and ClosureFormals = SingleArgFormals of NewIdentifier
-                   | MultiArgFormals of NewIdentifier list
+     | IdentifierDefinition of Identifier * Expression
+and ClosureFormals = SingleArgFormals of Identifier
+                   | MultiArgFormals of Identifier list
 and ClosureDefinition = { formals: ClosureFormals;
-                          definitions: NewIdentifier list;
+                          definitions: Expression list;
                           body: Expression list;
                           environment: Identifier list }
 and LoopDefinition = { test: Expression
@@ -63,15 +59,15 @@ and LoopDefinition = { test: Expression
 
 let placeholder name = failwithf "Not implemented yet: %s" name
 
-let rec analyse exprs =
-    exprs
-    |> List.map (function
-                 | ASTBuilder.IdentifierExpression id -> placeholder "identifier expressions"
-                 | ASTBuilder.LambdaExpression (formals, defs, exprs) -> placeholder "lambda expressions"
-                 | ASTBuilder.AssignmentExpression binding -> placeholder "assignments"
-                 | ASTBuilder.Definition binding -> placeholder "definitions"
-                 | ASTBuilder.ProcedureCallExpression (expr, exprs) -> placeholder "procedure calls"
-                 | ASTBuilder.ConditionalExpression (cond, thenBranch, elseBranch) -> placeholder "conditionals"
-                 | ASTBuilder.LiteralExpression lit -> placeholder "literals"
-                 | ASTBuilder.ExpressionError err -> failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
-                )
+let handleExpression =
+    function
+    | IdentifierExpression id -> placeholder "identifier expressions"
+    | LambdaExpression (formals, defs, exprs) -> placeholder "lambda expressions"
+    | AssignmentExpression binding -> placeholder "assignments"
+    | ProcedureCallExpression (expr, exprs) -> placeholder "procedure calls"
+    | ConditionalExpression (cond, thenBranch, elseBranch) -> placeholder "conditionals"
+    | LiteralExpression lit -> ValueExpression lit
+    | Definition binding -> placeholder "definitions"
+    | ExpressionError err -> failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
+
+let analyse = List.map handleExpression
