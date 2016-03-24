@@ -20,6 +20,8 @@
 //
 // "Values" in tail position need to be identified to insert return statements.
 // Do we need to label expressions or is it redundant?
+//
+// Lambda expression formals can be shadowed by local definitions.
 
 open CottontailScheme.ASTBuilder
 
@@ -36,14 +38,12 @@ type SymbolGenerator () =
 
 type Identifier = { name: string; uniqueName: string; }
 
-type VariableReferenceDetails = { id: Identifier; fromExternalScope: bool }
-
 type Expression =
-     | VariableReference of VariableReferenceDetails
+     | VariableReference of Identifier
      | Closure of ClosureDefinition
      | ProcedureCall of Expression * Expression list
      | ValueExpression of LiteralValue
-     | Assignment of VariableReferenceDetails * Expression
+     | Assignment of Identifier * Expression
      | Conditional of Expression * Expression * Expression option
      | Loop of LoopDefinition
      | IdentifierDefinition of Identifier * Expression
@@ -59,6 +59,11 @@ and LoopDefinition = { test: Expression
                        loopBody: Expression list }
 
 type Scope = { definitions: Identifier list; parent: Scope option }
+
+type IdentifierMatch =
+    | InCurrentScope of Identifier
+    | InSurroundingScope of Identifier
+    | NotFound
 
 let addDefinition scope identifier = { definitions = identifier::scope.definitions; parent = scope.parent}
 
@@ -82,12 +87,19 @@ let getIdentifierName =
     | Identifier id -> id
     | IdentifierError err -> failWithErrorNode err
 
+let handleIdentifierExpression scope =
+    function
+    | Identifier name ->
+        match findDefinitionRec scope name with
+        | None -> failwithf "Reference to undefined identifier %s" name
+        | Some id -> VariableReference id, scope
+    | IdentifierError err -> failWithErrorNode err
+
 // TODO: could definitions be handled separately?
-// TODO: can formals parameters be shadowed?
 // TODO: source code positions for errors
 let rec handleExpression scope =
     function
-    | IdentifierExpression id -> placeholder "identifier expressions"
+    | IdentifierExpression id -> handleIdentifierExpression scope id
     | LambdaExpression (formals, defs, exprs) -> placeholder "lambda expressions"
     | AssignmentExpression binding -> placeholder "assignments"
     | ProcedureCallExpression (expr, exprs) -> placeholder "procedure calls"
@@ -104,7 +116,7 @@ and handleDefinition scope binding =
             failwithf "Duplicate definition for identifier %s" name
         | None ->
             let identifier = { name = name; uniqueName = symbolGen.generateSymbol name; }
-            let value, _ = handleExpression scope expr // This expression cannot change the contents of the scope
+            let value, _ = handleExpression scope expr // The value expression cannot change the contents of the scope
             let newScope = addDefinition scope identifier
             IdentifierDefinition (identifier, value), newScope
     | BindingError err -> failWithErrorNode err
