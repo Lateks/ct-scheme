@@ -145,6 +145,10 @@ type ``Produces appropriate error messages when given a program with faulty sema
         testErrors "(lambda ())" [{ message = "Lambda body is empty"; position = { line = 1L; column = 2L }}]
 
     [<Test>]
+    member x.``produces an error when lambda is missing an expression body`` () =
+        testErrors "(lambda () (define answer 42))" [{ message = "Lambda body contains no expressions"; position = { line = 1L; column = 2L }}]
+
+    [<Test>]
     member x.``produces an error when a definition is used in an unexpected context`` () =
         let exprContextError = { message = "Procedure define used in a context where an expression was expected";
                                  position = { line = 1L; column = 2L } }

@@ -33,7 +33,6 @@ let specialFunctions = ["define"; "if"; "lambda"; "set!"] //; "cons"; "car"; "cd
 
 let isSpecialFunction name = List.contains name specialFunctions
 
-// TODO: alpha conversion
 let buildFromIdentifier = Identifier >> IdentifierExpression
 
 let rec buildFromDatum = function
@@ -93,6 +92,9 @@ let buildLambdaWith pos formals body =
     let expressions = body |> List.skip definitions.Length
     if (expressions |> List.filter isDefinition |> fun lst -> not lst.IsEmpty) then
         ExpressionError { message = "Definitions must be in the beginning of the lambda body";
+                          position = pos }
+    elif (expressions.IsEmpty) then
+        ExpressionError { message = "Lambda body contains no expressions";
                           position = pos }
     else
         LambdaExpression (formals, definitions, expressions)
