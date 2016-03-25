@@ -40,3 +40,9 @@ analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159
          IdentifierExpression (Identifier "+")]
 analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
          Definition (Binding (Identifier "pi", LiteralExpression (Number 3.0)))]
+analyse [ConditionalExpression (LiteralExpression (Boolean true), LiteralExpression (String "true"), Some (LiteralExpression (String "false")))]
+analyse [ConditionalExpression (LiteralExpression (Boolean true), LiteralExpression (String "true"), None)]
+analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
+         ConditionalExpression (ProcedureCallExpression (IdentifierExpression (Identifier "<"), [IdentifierExpression (Identifier "pi"); LiteralExpression (Number 3.0)]),
+                                ProcedureCallExpression (IdentifierExpression (Identifier "display"), [LiteralExpression (String "smaller than")]),
+                                Some (ProcedureCallExpression (IdentifierExpression (Identifier "display"), [LiteralExpression (String "greater than")])))]

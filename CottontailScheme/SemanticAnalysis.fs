@@ -104,7 +104,7 @@ let rec handleExpression scope =
     | LambdaExpression (formals, defs, exprs) -> placeholder "lambda expressions"
     | AssignmentExpression binding -> placeholder "assignments"
     | ProcedureCallExpression (expr, exprs) -> placeholder "procedure calls"
-    | ConditionalExpression (cond, thenBranch, elseBranch) -> placeholder "conditionals"
+    | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
     | LiteralExpression lit -> ValueExpression lit, scope
     | Definition binding -> handleDefinition scope binding
     | ExpressionError err -> failWithErrorNode err
@@ -117,10 +117,16 @@ and handleDefinition scope binding =
             sprintf "Duplicate definition for identifier %s" name |> AnalysisException |> raise
         | None ->
             let identifier = { name = name; uniqueName = symbolGen.generateSymbol name; }
-            let value, _ = handleExpression scope expr // The value expression cannot change the contents of the scope
+            let value, _ = handleExpression scope expr // The value expression cannot change the contents of the current scope
             let newScope = addDefinition scope identifier
             IdentifierDefinition (identifier, value), newScope
     | BindingError err -> failWithErrorNode err
+and handleConditional scope cond thenBranch elseBranch =
+    let condExpr, _ = handleExpression scope cond
+    let thenExpr, _ = handleExpression scope thenBranch
+    let elseExpr = elseBranch |> Option.map (fun x -> let expr, _ = handleExpression scope x
+                                                      expr)
+    Conditional (condExpr, thenExpr, elseExpr), scope
 
 let rec handleExpressionList scope exprs =
     let rec f scope res =
