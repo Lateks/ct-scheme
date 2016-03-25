@@ -49,6 +49,7 @@ type Expression =
      | Conditional of Expression * Expression * Expression option
      | Loop of LoopDefinition
      | IdentifierDefinition of Identifier * Expression
+     | LambdaPlaceholder of ASTBuilder.LambdaFormals * ASTBuilder.Expression list * ASTBuilder.Expression list
 and ClosureFormals = SingleArgFormals of Identifier
                    | MultiArgFormals of Identifier list
 and ClosureDefinition = { formals: ClosureFormals;
@@ -101,10 +102,22 @@ let handleIdentifierExpression scope id =
 
 // TODO: could definitions be handled separately?
 // TODO: source code positions for exceptions
+// TODO for lambda expressions:
+// - how can mutual recursion be made possible?
+//   -> should lambdas be represented by placeholders that are evaluated in a second pass?
+//      -> this would require a new pass for each scope that introduces new lambdas
+//   -> or, in each new scope, have a separate pass before other analysis that just builds the scope?
+// - a lambda can reference other identifiers that are defined after the lambda definition in the source code
+//   -> it is possible to accidentally reference an undefined variable at runtime
+// - allow shadowing of formal parameter names inside the lambda body
+//   (lambda body has its own scope)
+// - compute list of captured variables (not defined inside lambda body or its formal parameter list)
+// - recognize tail recursive cases and represent them as loops
+//   (the closure can be removed completely in this case)
 let rec handleExpression scope =
     function
     | IdentifierExpression id -> handleIdentifierExpression scope id
-    | LambdaExpression (formals, defs, exprs) -> placeholder "lambda expressions"
+    | LambdaExpression (fs, ds, es) as l -> LambdaPlaceholder (fs, ds, es), scope
     | AssignmentExpression binding -> handleAssignment scope binding
     | ProcedureCallExpression (expr, exprs) -> handleProcedureCall scope expr exprs
     | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch

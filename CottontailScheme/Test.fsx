@@ -49,3 +49,9 @@ analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159
 analyse [AssignmentExpression (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))]
 analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number -1.0)))
          AssignmentExpression (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))]
+analyse [Definition (Binding (Identifier "say-hello", LambdaExpression (CottontailScheme.ASTBuilder.MultiArgFormals [(Identifier "name")],
+                                                                        [],
+                                                                        [ProcedureCallExpression (IdentifierExpression (Identifier "display"), [LiteralExpression (String "Hello, ")])
+                                                                         ProcedureCallExpression (IdentifierExpression (Identifier "display"), [IdentifierExpression (Identifier "name")])
+                                                                         ProcedureCallExpression (IdentifierExpression (Identifier "display"), [LiteralExpression (String "!\n")])])))
+         ProcedureCallExpression (IdentifierExpression (Identifier "say-hello"), [LiteralExpression (String "Laura")])]
