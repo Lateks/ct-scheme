@@ -145,10 +145,15 @@ let builtIns =
      makeBuiltInId "car"
      makeBuiltInId "cdr"
      makeBuiltInId "cons"
+     makeBuiltInId "null?"
      makeBuiltInId "+"
      makeBuiltInId "-"
      makeBuiltInId "*"
-     makeBuiltInId "/"]
+     makeBuiltInId "/"
+     makeBuiltInId "<"
+     makeBuiltInId ">"
+     makeBuiltInId "eq?"
+     makeBuiltInId "zero?"]
 
 let analyse exprs =
     try
