@@ -64,4 +64,12 @@ analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159
          Definition (Binding (Identifier "circle-circumference", LambdaExpression (CottontailScheme.ASTBuilder.MultiArgFormals [Identifier "r"],
                                                                                     [],
                                                                                     [ProcedureCallExpression (IdentifierExpression (Identifier "*"),
-                                                                                                              [IdentifierExpression (Identifier "pi"); IdentifierExpression (Identifier "r")])])))]
+                                                                                                              [IdentifierExpression (Identifier "pi")
+                                                                                                               IdentifierExpression (Identifier "r")])])))
+         Definition (Binding (Identifier "test-fun", LambdaExpression (CottontailScheme.ASTBuilder.MultiArgFormals [Identifier "x"],
+                                                                       [],
+                                                                       [LambdaExpression (CottontailScheme.ASTBuilder.MultiArgFormals [Identifier "y"],
+                                                                                          [],
+                                                                                          [ProcedureCallExpression (IdentifierExpression (Identifier "+"),
+                                                                                                                    [IdentifierExpression (Identifier "y")
+                                                                                                                     IdentifierExpression (Identifier "x")])])])))]

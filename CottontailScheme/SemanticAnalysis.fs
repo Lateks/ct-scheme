@@ -83,6 +83,14 @@ let failWithErrorNode err = failwithf "Error, faulty AST given as input to analy
 
 let addDefinition scope identifier = { definitions = identifier::scope.definitions; parent = scope.parent}
 
+let findProgramScope scope =
+    let rec find prev scope =
+        match scope.parent with
+        | Some parentScope -> find scope parentScope 
+        | None -> prev
+
+    find scope scope
+
 let rec findDefinition scope name =
     scope.definitions |> List.tryFind (fun id -> id.name = name)
 and findDefinitionRec scope name =
@@ -151,11 +159,21 @@ let convertFormals =
     | ASTBuilder.SingleArgFormals id -> newIdentifierForId id |> SingleArgFormals
     | ASTBuilder.MultiArgFormals ids -> ids |> List.map newIdentifierForId |> MultiArgFormals
 
-let collectFreeVariables lambdaScope bodyScope body =
+let collectFreeVariables bodyScope body =
+    assert bodyScope.parent.IsSome
+
+    let lambdaScope = bodyScope.parent.Value
+    let programScope = findProgramScope lambdaScope
+
     let collect id =
         let findDefinitionInScope scope = findDefinition scope id.name
         match findDefinitionInScope bodyScope, findDefinitionInScope lambdaScope with
-        | None, None -> [id]
+        | None, None ->
+            match findDefinitionRec lambdaScope id.name, findDefinitionRec programScope id.name with
+            | Some id1, Some id2 -> if id1 <> id2 then [id] else []
+            | Some id', None       -> [id]
+            | None, _ -> assert false
+                         []
         | _, _ -> []
 
     let rec collectFreeVariables expr =
@@ -197,11 +215,13 @@ let handleIdentifierExpression scope id =
 // TODO for lambda expressions:
 // - a lambda can reference other identifiers that are defined after the lambda definition in the source code
 //   -> it is possible to accidentally reference an undefined variable at runtime
-// - allow shadowing of formal parameter names inside the lambda body
-//   (lambda body has its own scope)
 // - compute list of captured variables (not defined inside lambda body or its formal parameter list)
 // - recognize tail recursive cases and represent them as loops
 //   (the closure can be removed completely in this case)
+// TODO: organize definitions in the following way:
+// - lambda definitions first
+// - other definitions in order of appearance after lambdas
+//   -> verify that there are no circular references!
 let rec handleExpression scope =
     function
     | IdentifierExpression id -> handleIdentifierExpression scope id
@@ -238,10 +258,10 @@ and handleAssignment scope binding =
 and handleLambdaExpression scope formals defs exprs =
     let body = List.append defs exprs
     let newFormals = convertFormals formals
-    let lambdaScope = buildLambdaScope scope newFormals
-    let bodyScope = buildScope lambdaScope body
+    let bodyScope = buildLambdaScope scope newFormals
+                    |> fun s -> buildScope s body
     let bodyExprs = body |> List.map (handleExpression bodyScope)
-    let freeVars = collectFreeVariables lambdaScope bodyScope bodyExprs
+    let freeVars = collectFreeVariables bodyScope bodyExprs
     { formals = newFormals; body = bodyExprs; environment = freeVars }
     |> Closure
 
@@ -266,8 +286,7 @@ let builtIns =
 let analyse exprs =
     try
         let builtInScope = { definitions = builtIns; parent = None }
-        let programRootScope = { definitions = []; parent = Some builtInScope }
-        let topLevelScope = buildScope programRootScope exprs
+        let topLevelScope = buildScope builtInScope exprs
         exprs
         |> List.map (handleExpression topLevelScope)
         |> ValidProgram
