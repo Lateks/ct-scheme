@@ -158,14 +158,30 @@ and handleAssignment scope binding =
         Assignment (variableRef, valueExpr), scope
     | BindingError err -> failWithErrorNode err
 
+let rec lambdaExpandExpression scope expr =
+    let recurInSameScope = lambdaExpandExpression scope
+    match expr with
+    | LambdaPlaceholder (fs, ds, es) -> placeholder "lambda expression expansion"
+    | ProcedureCall (proc, args)
+        -> ProcedureCall (recurInSameScope proc, List.map recurInSameScope args)
+    | IdentifierDefinition (id, expr)
+    | Assignment (id, expr)
+        -> Assignment (id, recurInSameScope expr)
+    | Conditional (cond, thenExpr, elseExpr)
+        -> Conditional (recurInSameScope cond, recurInSameScope thenExpr, Option.map recurInSameScope elseExpr)
+    | Closure closureDef -> placeholder "lambda expression expansion in closure body? (new scope)"
+    | Loop loopDef -> placeholder "lambda expression expansion in loop body?"
+    | _ as e -> e
+
 let rec handleExpressionList scope exprs =
     let rec f scope res =
         function
-        | [] -> res
+        | [] -> res, scope
         | x::xs ->
             let expr, newScope = handleExpression scope x
             f newScope (expr::res) xs
-    List.rev <| f scope [] exprs
+    let exprs, newScope = f scope [] exprs
+    List.rev exprs, newScope
 
 let makeBuiltInId name = { name = name; uniqueName = name }
 
@@ -189,6 +205,8 @@ let analyse exprs =
     try
         let builtInScope = { definitions = builtIns; parent = None }
         let programRootScope = { definitions = []; parent = Some builtInScope }
-        handleExpressionList programRootScope exprs |> ValidProgram
+        let exprs, newScope = handleExpressionList programRootScope exprs
+        List.map (lambdaExpandExpression newScope) exprs
+        |> ValidProgram
     with
         | AnalysisException msg -> ProgramAnalysisError msg
