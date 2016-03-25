@@ -52,7 +52,6 @@ type Expression =
 and ClosureFormals = SingleArgFormals of Identifier
                    | MultiArgFormals of Identifier list
 and ClosureDefinition = { formals: ClosureFormals;
-                          definitions: Expression list;
                           body: Expression list;
                           environment: Identifier list }
 and LoopDefinition = { test: Expression
@@ -94,68 +93,11 @@ let findDefinitionForId scope id =
 let findDefinitionForIdRec scope id =
     getIdentifierName id |> findDefinitionRec scope
 
-let bindingForName scope name =
-    match findDefinitionRec scope name with
-    | None -> sprintf "Reference to undefined identifier %s" name |> AnalysisException |> raise
-    | Some id -> id
+let newIdentifierFor name =
+    { name = name; uniqueName = symbolGen.generateSymbol name }
 
-let bindingForVariableReference scope id =
-    getIdentifierName id |> bindingForName scope
-
-let handleIdentifierExpression scope id =
-    VariableReference (bindingForVariableReference scope id)
-
-// TODO: could definitions be handled separately?
-// TODO: source code positions for exceptions
-// TODO for lambda expressions:
-// - how can mutual recursion be made possible?
-//   -> should lambdas be represented by placeholders that are evaluated in a second pass?
-//      -> this would require a new pass for each scope that introduces new lambdas
-//   -> or, in each new scope, have a separate pass before other analysis that just builds the scope?
-// - a lambda can reference other identifiers that are defined after the lambda definition in the source code
-//   -> it is possible to accidentally reference an undefined variable at runtime
-// - allow shadowing of formal parameter names inside the lambda body
-//   (lambda body has its own scope)
-// - compute list of captured variables (not defined inside lambda body or its formal parameter list)
-// - recognize tail recursive cases and represent them as loops
-//   (the closure can be removed completely in this case)
-let rec handleExpression scope =
-    function
-    | IdentifierExpression id -> handleIdentifierExpression scope id
-    | LambdaExpression (fs, ds, es) -> placeholder "lambda expressions"
-    | AssignmentExpression binding -> handleAssignment scope binding
-    | ProcedureCallExpression (expr, exprs) -> handleProcedureCall scope expr exprs
-    | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
-    | LiteralExpression lit -> ValueExpression lit
-    | Definition binding -> handleDefinition scope binding
-    | ExpressionError err -> failWithErrorNode err
-and handleDefinition scope =
-    function
-    | Binding (id, expr) ->
-        let name = getIdentifierName id
-        match findDefinition scope name with
-        | Some identifier ->
-            let value = handleExpression scope expr
-            IdentifierDefinition (identifier, value)
-        | None ->
-            failwithf "Invalid scope" // TODO: use an assertion?
-    | BindingError err -> failWithErrorNode err
-and handleConditional scope cond thenBranch elseBranch =
-    let condExpr = handleExpression scope cond
-    let thenExpr = handleExpression scope thenBranch
-    let elseExpr = elseBranch |> Option.map (handleExpression scope)
-    Conditional (condExpr, thenExpr, elseExpr)
-and handleProcedureCall scope procExpr exprs =
-    let proc = handleExpression scope procExpr
-    let args = List.map (handleExpression scope) exprs
-    ProcedureCall (proc, args)
-and handleAssignment scope binding =
-    match binding with
-    | Binding (id, expr) ->
-        let variableRef = bindingForVariableReference scope id
-        let valueExpr = handleExpression scope expr
-        Assignment (variableRef, valueExpr)
-    | BindingError err -> failWithErrorNode err
+let newIdentifierForId id =
+    getIdentifierName id |> newIdentifierFor
 
 let buildScope parentScope exprs =
     let expandScopeWithBinding scope =
@@ -166,8 +108,7 @@ let buildScope parentScope exprs =
             | Some _ ->
                 sprintf "Duplicate definition for identifier %s" name |> AnalysisException |> raise
             | None ->
-                { name = name; uniqueName = symbolGen.generateSymbol name; }
-                |> addDefinition scope
+                newIdentifierFor name |> addDefinition scope
         | BindingError err -> failWithErrorNode err
 
     let checkAssignment scope =
@@ -188,6 +129,80 @@ let buildScope parentScope exprs =
 
     let scope = { definitions = []; parent = Some parentScope }
     List.fold addToScope scope exprs
+
+let buildLambdaScope parentScope formals =
+    let identifiers = match formals with
+                      | SingleArgFormals arg -> [arg]
+                      | MultiArgFormals args -> args
+    { definitions = identifiers; parent = Some parentScope }
+
+let convertFormals =
+    function
+    | ASTBuilder.SingleArgFormals id -> newIdentifierForId id |> SingleArgFormals
+    | ASTBuilder.MultiArgFormals ids -> ids |> List.map newIdentifierForId |> MultiArgFormals 
+
+let bindingForName scope name =
+    match findDefinitionRec scope name with
+    | None -> sprintf "Reference to undefined identifier %s" name |> AnalysisException |> raise
+    | Some id -> id
+
+let bindingForVariableReference scope id =
+    getIdentifierName id |> bindingForName scope
+
+let handleIdentifierExpression scope id =
+    VariableReference (bindingForVariableReference scope id)
+
+// TODO: could definitions be handled separately?
+// TODO: source code positions for exceptions
+// TODO for lambda expressions:
+// - a lambda can reference other identifiers that are defined after the lambda definition in the source code
+//   -> it is possible to accidentally reference an undefined variable at runtime
+// - allow shadowing of formal parameter names inside the lambda body
+//   (lambda body has its own scope)
+// - compute list of captured variables (not defined inside lambda body or its formal parameter list)
+// - recognize tail recursive cases and represent them as loops
+//   (the closure can be removed completely in this case)
+let rec handleExpression scope =
+    function
+    | IdentifierExpression id -> handleIdentifierExpression scope id
+    | LambdaExpression (fs, ds, es) -> handleLambdaExpression scope fs ds es
+    | AssignmentExpression binding -> handleAssignment scope binding
+    | ProcedureCallExpression (expr, exprs) -> handleProcedureCall scope expr exprs
+    | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
+    | LiteralExpression lit -> ValueExpression lit
+    | Definition binding -> handleDefinition scope binding
+    | ExpressionError err -> failWithErrorNode err
+and handleDefinition scope =
+    function
+    | Binding (id, expr) ->
+        let variableRef = bindingForVariableReference scope id
+        let valueExpr = handleExpression scope expr
+        IdentifierDefinition (variableRef, valueExpr)
+    | BindingError err -> failWithErrorNode err
+and handleConditional scope cond thenBranch elseBranch =
+    let condExpr = handleExpression scope cond
+    let thenExpr = handleExpression scope thenBranch
+    let elseExpr = elseBranch |> Option.map (handleExpression scope)
+    Conditional (condExpr, thenExpr, elseExpr)
+and handleProcedureCall scope procExpr exprs =
+    let proc = handleExpression scope procExpr
+    let args = List.map (handleExpression scope) exprs
+    ProcedureCall (proc, args)
+and handleAssignment scope binding =
+    match binding with
+    | Binding (id, expr) ->
+        let variableRef = bindingForVariableReference scope id
+        let valueExpr = handleExpression scope expr
+        Assignment (variableRef, valueExpr)
+    | BindingError err -> failWithErrorNode err
+and handleLambdaExpression scope formals defs exprs =
+    let body = List.append defs exprs
+    let newFormals = convertFormals formals
+    let lambdaScope = buildLambdaScope scope newFormals
+    let bodyScope = buildScope lambdaScope body
+    let bodyExprs = body |> List.map (handleExpression bodyScope)
+    { formals = newFormals; body = bodyExprs; environment = [] }
+    |> Closure
 
 let makeBuiltInId name = { name = name; uniqueName = name }
 
