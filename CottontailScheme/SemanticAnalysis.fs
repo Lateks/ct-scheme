@@ -88,13 +88,16 @@ let getIdentifierName =
     | Identifier id -> id
     | IdentifierError err -> failWithErrorNode err
 
-let handleIdentifierExpression scope =
-    function
-    | Identifier name ->
-        match findDefinitionRec scope name with
-        | None -> sprintf "Reference to undefined identifier %s" name |> AnalysisException |> raise
-        | Some id -> VariableReference id, scope
-    | IdentifierError err -> failWithErrorNode err
+let bindingForName scope name =
+    match findDefinitionRec scope name with
+    | None -> sprintf "Reference to undefined identifier %s" name |> AnalysisException |> raise
+    | Some id -> id
+
+let bindingForVariableReference scope id =
+    getIdentifierName id |> bindingForName scope
+
+let handleIdentifierExpression scope id =
+    VariableReference (bindingForVariableReference scope id), scope
 
 // TODO: could definitions be handled separately?
 // TODO: source code positions for exceptions
@@ -102,13 +105,14 @@ let rec handleExpression scope =
     function
     | IdentifierExpression id -> handleIdentifierExpression scope id
     | LambdaExpression (formals, defs, exprs) -> placeholder "lambda expressions"
-    | AssignmentExpression binding -> placeholder "assignments"
+    | AssignmentExpression binding -> handleAssignment scope binding
     | ProcedureCallExpression (expr, exprs) -> handleProcedureCall scope expr exprs
     | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
     | LiteralExpression lit -> ValueExpression lit, scope
     | Definition binding -> handleDefinition scope binding
     | ExpressionError err -> failWithErrorNode err
 and handleNonScopeChangingExpression scope expr =
+    // TODO: assert that expr is not a definition
     let expr, _ = handleExpression scope expr
     expr
 and handleDefinition scope binding =
@@ -120,7 +124,7 @@ and handleDefinition scope binding =
             sprintf "Duplicate definition for identifier %s" name |> AnalysisException |> raise
         | None ->
             let identifier = { name = name; uniqueName = symbolGen.generateSymbol name; }
-            let value, _ = handleExpression scope expr // The value expression cannot change the contents of the current scope
+            let value = handleNonScopeChangingExpression scope expr
             let newScope = addDefinition scope identifier
             IdentifierDefinition (identifier, value), newScope
     | BindingError err -> failWithErrorNode err
@@ -133,6 +137,13 @@ and handleProcedureCall scope procExpr exprs =
     let proc = handleNonScopeChangingExpression scope procExpr
     let args = List.map (handleNonScopeChangingExpression scope) exprs
     ProcedureCall (proc, args), scope
+and handleAssignment scope binding =
+    match binding with
+    | Binding (id, expr) ->
+        let variableRef = bindingForVariableReference scope id
+        let valueExpr = handleNonScopeChangingExpression scope expr
+        Assignment (variableRef, valueExpr), scope
+    | BindingError err -> failWithErrorNode err
 
 let rec handleExpressionList scope exprs =
     let rec f scope res =

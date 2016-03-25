@@ -46,3 +46,6 @@ analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159
          ConditionalExpression (ProcedureCallExpression (IdentifierExpression (Identifier "<"), [IdentifierExpression (Identifier "pi"); LiteralExpression (Number 3.0)]),
                                 ProcedureCallExpression (IdentifierExpression (Identifier "display"), [LiteralExpression (String "smaller than")]),
                                 Some (ProcedureCallExpression (IdentifierExpression (Identifier "display"), [LiteralExpression (String "greater than")])))]
+analyse [AssignmentExpression (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))]
+analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number -1.0)))
+         AssignmentExpression (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))]
