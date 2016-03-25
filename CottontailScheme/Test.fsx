@@ -59,7 +59,11 @@ analyse [Definition (Binding (Identifier "a", ProcedureCallExpression (Identifie
          Definition (Binding (Identifier "b", LiteralExpression (Number 5.0)))]
 analyse [AssignmentExpression (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
          Definition (Binding (Identifier "pi", LiteralExpression (Number -1.0)))]
-
+analyse [Definition (Binding (Identifier "zero?",
+                              LambdaExpression (CottontailScheme.ASTBuilder.MultiArgFormals [Identifier "n"],
+                                                [],
+                                                [ProcedureCallExpression (IdentifierExpression (Identifier "eq?"), [IdentifierExpression (Identifier "n")
+                                                                                                                    LiteralExpression (Number 0.0)])])))]
 analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
          Definition (Binding (Identifier "circle-circumference", LambdaExpression (CottontailScheme.ASTBuilder.MultiArgFormals [Identifier "r"],
                                                                                     [],
@@ -73,3 +77,4 @@ analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159
                                                                                           [ProcedureCallExpression (IdentifierExpression (Identifier "+"),
                                                                                                                     [IdentifierExpression (Identifier "y")
                                                                                                                      IdentifierExpression (Identifier "x")])])])))]
+
