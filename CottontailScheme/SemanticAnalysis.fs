@@ -50,6 +50,8 @@ exception AnalysisException of string
 
 type Identifier = { name: string; uniqueName: string; }
 
+type Scope = { definitions: Identifier list; parent: Scope option }
+
 type Expression =
      | VariableReference of Identifier
      | Closure of ClosureDefinition
@@ -63,17 +65,16 @@ and ClosureFormals = SingleArgFormals of Identifier
                    | MultiArgFormals of Identifier list
 and ClosureDefinition = { formals: ClosureFormals;
                           body: Expression list;
-                          environment: Identifier list }
+                          environment: Identifier list;
+                          scope: Scope }
 and LoopDefinition = { test: Expression
                        loopVars: Identifier list
                        returnVar: Identifier
                        loopBody: Expression list }
 
 type Program =
-    | ValidProgram of Expression list
+    | ValidProgram of Expression list * Scope
     | ProgramAnalysisError of string
-
-type Scope = { definitions: Identifier list; parent: Scope option }
 
 let symbolGen = SymbolGenerator ()
 
@@ -262,7 +263,7 @@ and handleLambdaExpression scope formals defs exprs =
                     |> fun s -> buildScope s body
     let bodyExprs = body |> List.map (handleExpression bodyScope)
     let freeVars = collectFreeVariables bodyScope bodyExprs
-    { formals = newFormals; body = bodyExprs; environment = freeVars }
+    { formals = newFormals; body = bodyExprs; environment = freeVars; scope = bodyScope }
     |> Closure
 
 let makeBuiltInId name = { name = name; uniqueName = name }
@@ -289,6 +290,6 @@ let analyse exprs =
         let topLevelScope = buildScope builtInScope exprs
         exprs
         |> List.map (handleExpression topLevelScope)
-        |> ValidProgram
+        |> fun es -> ValidProgram (es, topLevelScope)
     with
         | AnalysisException msg -> ProgramAnalysisError msg
