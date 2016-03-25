@@ -170,9 +170,19 @@ let buildScope parentScope exprs =
                 |> addDefinition scope
         | BindingError err -> failWithErrorNode err
 
+    let checkAssignment scope =
+        function
+        | Binding (id, _) ->
+            let name = getIdentifierName id
+            match findDefinitionRec scope name with
+            | Some _ -> scope
+            | None -> sprintf "Trying to set! an undefined identifier %s" name |> AnalysisException |> raise
+        | BindingError err -> failWithErrorNode err
+
     let addToScope scope =
         function
         | Definition binding -> expandScopeWithBinding scope binding
+        | AssignmentExpression binding -> checkAssignment scope binding
         | ExpressionError err -> failWithErrorNode err
         | _ -> scope
 

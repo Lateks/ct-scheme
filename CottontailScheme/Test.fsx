@@ -57,3 +57,5 @@ analyse [Definition (Binding (Identifier "say-hello", LambdaExpression (Cottonta
          ProcedureCallExpression (IdentifierExpression (Identifier "say-hello"), [LiteralExpression (String "Laura")])]
 analyse [Definition (Binding (Identifier "a", ProcedureCallExpression (IdentifierExpression (Identifier "+"), [IdentifierExpression (Identifier "b"); LiteralExpression (Number 1.0)])))
          Definition (Binding (Identifier "b", LiteralExpression (Number 5.0)))]
+analyse [AssignmentExpression (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
+         Definition (Binding (Identifier "pi", LiteralExpression (Number -1.0)))]
