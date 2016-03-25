@@ -149,7 +149,37 @@ let buildLambdaScope parentScope formals =
 let convertFormals =
     function
     | ASTBuilder.SingleArgFormals id -> newIdentifierForId id |> SingleArgFormals
-    | ASTBuilder.MultiArgFormals ids -> ids |> List.map newIdentifierForId |> MultiArgFormals 
+    | ASTBuilder.MultiArgFormals ids -> ids |> List.map newIdentifierForId |> MultiArgFormals
+
+let collectFreeVariables lambdaScope bodyScope body =
+    let collect id =
+        let findDefinitionInScope scope = findDefinition scope id.name
+        match findDefinitionInScope bodyScope, findDefinitionInScope lambdaScope with
+        | None, None -> [id]
+        | _, _ -> []
+
+    let rec collectFreeVariables expr =
+        match expr with
+        | VariableReference id -> collect id
+        | ProcedureCall (proc, args) ->
+            args
+            |> collectFromExprList
+            |> List.append (collectFreeVariables proc)
+        | Assignment (id, expr) ->
+            List.append (collect id) (collectFreeVariables expr)
+        | Conditional (cond, thenExpr, elseExpr) ->
+            match elseExpr with
+            | Some expr ->
+                [cond; thenExpr; expr]
+            | None ->
+                [cond; thenExpr]
+            |> collectFromExprList
+        | _ -> []
+    and collectFromExprList =
+        List.map collectFreeVariables >> List.concat
+
+    collectFromExprList body
+    |> List.distinct
 
 let bindingForName scope name =
     match findDefinitionRec scope name with
@@ -211,7 +241,8 @@ and handleLambdaExpression scope formals defs exprs =
     let lambdaScope = buildLambdaScope scope newFormals
     let bodyScope = buildScope lambdaScope body
     let bodyExprs = body |> List.map (handleExpression bodyScope)
-    { formals = newFormals; body = bodyExprs; environment = [] }
+    let freeVars = collectFreeVariables lambdaScope bodyScope bodyExprs
+    { formals = newFormals; body = bodyExprs; environment = freeVars }
     |> Closure
 
 let makeBuiltInId name = { name = name; uniqueName = name }

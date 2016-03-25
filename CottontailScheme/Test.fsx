@@ -49,7 +49,7 @@ analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159
 analyse [AssignmentExpression (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))]
 analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number -1.0)))
          AssignmentExpression (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))]
-analyse [Definition (Binding (Identifier "say-hello", LambdaExpression (CottontailScheme.ASTBuilder.MultiArgFormals [(Identifier "name")],
+analyse [Definition (Binding (Identifier "say-hello", LambdaExpression (CottontailScheme.ASTBuilder.MultiArgFormals [Identifier "name"],
                                                                         [],
                                                                         [ProcedureCallExpression (IdentifierExpression (Identifier "display"), [LiteralExpression (String "Hello, ")])
                                                                          ProcedureCallExpression (IdentifierExpression (Identifier "display"), [IdentifierExpression (Identifier "name")])
@@ -59,3 +59,9 @@ analyse [Definition (Binding (Identifier "a", ProcedureCallExpression (Identifie
          Definition (Binding (Identifier "b", LiteralExpression (Number 5.0)))]
 analyse [AssignmentExpression (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
          Definition (Binding (Identifier "pi", LiteralExpression (Number -1.0)))]
+
+analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
+         Definition (Binding (Identifier "circle-circumference", LambdaExpression (CottontailScheme.ASTBuilder.MultiArgFormals [Identifier "r"],
+                                                                                    [],
+                                                                                    [ProcedureCallExpression (IdentifierExpression (Identifier "*"),
+                                                                                                              [IdentifierExpression (Identifier "pi"); IdentifierExpression (Identifier "r")])])))]
