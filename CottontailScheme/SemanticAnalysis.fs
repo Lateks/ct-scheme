@@ -103,11 +103,14 @@ let rec handleExpression scope =
     | IdentifierExpression id -> handleIdentifierExpression scope id
     | LambdaExpression (formals, defs, exprs) -> placeholder "lambda expressions"
     | AssignmentExpression binding -> placeholder "assignments"
-    | ProcedureCallExpression (expr, exprs) -> placeholder "procedure calls"
+    | ProcedureCallExpression (expr, exprs) -> handleProcedureCall scope expr exprs
     | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
     | LiteralExpression lit -> ValueExpression lit, scope
     | Definition binding -> handleDefinition scope binding
     | ExpressionError err -> failWithErrorNode err
+and handleNonScopeChangingExpression scope expr =
+    let expr, _ = handleExpression scope expr
+    expr
 and handleDefinition scope binding =
     match binding with
     | Binding (id, expr) ->
@@ -122,11 +125,14 @@ and handleDefinition scope binding =
             IdentifierDefinition (identifier, value), newScope
     | BindingError err -> failWithErrorNode err
 and handleConditional scope cond thenBranch elseBranch =
-    let condExpr, _ = handleExpression scope cond
-    let thenExpr, _ = handleExpression scope thenBranch
-    let elseExpr = elseBranch |> Option.map (fun x -> let expr, _ = handleExpression scope x
-                                                      expr)
+    let condExpr = handleNonScopeChangingExpression scope cond
+    let thenExpr = handleNonScopeChangingExpression scope thenBranch
+    let elseExpr = elseBranch |> Option.map (handleNonScopeChangingExpression scope)
     Conditional (condExpr, thenExpr, elseExpr), scope
+and handleProcedureCall scope procExpr exprs =
+    let proc = handleNonScopeChangingExpression scope procExpr
+    let args = List.map (handleNonScopeChangingExpression scope) exprs
+    ProcedureCall (proc, args), scope
 
 let rec handleExpressionList scope exprs =
     let rec f scope res =
