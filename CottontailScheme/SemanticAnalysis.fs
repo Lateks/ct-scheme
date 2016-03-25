@@ -25,16 +25,26 @@
 
 open CottontailScheme.ASTBuilder
 
+let kebabCaseToCamelCase (name: string) =
+    name.Split [|'-'|]
+    |> Array.map (fun s -> if s.Length > 0 then
+                              s.[0].ToString().ToUpper() + s.Substring (1)
+                           else s)
+    |> Array.toList
+    |> String.concat ""
+
 type SymbolGenerator () =
     let counters = new System.Collections.Generic.Dictionary<string, int>()
 
     // TODO: use a prefix?
+    // TODO: replace symbols and other identifiers not allowed in .NET
+    // TODO: reserved words?
     member this.generateSymbol name =
         if not (counters.ContainsKey name) then
             counters.Add (name, 1)
         let counter = counters.[name]
         counters.[name] <- counter + 1
-        sprintf "%s$%d" name counter
+        sprintf "%s$%d" (kebabCaseToCamelCase name) counter
 
 exception AnalysisException of string
 
