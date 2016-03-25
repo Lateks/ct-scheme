@@ -49,7 +49,6 @@ type Expression =
      | Conditional of Expression * Expression * Expression option
      | Loop of LoopDefinition
      | IdentifierDefinition of Identifier * Expression
-     | LambdaPlaceholder of ASTBuilder.LambdaFormals * ASTBuilder.Expression list * ASTBuilder.Expression list
 and ClosureFormals = SingleArgFormals of Identifier
                    | MultiArgFormals of Identifier list
 and ClosureDefinition = { formals: ClosureFormals;
@@ -67,6 +66,12 @@ type Program =
 
 type Scope = { definitions: Identifier list; parent: Scope option }
 
+let symbolGen = SymbolGenerator ()
+
+let placeholder name = failwithf "Not implemented yet: %s" name
+
+let failWithErrorNode err = failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
+
 let addDefinition scope identifier = { definitions = identifier::scope.definitions; parent = scope.parent}
 
 let rec findDefinition scope name =
@@ -78,16 +83,16 @@ and findDefinitionRec scope name =
     | None, None -> None
     | None, Some parent -> findDefinitionRec parent name
 
-let symbolGen = SymbolGenerator ()
-
-let placeholder name = failwithf "Not implemented yet: %s" name
-
-let failWithErrorNode err = failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
-
 let getIdentifierName =
     function
     | Identifier id -> id
     | IdentifierError err -> failWithErrorNode err
+
+let findDefinitionForId scope id =
+    getIdentifierName id |> findDefinition scope
+
+let findDefinitionForIdRec scope id =
+    getIdentifierName id |> findDefinitionRec scope
 
 let bindingForName scope name =
     match findDefinitionRec scope name with
@@ -98,7 +103,7 @@ let bindingForVariableReference scope id =
     getIdentifierName id |> bindingForName scope
 
 let handleIdentifierExpression scope id =
-    VariableReference (bindingForVariableReference scope id), scope
+    VariableReference (bindingForVariableReference scope id)
 
 // TODO: could definitions be handled separately?
 // TODO: source code positions for exceptions
@@ -117,71 +122,62 @@ let handleIdentifierExpression scope id =
 let rec handleExpression scope =
     function
     | IdentifierExpression id -> handleIdentifierExpression scope id
-    | LambdaExpression (fs, ds, es) as l -> LambdaPlaceholder (fs, ds, es), scope
+    | LambdaExpression (fs, ds, es) -> placeholder "lambda expressions"
     | AssignmentExpression binding -> handleAssignment scope binding
     | ProcedureCallExpression (expr, exprs) -> handleProcedureCall scope expr exprs
     | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
-    | LiteralExpression lit -> ValueExpression lit, scope
+    | LiteralExpression lit -> ValueExpression lit
     | Definition binding -> handleDefinition scope binding
     | ExpressionError err -> failWithErrorNode err
-and handleNonScopeChangingExpression scope expr =
-    // TODO: assert that expr is not a definition
-    let expr, _ = handleExpression scope expr
-    expr
-and handleDefinition scope binding =
-    match binding with
+and handleDefinition scope =
+    function
     | Binding (id, expr) ->
         let name = getIdentifierName id
         match findDefinition scope name with
-        | Some definition ->
-            sprintf "Duplicate definition for identifier %s" name |> AnalysisException |> raise
+        | Some identifier ->
+            let value = handleExpression scope expr
+            IdentifierDefinition (identifier, value)
         | None ->
-            let identifier = { name = name; uniqueName = symbolGen.generateSymbol name; }
-            let value = handleNonScopeChangingExpression scope expr
-            let newScope = addDefinition scope identifier
-            IdentifierDefinition (identifier, value), newScope
+            failwithf "Invalid scope" // TODO: use an assertion?
     | BindingError err -> failWithErrorNode err
 and handleConditional scope cond thenBranch elseBranch =
-    let condExpr = handleNonScopeChangingExpression scope cond
-    let thenExpr = handleNonScopeChangingExpression scope thenBranch
-    let elseExpr = elseBranch |> Option.map (handleNonScopeChangingExpression scope)
-    Conditional (condExpr, thenExpr, elseExpr), scope
+    let condExpr = handleExpression scope cond
+    let thenExpr = handleExpression scope thenBranch
+    let elseExpr = elseBranch |> Option.map (handleExpression scope)
+    Conditional (condExpr, thenExpr, elseExpr)
 and handleProcedureCall scope procExpr exprs =
-    let proc = handleNonScopeChangingExpression scope procExpr
-    let args = List.map (handleNonScopeChangingExpression scope) exprs
-    ProcedureCall (proc, args), scope
+    let proc = handleExpression scope procExpr
+    let args = List.map (handleExpression scope) exprs
+    ProcedureCall (proc, args)
 and handleAssignment scope binding =
     match binding with
     | Binding (id, expr) ->
         let variableRef = bindingForVariableReference scope id
-        let valueExpr = handleNonScopeChangingExpression scope expr
-        Assignment (variableRef, valueExpr), scope
+        let valueExpr = handleExpression scope expr
+        Assignment (variableRef, valueExpr)
     | BindingError err -> failWithErrorNode err
 
-let rec lambdaExpandExpression scope expr =
-    let recurInSameScope = lambdaExpandExpression scope
-    match expr with
-    | LambdaPlaceholder (fs, ds, es) -> placeholder "lambda expression expansion"
-    | ProcedureCall (proc, args)
-        -> ProcedureCall (recurInSameScope proc, List.map recurInSameScope args)
-    | IdentifierDefinition (id, expr)
-    | Assignment (id, expr)
-        -> Assignment (id, recurInSameScope expr)
-    | Conditional (cond, thenExpr, elseExpr)
-        -> Conditional (recurInSameScope cond, recurInSameScope thenExpr, Option.map recurInSameScope elseExpr)
-    | Closure closureDef -> placeholder "lambda expression expansion in closure body? (new scope)"
-    | Loop loopDef -> placeholder "lambda expression expansion in loop body?"
-    | _ as e -> e
-
-let rec handleExpressionList scope exprs =
-    let rec f scope res =
+let buildScope parentScope exprs =
+    let expandScopeWithBinding scope =
         function
-        | [] -> res, scope
-        | x::xs ->
-            let expr, newScope = handleExpression scope x
-            f newScope (expr::res) xs
-    let exprs, newScope = f scope [] exprs
-    List.rev exprs, newScope
+        | Binding (id, _) ->
+            let name = getIdentifierName id
+            match findDefinition scope name with
+            | Some _ ->
+                sprintf "Duplicate definition for identifier %s" name |> AnalysisException |> raise
+            | None ->
+                { name = name; uniqueName = symbolGen.generateSymbol name; }
+                |> addDefinition scope
+        | BindingError err -> failWithErrorNode err
+
+    let addToScope scope =
+        function
+        | Definition binding -> expandScopeWithBinding scope binding
+        | ExpressionError err -> failWithErrorNode err
+        | _ -> scope
+
+    let scope = { definitions = []; parent = Some parentScope }
+    List.fold addToScope scope exprs
 
 let makeBuiltInId name = { name = name; uniqueName = name }
 
@@ -205,8 +201,9 @@ let analyse exprs =
     try
         let builtInScope = { definitions = builtIns; parent = None }
         let programRootScope = { definitions = []; parent = Some builtInScope }
-        let exprs, newScope = handleExpressionList programRootScope exprs
-        List.map (lambdaExpandExpression newScope) exprs
+        let topLevelScope = buildScope programRootScope exprs
+        exprs
+        |> List.map (handleExpression topLevelScope)
         |> ValidProgram
     with
         | AnalysisException msg -> ProgramAnalysisError msg
