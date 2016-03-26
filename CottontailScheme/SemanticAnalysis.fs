@@ -310,12 +310,13 @@ let isUsedAsFirstClassValue name c parentExprs =
                    | _ -> false
                else
                    usedAsFirstClassValueInExpr expr
-        | Conditional (_, e2, e3) ->
+        | Conditional (e1, e2, e3) ->
+            let usedInCondition = usedAsFirstClassValueInExpr e1
             let usedInThenBranch = usedAsFirstClassValueInExpr e2
             let usedInElseBranch = match e3 with
                                    | Some e -> usedAsFirstClassValueInExpr e
                                    | None -> false
-            usedInThenBranch || usedInElseBranch
+            usedInCondition || usedInThenBranch || usedInElseBranch
         | TailExpression e -> usedAsFirstClassValueInExpr e
     and usedAsFirstClassValueInList exprs =
         exprs
