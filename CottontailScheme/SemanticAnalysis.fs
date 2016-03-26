@@ -26,6 +26,7 @@
 open CottontailScheme.ASTBuilder
 open System.Text.RegularExpressions
 
+// TODO: handle multiple dashes without a name clash
 let kebabCaseToCamelCase (name : string) =
     name.Split [|'-'|]
     |> Array.map (fun s -> if s.Length > 0 then
@@ -73,6 +74,7 @@ type Expression =
      | Conditional of Expression * Expression * Expression option
      | Loop of LoopDefinition
      | IdentifierDefinition of Identifier * Expression
+     | TailExpression of Expression
 and ClosureFormals = SingleArgFormals of Identifier
                    | MultiArgFormals of Identifier list
 and ClosureDefinition = { formals: ClosureFormals;
@@ -223,6 +225,21 @@ let bindingForVariableReference scope id =
 let handleIdentifierExpression scope id =
     VariableReference (bindingForVariableReference scope id)
 
+let rec toTailExpression expr =
+    let isValidArg =
+        match expr with
+        | IdentifierDefinition (_, _)
+        | TailExpression _
+            -> false
+        | _ -> true
+
+    assert isValidArg
+
+    match expr with
+    | Conditional (cond, thenExpr, elseExpr)
+        -> Conditional (cond, toTailExpression thenExpr, Option.map toTailExpression elseExpr)
+    | expr -> TailExpression expr
+
 // TODO: could definitions be handled separately?
 // TODO: source code positions for exceptions
 // TODO for lambda expressions:
@@ -273,7 +290,12 @@ and handleLambdaExpression scope formals defs exprs =
     let newFormals = convertFormals formals
     let bodyScope = buildLambdaScope scope newFormals
                     |> fun s -> buildScope s body
-    let bodyExprs = body |> List.map (handleExpression bodyScope)
+    let bodyExprs = List.last body
+                    |> handleExpression bodyScope
+                    |> toTailExpression
+                    |> fun e -> [e]
+                    |> List.append (List.take (body.Length - 1) body
+                                    |> List.map (handleExpression bodyScope))
     let freeVars = collectFreeVariables bodyScope bodyExprs
     { formals = newFormals; body = bodyExprs; environment = freeVars; scope = bodyScope }
     |> Closure
