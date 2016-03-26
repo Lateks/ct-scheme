@@ -72,7 +72,6 @@ type Expression =
      | ValueExpression of LiteralValue
      | Assignment of Identifier * Expression
      | Conditional of Expression * Expression * Expression option
-     | Loop of LoopDefinition
      | IdentifierDefinition of Identifier * Expression
      | TailExpression of Expression
 and ClosureFormals = SingleArgFormals of Identifier
@@ -80,11 +79,8 @@ and ClosureFormals = SingleArgFormals of Identifier
 and ClosureDefinition = { formals: ClosureFormals;
                           body: Expression list;
                           environment: Identifier list;
-                          scope: Scope }
-and LoopDefinition = { test: Expression
-                       loopVars: Identifier list
-                       returnVar: Identifier
-                       loopBody: Expression list }
+                          scope: Scope
+                          isTailRecursive: bool }
 
 type Program =
     | ValidProgram of Expression list * Scope
@@ -240,6 +236,43 @@ let rec toTailExpression expr =
         -> Conditional (cond, toTailExpression thenExpr, Option.map toTailExpression elseExpr)
     | expr -> TailExpression expr
 
+let rec findTailExprs expr =
+    let isValidArg =
+        match expr with
+        | Conditional (_, _, _)
+        | TailExpression _
+            -> true
+        | _ -> false
+
+    assert isValidArg
+
+    match expr with
+    | Conditional (cond, thenExpr, elseExpr)
+        -> match elseExpr with
+           | Some e -> List.map findTailExprs [thenExpr; e]
+                       |> List.concat
+           | None -> findTailExprs thenExpr
+    | TailExpression e -> [e]
+    | _ -> []
+
+let isProcedureCall =
+    function
+    | ProcedureCall (_, _) -> true
+    | _ -> false
+
+// TODO (extra, not required): is the lambda expression inlinable?
+// - not used as a first class value in the surrounding scope
+// - does not contain recursive calls that are not in tail position
+let isTailRecursive lambdaBody lambdaName =
+    let isRecursiveCall expr =
+        isProcedureCall expr && (match expr with
+                                  | ProcedureCall (VariableReference id, _) -> id = lambdaName
+                                  | _ -> false)
+
+    let tailExprs = findTailExprs <| List.last lambdaBody
+    let recursiveCalls = tailExprs |> List.filter isRecursiveCall
+    not <| List.isEmpty recursiveCalls
+
 // TODO: could definitions be handled separately?
 // TODO: source code positions for exceptions
 // TODO for lambda expressions:
@@ -255,7 +288,7 @@ let rec toTailExpression expr =
 let rec handleExpression scope =
     function
     | IdentifierExpression id -> handleIdentifierExpression scope id
-    | LambdaExpression (fs, ds, es) -> handleLambdaExpression scope fs ds es
+    | LambdaExpression (fs, ds, es) -> handleLambdaExpression scope fs ds es None
     | AssignmentExpression binding -> handleAssignment scope binding
     | ProcedureCallExpression (expr, exprs) -> handleProcedureCall scope expr exprs
     | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
@@ -266,7 +299,10 @@ and handleDefinition scope =
     function
     | Binding (id, expr) ->
         let variableRef = bindingForVariableReference scope id
-        let valueExpr = handleExpression scope expr
+        let valueExpr = match expr with
+                        | LambdaExpression (fs, ds, es) ->
+                            handleLambdaExpression scope fs ds es (Some variableRef)
+                        | _ -> handleExpression scope expr
         IdentifierDefinition (variableRef, valueExpr)
     | BindingError err -> failWithErrorNode err
 and handleConditional scope cond thenBranch elseBranch =
@@ -285,7 +321,7 @@ and handleAssignment scope binding =
         let valueExpr = handleExpression scope expr
         Assignment (variableRef, valueExpr)
     | BindingError err -> failWithErrorNode err
-and handleLambdaExpression scope formals defs exprs =
+and handleLambdaExpression scope formals defs exprs name =
     let body = List.append defs exprs
     let newFormals = convertFormals formals
     let bodyScope = buildLambdaScope scope newFormals
@@ -297,7 +333,14 @@ and handleLambdaExpression scope formals defs exprs =
                     |> List.append (List.take (body.Length - 1) body
                                     |> List.map (handleExpression bodyScope))
     let freeVars = collectFreeVariables bodyScope bodyExprs
-    { formals = newFormals; body = bodyExprs; environment = freeVars; scope = bodyScope }
+    let tailRecursive = match name with
+                        | None -> false
+                        | Some n -> isTailRecursive bodyExprs n
+    { formals = newFormals;
+      body = bodyExprs;
+      environment = freeVars;
+      scope = bodyScope;
+      isTailRecursive = tailRecursive }
     |> Closure
 
 let makeBuiltInId name = { name = name; uniqueName = name }

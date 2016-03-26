@@ -18,6 +18,12 @@ let makeAST str = match run parseProgram str with
                   | Success(result, _, _) -> printfn "Success: %A" (buildAST result)
                   | Failure(errorMsg, _, _) -> printfn "Failure: %s" errorMsg
 
+let makeASTandAnalyse str = match run parseProgram str with
+                            | Success(result, _, _) -> match buildAST result with
+                                                       | ASTBuildSuccess exprs -> printfn "Success %A" (analyse exprs)
+                                                       | ASTBuildFailure msgs -> printfn "Failure %A" msgs
+                            | Failure(errorMsg, _, _) -> failwith errorMsg
+
 test parseExpression "'()"
 test parseProgram "'()"
 test parseExpression "(quote (1 2 3))"
@@ -78,3 +84,8 @@ analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159
                                                                                                                     [IdentifierExpression (Identifier "y")
                                                                                                                      IdentifierExpression (Identifier "x")])])])))]
 
+makeASTandAnalyse "(define sum\
+                      (lambda (l acc)
+                         (if (null? l)
+                             acc
+                             (sum (cdr l) (+ (car l) acc)))))"
