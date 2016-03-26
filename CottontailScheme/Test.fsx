@@ -26,23 +26,6 @@ let makeASTandAnalyse str = match run parseProgram str with
                                                        | ASTBuildFailure msgs -> printfn "Failure %A" msgs
                             | Failure(errorMsg, _, _) -> failwith errorMsg
 
-test parseExpression "'()"
-test parseProgram "'()"
-test parseExpression "(quote (1 2 3))"
-test parseProgram "(quote (1 2 3))"
-test parseProgram "42(define pi 3.14159)(display pi)42"
-test parseProgram "#t#f42"
-test parseProgram "'42'52"
-makeAST "(1)"
-makeAST "(lambda () (define foo 42))"
-
-let gensym = SymbolGenerator()
-gensym.generateSymbol "display"
-gensym.generateSymbol "display"
-gensym.generateSymbol "myFunction"
-gensym.generateSymbol "myFunction"
-gensym.generateSymbol "display"
-
 analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
          IdentifierExpression (Identifier "pi")
          IdentifierExpression (Identifier "+")]
