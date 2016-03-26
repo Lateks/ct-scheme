@@ -44,7 +44,9 @@ and ClosureDefinition = { formals: ClosureFormals;
                           body: Expression list;
                           environment: Identifier list;
                           scope: Scope
-                          isTailRecursive: bool }
+                          isTailRecursive: bool;
+                          functionName: Identifier option;
+                          usedAsFirstClassValue: bool }
 
 type Program =
     | ValidProgram of Expression list * Scope
@@ -200,24 +202,6 @@ let rec findTailExprs expr =
     | TailExpression e -> [e]
     | _ -> []
 
-let isProcedureCall =
-    function
-    | ProcedureCall (_, _) -> true
-    | _ -> false
-
-// TODO (extra, not required): is the lambda expression inlinable?
-// - not used as a first class value in the surrounding scope
-// - does not contain recursive calls that are not in tail position
-let isTailRecursive lambdaBody lambdaName =
-    let isRecursiveCall expr =
-        isProcedureCall expr && (match expr with
-                                  | ProcedureCall (VariableReference id, _) -> id = lambdaName
-                                  | _ -> false)
-
-    let tailExprs = findTailExprs <| List.last lambdaBody
-    let recursiveCalls = tailExprs |> List.filter isRecursiveCall
-    not <| List.isEmpty recursiveCalls
-
 // TODO: could definitions be handled separately?
 // TODO: source code positions for exceptions
 // TODO for lambda expressions:
@@ -233,7 +217,7 @@ let isTailRecursive lambdaBody lambdaName =
 let rec handleExpression scope =
     function
     | IdentifierExpression id -> handleIdentifierExpression scope id
-    | LambdaExpression (fs, ds, es) -> handleLambdaExpression scope fs ds es None
+    | LambdaExpression (fs, ds, es) -> handleLambdaExpression scope fs ds es
     | AssignmentExpression binding -> handleAssignment scope binding
     | ProcedureCallExpression (expr, exprs) -> handleProcedureCall scope expr exprs
     | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
@@ -246,7 +230,7 @@ and handleDefinition scope =
         let variableRef = bindingForVariableReference scope id
         let valueExpr = match expr with
                         | LambdaExpression (fs, ds, es) ->
-                            handleLambdaExpression scope fs ds es (Some variableRef)
+                            handleLambdaExpression scope fs ds es
                         | _ -> handleExpression scope expr
         IdentifierDefinition (variableRef, valueExpr)
     | BindingError err -> failWithErrorNode err
@@ -266,7 +250,7 @@ and handleAssignment scope binding =
         let valueExpr = handleExpression scope expr
         Assignment (variableRef, valueExpr)
     | BindingError err -> failWithErrorNode err
-and handleLambdaExpression scope formals defs exprs name =
+and handleLambdaExpression scope formals defs exprs =
     let body = List.append defs exprs
     let newFormals = convertFormals formals
     let bodyScope = buildLambdaScope scope newFormals
@@ -278,15 +262,92 @@ and handleLambdaExpression scope formals defs exprs name =
                     |> List.append (List.take (body.Length - 1) body
                                     |> List.map (handleExpression bodyScope))
     let freeVars = collectFreeVariables bodyScope bodyExprs
-    let tailRecursive = match name with
-                        | None -> false
-                        | Some n -> isTailRecursive bodyExprs n
     { formals = newFormals;
       body = bodyExprs;
       environment = freeVars;
       scope = bodyScope;
-      isTailRecursive = tailRecursive }
+      functionName = None;
+      isTailRecursive = false;
+      usedAsFirstClassValue = false }
     |> Closure
+
+let isProcedureCall =
+    function
+    | ProcedureCall (_, _) -> true
+    | _ -> false
+
+// TODO (extra, not required): is the lambda expression inlinable?
+// - not used as a first class value in the surrounding scope
+// - does not contain recursive calls that are not in tail position
+let isTailRecursive lambdaBody lambdaName =
+    let isRecursiveCall expr =
+        isProcedureCall expr && (match expr with
+                                  | ProcedureCall (VariableReference id, _) -> id = lambdaName
+                                  | _ -> false)
+
+    let tailExprs = findTailExprs <| List.last lambdaBody
+    let recursiveCalls = tailExprs |> List.filter isRecursiveCall
+    not <| List.isEmpty recursiveCalls
+
+let isUsedAsFirstClassValue name c parentExprs =
+    let isNameReference id =
+        match name with
+        | Some n -> id = n
+        | None -> false
+    let rec usedAsFirstClassValueInExpr =
+        function
+        | VariableReference id -> isNameReference id
+        | Closure c' -> c = c' || usedAsFirstClassValueInList c'.body
+        | ProcedureCall (_, args) -> usedAsFirstClassValueInList args
+        | ValueExpression _ -> false
+        | Assignment (id, expr) // treat as if used as first class value if value can be overwritten
+            -> isNameReference id || usedAsFirstClassValueInExpr expr
+        | IdentifierDefinition (id, expr)
+            -> if isNameReference id then
+                   match expr with
+                   | Closure c' -> assert (c = c')
+                                   usedAsFirstClassValueInList c'.body
+                   | _ -> false
+               else
+                   usedAsFirstClassValueInExpr expr
+        | Conditional (_, e2, e3) ->
+            let usedInThenBranch = usedAsFirstClassValueInExpr e2
+            let usedInElseBranch = match e3 with
+                                   | Some e -> usedAsFirstClassValueInExpr e
+                                   | None -> false
+            usedInThenBranch || usedInElseBranch
+        | TailExpression e -> usedAsFirstClassValueInExpr e
+    and usedAsFirstClassValueInList exprs =
+        exprs
+        |> List.fold (fun usedSoFar e -> usedSoFar || usedAsFirstClassValueInExpr e) false
+
+    usedAsFirstClassValueInList parentExprs
+
+let rec labelLambdas exprs =
+    let rec label name =
+        function
+        | Closure c -> Closure <| labelClosure c name exprs
+        | Assignment (id, expr)
+            -> Assignment (id, label (Some id) expr)
+        | IdentifierDefinition (id, expr)
+            -> IdentifierDefinition (id, label (Some id) expr)
+        | Conditional (e1, e2, e3)
+            -> Conditional (label None e1, label name e2, Option.map (label name) e3)
+        | ProcedureCall (proc, args)
+            -> ProcedureCall (label None proc, List.map (label None) args)
+        | e -> e
+
+    exprs |> List.map (label None)
+and labelClosure c name parentScopeExprs =
+    let labeledBody = labelLambdas c.body
+    let tailRecursive = match name with
+                        | None -> false
+                        | Some n -> isTailRecursive labeledBody n
+    let usedAsFirstClassValue = isUsedAsFirstClassValue name c parentScopeExprs
+    { c with body = labeledBody;
+             functionName = name;
+             isTailRecursive = tailRecursive;
+             usedAsFirstClassValue = usedAsFirstClassValue }
 
 let makeBuiltInId name = { name = name; uniqueName = name }
 
@@ -312,6 +373,7 @@ let analyse exprs =
         let topLevelScope = buildScope builtInScope exprs
         exprs
         |> List.map (handleExpression topLevelScope)
+        |> labelLambdas
         |> fun es -> ValidProgram (es, topLevelScope)
     with
         | AnalysisException msg -> ProgramAnalysisError msg
