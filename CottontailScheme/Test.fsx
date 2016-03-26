@@ -2,6 +2,8 @@
 #r "..\\packages\\FParsec.1.0.2\\lib\\net40-client\\FParsec.dll"
 #load "Parsing.fs"
 #load "ASTBuilder.fs"
+#load "Scope.fs"
+#load "SymbolGenerator.fs"
 #load "SemanticAnalysis.fs"
 
 open FParsec
@@ -85,7 +87,7 @@ analyse [Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159
                                                                                                                      IdentifierExpression (Identifier "x")])])])))]
 
 makeASTandAnalyse "(define sum\
-                      (lambda (l acc)
-                         (if (null? l)
-                             acc
+                      (lambda (l acc)\
+                         (if (null? l)\
+                             acc\
                              (sum (cdr l) (+ (car l) acc)))))"

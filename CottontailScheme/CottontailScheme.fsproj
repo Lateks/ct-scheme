@@ -62,6 +62,8 @@
     <Compile Include="Parsing.fs" />
     <Compile Include="ASTBuilder.fsi" />
     <Compile Include="ASTBuilder.fs" />
+    <Compile Include="SymbolGenerator.fs" />
+    <Compile Include="Scope.fs" />
     <Compile Include="SemanticAnalysis.fs" />
     <None Include="Test.fsx" />
     <Compile Include="Program.fs" />

@@ -1,11 +1,11 @@
 ﻿module CottontailScheme.SemanticAnalysis
 
 // TODO in this phase:
-// - alpha conversion for variables
 // - recognize references to undefined variables
 // - closure conversion?
 //   -> find and label variables that are referenced from the environment
 // - label tail calls
+// - find inlinable lambdas?
 
 // Notes:
 //
@@ -24,46 +24,10 @@
 // Lambda expression formals can be shadowed by local definitions.
 
 open CottontailScheme.ASTBuilder
-open System.Text.RegularExpressions
-
-// TODO: handle multiple dashes without a name clash
-let kebabCaseToCamelCase (name : string) =
-    name.Split [|'-'|]
-    |> Array.map (fun s -> if s.Length > 0 then
-                              s.[0].ToString().ToUpper() + s.Substring (1)
-                           else s)
-    |> Array.toList
-    |> String.concat ""
-
-let convertPredicateName (name : string) =
-    let regex = new Regex(".*\?$")
-    if regex.IsMatch(name) then
-        name.Substring (0, name.Length - 1)
-        |> fun s -> "is-" + s
-    else
-        name
-
-type SymbolGenerator () =
-    let counters = new System.Collections.Generic.Dictionary<string, int>()
-
-    // TODO: use a prefix?
-    // TODO: replace symbols and other identifiers not allowed in .NET
-    // TODO: reserved words?
-    member this.generateSymbol name =
-        if not (counters.ContainsKey name) then
-            counters.Add (name, 1)
-        let counter = counters.[name]
-        counters.[name] <- counter + 1
-        let convertedName = name
-                            |> convertPredicateName
-                            |> kebabCaseToCamelCase
-        sprintf "%s$%d" convertedName counter
+open CottontailScheme.Scope
+open CottontailScheme.SymbolGenerator
 
 exception AnalysisException of string
-
-type Identifier = { name: string; uniqueName: string; }
-
-type Scope = { definitions: Identifier list; parent: Scope option }
 
 type Expression =
      | VariableReference of Identifier
@@ -91,25 +55,6 @@ let symbolGen = SymbolGenerator ()
 let placeholder name = failwithf "Not implemented yet: %s" name
 
 let failWithErrorNode err = failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
-
-let addDefinition scope identifier = { definitions = identifier::scope.definitions; parent = scope.parent}
-
-let findProgramScope scope =
-    let rec find prev scope =
-        match scope.parent with
-        | Some parentScope -> find scope parentScope 
-        | None -> prev
-
-    find scope scope
-
-let rec findDefinition scope name =
-    scope.definitions |> List.tryFind (fun id -> id.name = name)
-and findDefinitionRec scope name =
-    let definition = findDefinition scope name
-    match definition, scope.parent with
-    | Some _, _ -> definition
-    | None, None -> None
-    | None, Some parent -> findDefinitionRec parent name
 
 let getIdentifierName =
     function
