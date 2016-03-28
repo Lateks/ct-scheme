@@ -74,3 +74,11 @@ makeASTandAnalyse "(define sum\
                          (if (null? l)\
                              acc\
                              (sum (cdr l) (+ (car l) acc)))))"
+
+makeASTandAnalyse "(define print-list\
+                      (lambda (l)\
+                         (if (null? l)\
+                             (display \"\\n\")\
+                             (begin\
+                                (display (car l))\
+                                (print-list (cdr l))))))"

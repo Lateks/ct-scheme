@@ -37,6 +37,7 @@ type Expression =
      | Assignment of Identifier * Expression
      | Conditional of Expression * Expression * Expression option
      | IdentifierDefinition of Identifier * Expression
+     | BeginBlock of Expression list
      | TailExpression of Expression
 and ClosureFormals = SingleArgFormals of Identifier
                    | MultiArgFormals of Identifier list
@@ -150,6 +151,8 @@ let collectFreeVariables bodyScope body =
             | None ->
                 [cond; thenExpr]
             |> collectFromExprList
+        | BeginBlock exprs ->
+            collectFromExprList exprs
         | _ -> []
     and collectFromExprList =
         List.map collectFreeVariables >> List.concat
@@ -181,6 +184,11 @@ let rec toTailExpression expr =
     match expr with
     | Conditional (cond, thenExpr, elseExpr)
         -> Conditional (cond, toTailExpression thenExpr, Option.map toTailExpression elseExpr)
+    | BeginBlock exprs
+        -> let init = List.take (exprs.Length - 1) exprs
+           let tailExpr = List.last exprs |> toTailExpression
+           List.append init [tailExpr]
+           |> BeginBlock
     | expr -> TailExpression expr
 
 let rec findTailExprs expr =
@@ -199,6 +207,8 @@ let rec findTailExprs expr =
            | Some e -> List.map findTailExprs [thenExpr; e]
                        |> List.concat
            | None -> findTailExprs thenExpr
+    | BeginBlock exprs -> List.last exprs
+                          |> findTailExprs
     | TailExpression e -> [e]
     | _ -> []
 
@@ -223,6 +233,7 @@ let rec handleExpression scope =
     | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
     | LiteralExpression lit -> ValueExpression lit
     | Definition binding -> handleDefinition scope binding
+    | BeginExpression exprs -> handleBeginExpression scope exprs
     | ExpressionError err -> failWithErrorNode err
 and handleDefinition scope =
     function
@@ -270,6 +281,10 @@ and handleLambdaExpression scope formals defs exprs =
       isTailRecursive = false;
       usedAsFirstClassValue = false }
     |> Closure
+and handleBeginExpression scope exprs =
+    exprs
+    |> List.map (handleExpression scope)
+    |> BeginBlock
 
 let isProcedureCall =
     function
@@ -282,8 +297,8 @@ let isProcedureCall =
 let isTailRecursive lambdaBody lambdaName =
     let isRecursiveCall expr =
         isProcedureCall expr && (match expr with
-                                  | ProcedureCall (VariableReference id, _) -> id = lambdaName
-                                  | _ -> false)
+                                 | ProcedureCall (VariableReference id, _) -> id = lambdaName
+                                 | _ -> false)
 
     let tailExprs = findTailExprs <| List.last lambdaBody
     let recursiveCalls = tailExprs |> List.filter isRecursiveCall
@@ -317,6 +332,8 @@ let isUsedAsFirstClassValue name c parentExprs =
                                    | Some e -> usedAsFirstClassValueInExpr e
                                    | None -> false
             usedInCondition || usedInThenBranch || usedInElseBranch
+        | BeginBlock exprs ->
+            usedAsFirstClassValueInList exprs
         | TailExpression e -> usedAsFirstClassValueInExpr e
     and usedAsFirstClassValueInList exprs =
         exprs

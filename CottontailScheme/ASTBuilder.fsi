@@ -25,6 +25,7 @@ type Expression =
     | ProcedureCallExpression of Expression * Expression list
     | ConditionalExpression of Expression * Expression * Expression option
     | Definition of Binding
+    | BeginExpression of Expression list
     | ExpressionError of ASTError
 and Binding = Binding of Identifier * Expression
             | BindingError of ASTError

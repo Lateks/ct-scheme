@@ -25,7 +25,10 @@ type Expression =
     | ProcedureCallExpression of Expression * Expression list
     | ConditionalExpression of Expression * Expression * Expression option
     | Definition of Binding
+    | BeginExpression of Expression list
     | ExpressionError of ASTError
+  // TODO: and, or, not:
+  //| BooleanExpression of BooleanExprType * Expression list
 and Binding = Binding of Identifier * Expression
             | BindingError of ASTError
 
@@ -92,10 +95,15 @@ let buildConditional pos =
     | cond::thenExpr::elseExpr::[] -> buildConditionalWith pos cond thenExpr (Some elseExpr)
     | _ -> ExpressionError { message = "Invalid number of arguments to if"; position = pos }
 
+let containsDefinitions exprs =
+    exprs
+    |> List.filter isDefinition
+    |> fun lst -> not lst.IsEmpty
+
 let buildLambdaWith pos formals body =
     let definitions = body |> List.takeWhile isDefinition
     let expressions = body |> List.skip definitions.Length
-    if (expressions |> List.filter isDefinition |> fun lst -> not lst.IsEmpty) then
+    if (containsDefinitions expressions) then
         ExpressionError { message = "Definitions must be in the beginning of the lambda body";
                           position = pos }
     elif (expressions.IsEmpty) then
@@ -104,11 +112,18 @@ let buildLambdaWith pos formals body =
     else
         LambdaExpression (formals, definitions, expressions)
 
+let buildBeginBlock pos exprs =
+    if (containsDefinitions exprs) then
+        ExpressionError { message = "A begin block may not introduce new variables";
+                          position = pos }
+    elif (exprs.IsEmpty) then
+        ExpressionError { message = "Empty begin block";
+                          position = pos }
+    else
+        BeginExpression exprs
+
 // TODO: more exact error positions
 // TODO: printing datum objects properly in error messages
-// TODO: identify tailcalls
-// TODO: identify tail recursive calls
-// TODO: identify invalid uses of set!
 let rec buildFromList pos =
     function
     | []    -> ExpressionError { message = "Empty procedure call expressions are not allowed";
@@ -121,6 +136,7 @@ let rec buildFromList pos =
                    | "if" -> buildConditional pos args.Value
                    | "lambda" -> buildLambda pos xs
                    | "set!" -> buildAssignment pos args.Value
+                   | "begin" -> buildBeginBlock pos args.Value
                    | x -> buildFromIdentifier x |> buildProcCall
                match x with
                | CTIdentifierExpression (pos, id) -> buildCallToIdentifier pos id
@@ -185,6 +201,7 @@ let rec listErrors exprs =
                     | None ->
                         cond::[thenBranch]
                     |> listErrors
+                 | BeginExpression exprs -> listErrors exprs
                 )
     |> List.concat
 

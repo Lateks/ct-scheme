@@ -112,6 +112,12 @@ type ``Classifies different constructs correctly`` () =
         testSingleExpression "(define pi 3.14159)"
         <| Definition (Binding (Identifier "pi", LiteralExpression (Number 3.14159)))
 
+    [<Test>]
+    member x.``classifies a begin block correctly`` () =
+        testSingleExpression "(begin #t #f)"
+        <| BeginExpression [(LiteralExpression (Boolean true))
+                            (LiteralExpression (Boolean false))]
+
 [<TestFixture>]
 type ``Produces appropriate error messages when given a program with faulty semantics`` () =
     let testErrors str expectedErrors =
@@ -149,6 +155,10 @@ type ``Produces appropriate error messages when given a program with faulty sema
         testErrors "(lambda () (define answer 42))" [{ message = "Lambda body contains no expressions"; position = { line = 1L; column = 2L }}]
 
     [<Test>]
+    member x.``produces an error when a begin block is empty`` () =
+        testErrors "(begin)" [{ message = "Empty begin block"; position = { line = 1L; column = 2L }}]
+
+    [<Test>]
     member x.``produces an error when a definition is used in an unexpected context`` () =
         let exprContextError = { message = "Procedure define used in a context where an expression was expected";
                                  position = { line = 1L; column = 2L } }
@@ -158,6 +168,9 @@ type ``Produces appropriate error messages when given a program with faulty sema
         testErrors "(if #t #f (define bar 1))" [exprContextError]
         testErrors "(lambda (x)\n(display x)\n(define x-add-1 (+ x 1))\nx-add-1)"
                    [{message = "Definitions must be in the beginning of the lambda body";
+                     position = { line = 1L; column = 2L }}]
+        testErrors "(begin (define pi 3.14159))"
+                   [{message = "A begin block may not introduce new variables";
                      position = { line = 1L; column = 2L }}]
 
     // TODO: datum/literal printing in error messages!
