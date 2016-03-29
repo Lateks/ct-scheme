@@ -61,6 +61,25 @@ let placeholder name = failwithf "Not implemented yet: %s" name
 
 let failWithErrorNode err = failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
 
+let makeBuiltInId name = { name = name; uniqueName = name }
+
+let builtIns =
+    [makeBuiltInId "display"
+     makeBuiltInId "list"
+     makeBuiltInId "car"
+     makeBuiltInId "cdr"
+     makeBuiltInId "cons"
+     makeBuiltInId "null?"
+     makeBuiltInId "+"
+     makeBuiltInId "-"
+     makeBuiltInId "*"
+     makeBuiltInId "/"
+     makeBuiltInId "<"
+     makeBuiltInId ">"
+     makeBuiltInId "eq?"
+     makeBuiltInId "zero?"
+     makeBuiltInId "not"]
+
 let getIdentifierName =
     function
     | Identifier id -> id
@@ -407,6 +426,63 @@ let rec checkVariableInitialization scope exprs =
 
     checkExprs initialized [] exprs
 
+let checkProcedureCalls exprs =
+    let findFunctionDefinitions exprs =
+        exprs
+        |> List.filter (function
+                        | IdentifierDefinition (_, expr) ->
+                            match expr with
+                            | Closure c -> c.functionName.IsSome && (not c.usedAsFirstClassValue)
+                            | _ -> false
+                        | _ -> false)
+        |> List.map (fun e -> match e with
+                              | IdentifierDefinition (_, Closure c) -> c
+                              | _ -> assert false
+                                     "Analysis failure" |> AnalysisException |> raise)
+        |> List.fold (fun m c -> Map.add c.functionName.Value.uniqueName c m)
+                     Map.empty
+
+    let rec checkCalls functionDefs e =
+        let recur = checkCalls functionDefs
+        match e with
+        | IdentifierDefinition (_, expr)
+        | Assignment (_, expr)
+            -> recur expr
+        | Closure c ->
+            let newFunctions = findFunctionDefinitions c.body
+            newFunctions
+            |> Map.fold (fun m k v -> Map.add k v m)
+                        functionDefs
+            |> fun fs -> List.map (checkCalls fs) c.body |> ignore
+        | Conditional (e1, e2, e3) -> recur e1
+                                      recur e2
+                                      Option.map recur e3 |> ignore
+        | SequenceExpression (_, exprs) -> List.map recur exprs |> ignore
+        | TailExpression expr -> recur expr
+        | ProcedureCall (proc, args)
+            -> match proc with
+               | VariableReference id ->
+                   if List.contains id builtIns then // TODO: check built-ins
+                       ()
+                   else
+                       match Map.tryFind id.uniqueName functionDefs with
+                       | Some c ->
+                           match c.formals with
+                           | MultiArgFormals ids -> if ids.Length <> args.Length then
+                                                       sprintf "Arity mismatch for function %s: expected %i arguments, got %i" id.name (ids.Length) (args.Length)
+                                                       |> AnalysisException
+                                                       |> raise
+                           | SingleArgFormals _ -> ()
+                       | _ -> ()
+               | _ -> ()
+        | _ -> ()
+
+    let functions = findFunctionDefinitions exprs
+
+    exprs
+    |> List.map (checkCalls functions)
+    |> ignore
+
 let rec labelLambdas exprs =
     let rec label name =
         function
@@ -433,33 +509,16 @@ and labelClosure c name parentScopeExprs =
              isTailRecursive = tailRecursive;
              usedAsFirstClassValue = usedAsFirstClassValue }
 
-let makeBuiltInId name = { name = name; uniqueName = name }
-
-let builtIns =
-    [makeBuiltInId "display"
-     makeBuiltInId "list"
-     makeBuiltInId "car"
-     makeBuiltInId "cdr"
-     makeBuiltInId "cons"
-     makeBuiltInId "null?"
-     makeBuiltInId "+"
-     makeBuiltInId "-"
-     makeBuiltInId "*"
-     makeBuiltInId "/"
-     makeBuiltInId "<"
-     makeBuiltInId ">"
-     makeBuiltInId "eq?"
-     makeBuiltInId "zero?"
-     makeBuiltInId "not"]
-
 let analyse exprs =
     try
         let builtInScope = { definitions = builtIns; parent = None }
         let topLevelScope = buildScope builtInScope exprs
-        exprs
-        |> List.map (handleExpression topLevelScope)
-        |> checkVariableInitialization topLevelScope
-        |> labelLambdas
-        |> fun es -> ValidProgram (es, topLevelScope)
+        let moduleBody = exprs
+                         |> List.map (handleExpression topLevelScope)
+                         |> checkVariableInitialization topLevelScope
+                         |> labelLambdas
+
+        checkProcedureCalls moduleBody
+        ValidProgram (moduleBody, topLevelScope)
     with
         | AnalysisException msg -> ProgramAnalysisError msg
