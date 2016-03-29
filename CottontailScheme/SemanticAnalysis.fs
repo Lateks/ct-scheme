@@ -29,6 +29,8 @@ open CottontailScheme.SymbolGenerator
 
 exception AnalysisException of string
 
+type SequenceExpressionType = BeginSequence | AndSequence | OrSequence
+
 type Expression =
      | VariableReference of Identifier
      | Closure of ClosureDefinition
@@ -37,7 +39,7 @@ type Expression =
      | Assignment of Identifier * Expression
      | Conditional of Expression * Expression * Expression option
      | IdentifierDefinition of Identifier * Expression
-     | BeginBlock of Expression list
+     | SequenceExpression of SequenceExpressionType * Expression list
      | TailExpression of Expression
 and ClosureFormals = SingleArgFormals of Identifier
                    | MultiArgFormals of Identifier list
@@ -151,7 +153,7 @@ let collectFreeVariables bodyScope body =
             | None ->
                 [cond; thenExpr]
             |> collectFromExprList
-        | BeginBlock exprs ->
+        | SequenceExpression (_, exprs) ->
             collectFromExprList exprs
         | _ -> []
     and collectFromExprList =
@@ -184,11 +186,14 @@ let rec toTailExpression expr =
     match expr with
     | Conditional (cond, thenExpr, elseExpr)
         -> Conditional (cond, toTailExpression thenExpr, Option.map toTailExpression elseExpr)
-    | BeginBlock exprs
-        -> let init = List.take (exprs.Length - 1) exprs
-           let tailExpr = List.last exprs |> toTailExpression
-           List.append init [tailExpr]
-           |> BeginBlock
+    | SequenceExpression (t, exprs) as seq
+        -> if List.isEmpty exprs then
+              TailExpression seq
+           else
+               let init = List.take (exprs.Length - 1) exprs
+               let tailExpr = List.last exprs |> toTailExpression
+               List.append init [tailExpr]
+               |> fun es -> SequenceExpression (t, es)
     | expr -> TailExpression expr
 
 let rec findTailExprs expr =
@@ -207,8 +212,9 @@ let rec findTailExprs expr =
            | Some e -> List.map findTailExprs [thenExpr; e]
                        |> List.concat
            | None -> findTailExprs thenExpr
-    | BeginBlock exprs -> List.last exprs
-                          |> findTailExprs
+    | SequenceExpression (_, exprs)
+        -> List.last exprs
+           |> findTailExprs
     | TailExpression e -> [e]
     | _ -> []
 
@@ -234,6 +240,7 @@ let rec handleExpression scope =
     | LiteralExpression lit -> ValueExpression lit
     | Definition binding -> handleDefinition scope binding
     | BeginExpression exprs -> handleBeginExpression scope exprs
+    | BooleanExpression (t, exprs) -> handleBooleanExpression scope t exprs
     | ExpressionError err -> failWithErrorNode err
 and handleDefinition scope =
     function
@@ -284,7 +291,14 @@ and handleLambdaExpression scope formals defs exprs =
 and handleBeginExpression scope exprs =
     exprs
     |> List.map (handleExpression scope)
-    |> BeginBlock
+    |> fun es -> SequenceExpression (BeginSequence, es)
+and handleBooleanExpression scope exprType exprs =
+    exprs
+    |> List.map (handleExpression scope)
+    |> fun es -> match exprType with
+                 | AndExpression -> (AndSequence, es)
+                 | OrExpression -> (OrSequence, es)
+    |> SequenceExpression
 
 let isProcedureCall =
     function
@@ -332,7 +346,7 @@ let isUsedAsFirstClassValue name c parentExprs =
                                    | Some e -> usedAsFirstClassValueInExpr e
                                    | None -> false
             usedInCondition || usedInThenBranch || usedInElseBranch
-        | BeginBlock exprs ->
+        | SequenceExpression (_, exprs) ->
             usedAsFirstClassValueInList exprs
         | TailExpression e -> usedAsFirstClassValueInExpr e
     and usedAsFirstClassValueInList exprs =
@@ -383,7 +397,8 @@ let builtIns =
      makeBuiltInId "<"
      makeBuiltInId ">"
      makeBuiltInId "eq?"
-     makeBuiltInId "zero?"]
+     makeBuiltInId "zero?"
+     makeBuiltInId "not"]
 
 let analyse exprs =
     try

@@ -82,3 +82,8 @@ makeASTandAnalyse "(define print-list\
                              (begin\
                                 (display (car l))\
                                 (print-list (cdr l))))))"
+
+makeASTandAnalyse "(lambda ()\
+                      (and (< 1 2) (or (> 3 4) (eq? 3 3))))"
+
+makeASTandAnalyse "(lambda () (and #t))"

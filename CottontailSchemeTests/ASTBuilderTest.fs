@@ -118,6 +118,18 @@ type ``Classifies different constructs correctly`` () =
         <| BeginExpression [(LiteralExpression (Boolean true))
                             (LiteralExpression (Boolean false))]
 
+    [<Test>]
+    member x.``classifies a boolean expression correctly`` () =
+        testSingleExpression "(and #t #t)"
+        <| BooleanExpression (AndExpression,
+                              [(LiteralExpression (Boolean true))
+                               (LiteralExpression (Boolean true))])
+        testSingleExpression "(or #f #t)"
+        <| BooleanExpression (OrExpression,
+                              [(LiteralExpression (Boolean false))
+                               (LiteralExpression (Boolean true))])
+
+
 [<TestFixture>]
 type ``Produces appropriate error messages when given a program with faulty semantics`` () =
     let testErrors str expectedErrors =
@@ -172,6 +184,10 @@ type ``Produces appropriate error messages when given a program with faulty sema
         testErrors "(begin (define pi 3.14159))"
                    [{message = "A begin block may not introduce new variables";
                      position = { line = 1L; column = 2L }}]
+        testErrors "(and (define p 3) (set! a 2))"
+                   [exprContextError]
+        testErrors "(or (define p 3) (set! a 2))"
+                   [exprContextError]
 
     // TODO: datum/literal printing in error messages!
     [<Test>]

@@ -17,6 +17,9 @@ type LiteralValue =
     | Symbol of string
     | List of LiteralValue list
 
+type BooleanExprType = AndExpression | OrExpression
+
+// TODO: and, or, not:
 type Expression =
     | IdentifierExpression of Identifier
     | LiteralExpression of LiteralValue
@@ -27,15 +30,14 @@ type Expression =
     | Definition of Binding
     | BeginExpression of Expression list
     | ExpressionError of ASTError
-  // TODO: and, or, not:
-  //| BooleanExpression of BooleanExprType * Expression list
+    | BooleanExpression of BooleanExprType * Expression list
 and Binding = Binding of Identifier * Expression
             | BindingError of ASTError
 
 type ASTBuildStatus = ASTBuildSuccess of Expression list
                     | ASTBuildFailure of ASTError list
 
-let specialFunctions = ["define"; "if"; "lambda"; "set!"] //; "cons"; "car"; "cdr"; "list"; "quote"; "display"]
+let specialFunctions = ["define"; "if"; "lambda"; "set!"; "and"; "or"; "quote"; "begin"] //; "cons"; "car"; "cdr"; "list"; "display"]
 
 let isSpecialFunction name = List.contains name specialFunctions
 
@@ -100,27 +102,40 @@ let containsDefinitions exprs =
     |> List.filter isDefinition
     |> fun lst -> not lst.IsEmpty
 
+let checkExpressionListForErrors definitionErrorMsg emptyListErrorMsg pos exprs =
+    if (containsDefinitions exprs) then
+        Some { message = definitionErrorMsg; position = pos }
+    elif (exprs.IsEmpty) then
+        Some { message = emptyListErrorMsg; position = pos }
+    else
+        None
+
 let buildLambdaWith pos formals body =
     let definitions = body |> List.takeWhile isDefinition
     let expressions = body |> List.skip definitions.Length
-    if (containsDefinitions expressions) then
-        ExpressionError { message = "Definitions must be in the beginning of the lambda body";
-                          position = pos }
-    elif (expressions.IsEmpty) then
-        ExpressionError { message = "Lambda body contains no expressions";
-                          position = pos }
-    else
-        LambdaExpression (formals, definitions, expressions)
+    expressions
+    |> checkExpressionListForErrors "Definitions must be in the beginning of the lambda body"
+                                    "Lambda body contains no expressions"
+                                    pos
+    |> function
+       | Some err -> ExpressionError err
+       | None -> LambdaExpression (formals, definitions, expressions)
 
-let buildBeginBlock pos exprs =
+let buildBeginBlock pos exprs=
+    exprs
+    |> checkExpressionListForErrors "A begin block may not introduce new variables"
+                                    "Empty begin block"
+                                    pos
+    |> function
+       | Some err -> ExpressionError err
+       | None -> BeginExpression exprs
+
+let buildBooleanExpression pos exprType exprs =
     if (containsDefinitions exprs) then
-        ExpressionError { message = "A begin block may not introduce new variables";
-                          position = pos }
-    elif (exprs.IsEmpty) then
-        ExpressionError { message = "Empty begin block";
+        ExpressionError { message = "Procedure define used in a context where an expression was expected";
                           position = pos }
     else
-        BeginExpression exprs
+        BooleanExpression (exprType, exprs)
 
 // TODO: more exact error positions
 // TODO: printing datum objects properly in error messages
@@ -137,6 +152,8 @@ let rec buildFromList pos =
                    | "lambda" -> buildLambda pos xs
                    | "set!" -> buildAssignment pos args.Value
                    | "begin" -> buildBeginBlock pos args.Value
+                   | "and"   -> buildBooleanExpression pos AndExpression args.Value
+                   | "or"    -> buildBooleanExpression pos OrExpression args.Value
                    | x -> buildFromIdentifier x |> buildProcCall
                match x with
                | CTIdentifierExpression (pos, id) -> buildCallToIdentifier pos id
@@ -201,7 +218,9 @@ let rec listErrors exprs =
                     | None ->
                         cond::[thenBranch]
                     |> listErrors
-                 | BeginExpression exprs -> listErrors exprs
+                 | BeginExpression exprs
+                 | BooleanExpression (_, exprs)
+                    -> listErrors exprs
                 )
     |> List.concat
 

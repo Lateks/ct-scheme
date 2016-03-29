@@ -17,6 +17,8 @@ type LiteralValue =
     | Symbol of string
     | List of LiteralValue list
 
+type BooleanExprType = AndExpression | OrExpression
+
 type Expression =
     | IdentifierExpression of Identifier
     | LiteralExpression of LiteralValue
@@ -27,6 +29,7 @@ type Expression =
     | Definition of Binding
     | BeginExpression of Expression list
     | ExpressionError of ASTError
+    | BooleanExpression of BooleanExprType * Expression list
 and Binding = Binding of Identifier * Expression
             | BindingError of ASTError
 
