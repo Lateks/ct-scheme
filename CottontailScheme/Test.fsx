@@ -87,3 +87,27 @@ makeASTandAnalyse "(lambda ()\
                       (and (< 1 2) (or (> 3 4) (eq? 3 3))))"
 
 makeASTandAnalyse "(lambda () (and #t))"
+
+makeASTandAnalyse "(define x (+ x 1))"
+
+makeASTandAnalyse "(define x 1)(define x (+ x 1))"
+
+makeASTandAnalyse "(define y (+ x 1)) (define x 1)"
+
+makeASTandAnalyse "(set! x 1)"
+
+makeASTandAnalyse "(lambda () (define x 1) (define x (+ x 1)) x)"
+
+makeASTandAnalyse "(define foo\
+                     (lambda ()\
+                        (define helper\
+                          (lambda ()\
+                             (display \"Hello\")))\
+                        (helper)))"
+
+makeASTandAnalyse "(define x 1)\
+                   (define foo\
+                     (lambda ()\
+                       (define y (+ x 1))\
+                       (define x (+ y 1))\
+                       (+ x y)))"

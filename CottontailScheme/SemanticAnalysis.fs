@@ -79,13 +79,19 @@ let newIdentifierForId id =
     getIdentifierName id |> newIdentifierFor
 
 let buildScope parentScope exprs =
+    let isRootScope scope =
+        findProgramScope scope = scope
+
     let expandScopeWithBinding scope =
         function
         | Binding (id, _) ->
             let name = getIdentifierName id
             match findDefinition scope name with
             | Some _ ->
-                sprintf "Duplicate definition for identifier %s" name |> AnalysisException |> raise
+                if isRootScope scope then
+                    scope
+                else
+                    sprintf "Duplicate definition for identifier %s" name |> AnalysisException |> raise
             | None ->
                 newIdentifierFor name |> addDefinition scope
         | BindingError err -> failWithErrorNode err
@@ -355,6 +361,52 @@ let isUsedAsFirstClassValue name c parentExprs =
 
     usedAsFirstClassValueInList parentExprs
 
+let rec checkVariableInitialization scope exprs =
+    let initialized = scope.definitions
+                      |> List.fold (fun inits id -> Map.add id.uniqueName false inits)
+                                   Map.empty
+    let verifyInitialized inits id =
+        match Map.tryFind id.uniqueName inits with
+        | Some b -> if b then ()
+                         else sprintf "Variable %s may be uninitialized" id.name |> AnalysisException |> raise
+        | None   -> ()
+
+    let rec check inits expr =
+        let recur = check inits >> ignore
+        match expr with
+        | IdentifierDefinition (id, expr) as e ->
+            let markAsInitialized = Map.remove id.uniqueName
+                                    >> Map.add id.uniqueName true
+            recur expr
+            match Map.tryFind id.uniqueName inits with
+            | Some b -> if b then
+                           inits, Assignment (id, expr)
+                        else
+                           markAsInitialized inits, e
+            | None -> markAsInitialized inits, e
+        | _ -> match expr with
+               | VariableReference id as e -> verifyInitialized inits id
+               | Closure c as e -> checkVariableInitialization c.scope c.body |> ignore
+               | ProcedureCall (proc, args) as e -> recur proc
+                                                    List.map recur args |> ignore
+               | Assignment (id, expr) as e -> verifyInitialized inits id
+                                               recur expr
+               | Conditional (e1, e2, e3) as e -> recur e1
+                                                  recur e2
+                                                  Option.map recur e3 |> ignore
+               | SequenceExpression (t, exprs) as e -> List.map recur exprs |> ignore
+               | TailExpression ex as e -> recur ex
+               | _ -> ()
+
+               inits, expr
+    and checkExprs inits acc =
+        function
+        | []    -> List.rev acc
+        | x::xs -> let newInits, newX = check inits x
+                   checkExprs newInits (newX::acc) xs
+
+    checkExprs initialized [] exprs
+
 let rec labelLambdas exprs =
     let rec label name =
         function
@@ -406,6 +458,7 @@ let analyse exprs =
         let topLevelScope = buildScope builtInScope exprs
         exprs
         |> List.map (handleExpression topLevelScope)
+        |> checkVariableInitialization topLevelScope
         |> labelLambdas
         |> fun es -> ValidProgram (es, topLevelScope)
     with
