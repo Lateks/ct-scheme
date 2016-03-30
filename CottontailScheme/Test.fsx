@@ -12,6 +12,7 @@ open CottontailScheme.Parsing
 open CottontailScheme.ASTBuilder
 open CottontailScheme.SemanticAnalysis
 open CottontailScheme.Literals
+open CottontailScheme.SymbolGenerator
 
 let test p str =
     match run p str with
@@ -129,3 +130,5 @@ makeASTandAnalyse "(< 1)"
 makeASTandAnalyse "(zero? 1)"
 
 makeASTandAnalyse "(zero? 1 2)"
+
+kebabCaseToCamelCase "foo--bar----baz"

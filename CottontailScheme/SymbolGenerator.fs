@@ -7,7 +7,7 @@ let kebabCaseToCamelCase (name : string) =
     name.Split [|'-'|]
     |> Array.map (fun s -> if s.Length > 0 then
                               s.[0].ToString().ToUpper() + s.Substring (1)
-                           else s)
+                           else "_")
     |> Array.toList
     |> String.concat ""
 
