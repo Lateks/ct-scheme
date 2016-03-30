@@ -314,6 +314,7 @@ let handleIdentifierExpression scope id =
 // - transforms AST into new format
 // - finds bindings for all variable references and definitions
 //   (previously generated during scope building)
+// - labels tail expressions in lambdas
 let rec handleExpression scope =
     function
     | IdentifierExpression id -> handleIdentifierExpression scope id
