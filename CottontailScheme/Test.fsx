@@ -1,6 +1,7 @@
 ﻿#r "..\\packages\\FParsec.1.0.2\\lib\\net40-client\\FParsecCS.dll"
 #r "..\\packages\\FParsec.1.0.2\\lib\\net40-client\\FParsec.dll"
 #load "Parsing.fs"
+#load "Literals.fs"
 #load "ASTBuilder.fs"
 #load "Scope.fs"
 #load "SymbolGenerator.fs"
@@ -10,6 +11,7 @@ open FParsec
 open CottontailScheme.Parsing
 open CottontailScheme.ASTBuilder
 open CottontailScheme.SemanticAnalysis
+open CottontailScheme.Literals
 
 let test p str =
     match run p str with

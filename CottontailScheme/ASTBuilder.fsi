@@ -10,18 +10,11 @@ type Identifier = Identifier of string
 type LambdaFormals = MultiArgFormals of Identifier list
                    | SingleArgFormals of Identifier
 
-type LiteralValue =
-    | Boolean of bool
-    | Number of float
-    | String of string
-    | Symbol of string
-    | List of LiteralValue list
-
 type BooleanExprType = AndExpression | OrExpression
 
 type Expression =
     | IdentifierExpression of Identifier
-    | LiteralExpression of LiteralValue
+    | LiteralExpression of Literals.LiteralValue
     | LambdaExpression of LambdaFormals * Expression list * Expression list
     | AssignmentExpression of Binding
     | ProcedureCallExpression of Expression * Expression list

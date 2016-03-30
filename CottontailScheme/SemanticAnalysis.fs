@@ -24,6 +24,7 @@
 // Lambda expression formals can be shadowed by local definitions.
 
 open CottontailScheme.ASTBuilder
+open CottontailScheme.Literals
 open CottontailScheme.Scope
 open CottontailScheme.SymbolGenerator
 
@@ -248,18 +249,7 @@ let rec findTailExprs expr =
     | TailExpression e -> [e]
     | _ -> []
 
-// TODO: could definitions be handled separately?
 // TODO: source code positions for exceptions
-// TODO for lambda expressions:
-// - a lambda can reference other identifiers that are defined after the lambda definition in the source code
-//   -> it is possible to accidentally reference an undefined variable at runtime
-// - compute list of captured variables (not defined inside lambda body or its formal parameter list)
-// - recognize tail recursive cases and represent them as loops
-//   (the closure can be removed completely in this case)
-// TODO: organize definitions in the following way:
-// - lambda definitions first
-// - other definitions in order of appearance after lambdas
-//   -> verify that there are no circular references!
 let rec handleExpression scope =
     function
     | IdentifierExpression id -> handleIdentifierExpression scope id

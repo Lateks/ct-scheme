@@ -1,6 +1,7 @@
 ﻿module CottontailScheme.ASTBuilder
 
 open CottontailScheme.Parsing
+open CottontailScheme.Literals
 
 type ASTError = { message: string; position: ParsePosition }
 
@@ -10,16 +11,8 @@ type Identifier = Identifier of string
 type LambdaFormals = MultiArgFormals of Identifier list
                    | SingleArgFormals of Identifier
 
-type LiteralValue =
-    | Boolean of bool
-    | Number of float
-    | String of string
-    | Symbol of string
-    | List of LiteralValue list
-
 type BooleanExprType = AndExpression | OrExpression
 
-// TODO: and, or, not:
 type Expression =
     | IdentifierExpression of Identifier
     | LiteralExpression of LiteralValue
