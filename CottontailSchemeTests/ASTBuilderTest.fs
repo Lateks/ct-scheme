@@ -5,6 +5,7 @@ open FsUnit
 open FParsec
 
 open CottontailScheme.ASTBuilder
+open CottontailScheme.Literals
 
 module ASTBuilderTest =
     let build str = match run CottontailScheme.Parsing.parseProgram str with
