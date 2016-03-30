@@ -63,22 +63,27 @@ let failWithErrorNode err = failwithf "Error, faulty AST given as input to analy
 
 let makeBuiltInId name = { name = name; uniqueName = name }
 
+type BuiltInFunctionArgs = SetNumberOfArgs of int
+                         | VarArgs
+                         | VarArgsAtLeast of int
+
 let builtIns =
-    [makeBuiltInId "display"
-     makeBuiltInId "list"
-     makeBuiltInId "car"
-     makeBuiltInId "cdr"
-     makeBuiltInId "cons"
-     makeBuiltInId "null?"
-     makeBuiltInId "+"
-     makeBuiltInId "-"
-     makeBuiltInId "*"
-     makeBuiltInId "/"
-     makeBuiltInId "<"
-     makeBuiltInId ">"
-     makeBuiltInId "eq?"
-     makeBuiltInId "zero?"
-     makeBuiltInId "not"]
+    Map.ofList
+        [makeBuiltInId "display", SetNumberOfArgs 1
+         makeBuiltInId "list", VarArgs
+         makeBuiltInId "car", SetNumberOfArgs 1
+         makeBuiltInId "cdr", SetNumberOfArgs 1
+         makeBuiltInId "cons", SetNumberOfArgs 2
+         makeBuiltInId "null?", SetNumberOfArgs 1
+         makeBuiltInId "+", VarArgs
+         makeBuiltInId "-", VarArgs
+         makeBuiltInId "*", VarArgs
+         makeBuiltInId "/", VarArgsAtLeast 1
+         makeBuiltInId "<", VarArgsAtLeast 2
+         makeBuiltInId ">", VarArgsAtLeast 2
+         makeBuiltInId "eq?", VarArgs
+         makeBuiltInId "zero?", SetNumberOfArgs 1
+         makeBuiltInId "not", SetNumberOfArgs 1]
 
 let getIdentifierName =
     function
@@ -442,6 +447,18 @@ let checkProcedureCalls exprs =
         |> List.fold (fun m c -> Map.add c.functionName.Value.uniqueName c m)
                      Map.empty
 
+    let checkNumArgs f s functionName expected got =
+        if f got expected then
+            sprintf s functionName expected got
+            |> AnalysisException
+            |> raise
+
+    let checkNumArgsEqual =
+        checkNumArgs (<>) "Arity mismatch for function %s: expected %i arguments, got %i"
+
+    let checkNumArgsGreaterThan =
+        checkNumArgs (<) "Arity mismatch for function %s: expected at least %i arguments, got %i"
+
     let rec checkCalls functionDefs e =
         let recur = checkCalls functionDefs
         match e with
@@ -462,16 +479,15 @@ let checkProcedureCalls exprs =
         | ProcedureCall (proc, args)
             -> match proc with
                | VariableReference id ->
-                   if List.contains id builtIns then // TODO: check built-ins
-                       ()
-                   else
+                   match Map.tryFind id builtIns with
+                   | Some (SetNumberOfArgs n) -> checkNumArgsEqual id.name n args.Length
+                   | Some VarArgs -> ()
+                   | Some (VarArgsAtLeast n) -> checkNumArgsGreaterThan id.name n args.Length
+                   | None ->
                        match Map.tryFind id.uniqueName functionDefs with
                        | Some c ->
                            match c.formals with
-                           | MultiArgFormals ids -> if ids.Length <> args.Length then
-                                                       sprintf "Arity mismatch for function %s: expected %i arguments, got %i" id.name (ids.Length) (args.Length)
-                                                       |> AnalysisException
-                                                       |> raise
+                           | MultiArgFormals ids -> checkNumArgsEqual id.name ids.Length args.Length
                            | SingleArgFormals _ -> ()
                        | _ -> ()
                | _ -> ()
@@ -511,7 +527,9 @@ and labelClosure c name parentScopeExprs =
 
 let analyse exprs =
     try
-        let builtInScope = { definitions = builtIns; parent = None }
+        let builtInNames = Map.toList builtIns
+                           |> List.map (fun (k, v) -> k)
+        let builtInScope = { definitions = builtInNames; parent = None }
         let topLevelScope = buildScope builtInScope exprs
         let moduleBody = exprs
                          |> List.map (handleExpression topLevelScope)

@@ -113,7 +113,17 @@ makeASTandAnalyse "(define x 1)\
                        (+ x y)))"
 
 makeASTandAnalyse "(define foo (lambda (x y) (+ x y)))\
-                   (foo 1 2 3)"
+                   (foo 1 2)"
 
 makeASTandAnalyse "(define foo (lambda l l))\
                    (foo)"
+
+makeASTandAnalyse "(+ 1 2 3)"
+
+makeASTandAnalyse "(< 1 2 3)"
+
+makeASTandAnalyse "(< 1)"
+
+makeASTandAnalyse "(zero? 1)"
+
+makeASTandAnalyse "(zero? 1 2)"
