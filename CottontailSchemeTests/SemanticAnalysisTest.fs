@@ -38,7 +38,10 @@ let buildArgumentErrorMsgExactCount name expected got =
 let buildArgumentErrorMsgAtLeast name expected got =
     sprintf "Arity mismatch for function %s: expected at least %i arguments, got %i" name expected got
 
-// TODO: variable reference bindings
+let getFunction =
+    getTree >> List.head >> function
+                            | IdentifierDefinition (id, (Closure c)) -> c
+                            | e -> failwithf "Expected a function definition but got %A" e
 
 [<TestFixture>]
 type ``Errors detected by semantic analysis`` () =
@@ -182,11 +185,6 @@ type ``Transformations made during semantic analysis`` () =
 
 [<TestFixture>]
 type ``Lambda labeling`` () =
-    let getFunction =
-        getTree >> List.head >> function
-                                | IdentifierDefinition (id, (Closure c)) -> c
-                                | e -> failwithf "Expected a function definition but got %A" e
-
     [<Test>]
     member x.``lambdas are correctly labeled as tail recursive`` () =
         let isTailRecursive = getFunction >> fun c -> c.isTailRecursive
@@ -291,3 +289,52 @@ type ``Lambda labeling`` () =
            | ProcedureCall ((Closure c), _) -> c.usedAsFirstClassValue |> should equal false
            | e -> sprintf "Expected ProcedureCall calling the anonymous function but got %A" e
                   |> Assert.Fail
+
+[<TestFixture>]
+type ``Name bindings`` () =
+    let rec getId = function
+                    | VariableReference id -> id
+                    | IdentifierDefinition (id, _) -> id
+                    | TailExpression e -> getId e
+                    | e -> failwithf "Expected a variable reference or identifier definition but got %A" e
+
+    let handleClosure f closure =
+        match closure with
+        | Closure c -> f c
+        | e -> sprintf "Expected a Closure but got %A" e
+               |> Assert.Fail
+
+    [<Test>]
+    member x.``variable references are bound to the definition in the nearest scope`` () =
+        parseAndBuild "(define x 1)\
+                       x"
+        |> getTree
+        |> fun exprs -> getId (List.head exprs) |> should equal (getId (List.last exprs))
+
+        parseAndBuild "(define x 1)\
+                       (lambda ()\
+                         (define x 2)
+                         x)"
+        |> getTree
+        |> fun exprs -> let firstX = List.head exprs |> getId
+                        List.last exprs
+                        |> handleClosure (fun c ->
+                                              let secondX = List.head c.body |> getId
+                                              let thirdX = List.last c.body |> getId
+                                              firstX |> should not' (equal secondX)
+                                              secondX |> should equal thirdX)
+
+        parseAndBuild "(define x 1)\
+                       (lambda () x)"
+        |> getTree
+        |> fun exprs -> let firstX = List.head exprs |> getId
+                        List.last exprs
+                        |> handleClosure (fun c ->
+                                              let secondX = List.head c.body |> getId
+                                              firstX |> should equal secondX)
+
+        parseAndBuild "(define test (lambda () test))"
+        |> getFunction
+        |> fun c -> List.head c.body
+                    |> getId
+                    |> should equal c.functionName.Value
