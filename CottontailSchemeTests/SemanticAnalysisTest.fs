@@ -38,9 +38,6 @@ let buildArgumentErrorMsgExactCount name expected got =
 let buildArgumentErrorMsgAtLeast name expected got =
     sprintf "Arity mismatch for function %s: expected at least %i arguments, got %i" name expected got
 
-// TODO: lambda labeling
-// - used as first class value
-// - tail recursive
 // TODO: variable reference bindings
 
 [<TestFixture>]
@@ -103,7 +100,7 @@ type ``Errors detected by semantic analysis`` () =
 [<TestFixture>]
 type ``Transformations made during semantic analysis`` () =
     [<Test>]
-    member x.``duplicate definitions on the top level are changed to assignments`` () =
+    member x.``duplicate definitions on the top level are changed into assignments`` () =
         let gotWrongExpression e = sprintf "Expected an Assignment but got %A" e
                                    |> Assert.Fail
         parseAndBuild "(define x 1)(define y 2)(define x 3)"
@@ -181,4 +178,116 @@ type ``Transformations made during semantic analysis`` () =
                 List.last exprs
                 |> testConditional
            | e -> sprintf "Expected a SequenceExpression but got %A" e
+                  |> Assert.Fail
+
+[<TestFixture>]
+type ``Lambda labeling`` () =
+    let getFunction =
+        getTree >> List.head >> function
+                                | IdentifierDefinition (id, (Closure c)) -> c
+                                | e -> failwithf "Expected a function definition but got %A" e
+
+    [<Test>]
+    member x.``lambdas are correctly labeled as tail recursive`` () =
+        let isTailRecursive = getFunction >> fun c -> c.isTailRecursive
+        let shouldBeTailRecursive = isTailRecursive >> should equal true
+        let shouldNotBeTailRecursive = isTailRecursive >> should equal false
+
+        parseAndBuild "(define sum\
+                         (lambda (l acc)\
+                           (if (null? l)\
+                               acc\
+                               (sum (cdr l) (+ (car l) acc)))))"
+        |> shouldBeTailRecursive
+
+        parseAndBuild "(define print-list\
+                          (lambda (l)\
+                             (if (null? l)\
+                                 (display \"\\n\")\
+                                 (begin\
+                                   (display (car l))\
+                                   (print-list (cdr l))))))"
+        |> shouldBeTailRecursive
+
+        parseAndBuild "(define hello (lambda () (display \"hello\")))"
+        |> shouldNotBeTailRecursive
+
+        parseAndBuild "(define factorial\
+                         (lambda (n)\
+                           (if (zero? n)\
+                               1\
+                               (* n (factorial (- n 1))))))"
+        |> shouldNotBeTailRecursive
+
+    [<Test>]
+    member x.``lambdas are correctly labeled for first class use`` () =
+        let isFirstClassValue = getFunction >> fun c -> c.usedAsFirstClassValue
+        let shouldBeFirstClass = isFirstClassValue >> should equal true
+        let shouldNotBeFirstClass = isFirstClassValue >> should equal false
+
+        parseAndBuild "(define sum\
+                         (lambda (l acc)\
+                           (if (null? l)\
+                               acc\
+                               (sum (cdr l) (+ (car l) acc)))))\
+                       (sum '(1 2 3 4 5) 0)"
+        |> shouldNotBeFirstClass
+
+        parseAndBuild "(define square (lambda (x) (* x x)))\
+                       (define apply (lambda (f x) (f x)))\
+                       (apply square 4)"
+        |> shouldBeFirstClass
+
+        parseAndBuild "(define square (lambda (x) (* x x)))\
+                       (define get-square (lambda () square))"
+        |> shouldBeFirstClass
+
+        // If the function value can be overwritten, it is treated as a first class value here.
+        parseAndBuild "(define square (lambda (x) (display \"not implemented!\")))\
+                       (set! square (lambda (x) (* x x)))"
+        |> shouldBeFirstClass
+
+        parseAndBuild "(define square (lambda (x) (display \"not implemented!\")))\
+                       (define square (lambda (x) (* x x)))"
+        |> shouldBeFirstClass
+
+        parseAndBuild "(define f1 (lambda (x) (+ x 1)))\
+                       (define f2 (lambda (x) (* x 2)))\
+                       (define get (lambda (v) (if v f1 f2)))"
+        |> shouldBeFirstClass
+
+        // Testing the other conditional branch.
+        parseAndBuild "(define f1 (lambda (x) (+ x 1)))\
+                       (define f2 (lambda (x) (* x 2)))\
+                       (define get (lambda (v) (if v f2 f1)))"
+        |> shouldBeFirstClass
+
+        parseAndBuild "(define add\
+                         (lambda (x)
+                           (lambda (y) (+ x y))))"
+        |> getFunction
+        |> fun c -> List.last c.body
+                    |> function
+                       | TailExpression e ->
+                           match e with
+                           | Closure c -> c.usedAsFirstClassValue |> should equal true
+                           | e -> sprintf "Expected Closure but got %A" e
+                                  |> Assert.Fail
+                       | e -> sprintf "Expected TailExpression but got %A" e
+                              |> Assert.Fail
+
+        parseAndBuild "(lambda (x) (+ x 1))"
+        |> getTree
+        |> List.head
+        |> function
+           | Closure c -> c.usedAsFirstClassValue |> should equal true
+           | e -> sprintf "Expected Closure but got %A" e
+                  |> Assert.Fail
+
+        parseAndBuild "((lambda (x) (+ x 1)) 5)"
+        |> getTree
+        |> List.head
+        |> function
+           | ProcedureCall ((Closure c), _) -> c.usedAsFirstClassValue |> should equal false
+           | e -> sprintf "Expected ProcedureCall calling the anonymous function but got %A" e
                   |> Assert.Fail

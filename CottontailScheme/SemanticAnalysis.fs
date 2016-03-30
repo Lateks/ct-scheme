@@ -199,6 +199,7 @@ module LambdaHelpers =
         let isValidArg =
             match expr with
             | Conditional (_, _, _)
+            | SequenceExpression (_, _)
             | TailExpression _
                 -> true
             | _ -> false
@@ -243,8 +244,7 @@ module LambdaHelpers =
             | IdentifierDefinition (id, expr)
                 -> if isNameReference id then
                        match expr with
-                       | Closure c' -> assert (c = c')
-                                       usedAsFirstClassValueInList c'.body
+                       | Closure c' -> usedAsFirstClassValueInList c'.body
                        | _ -> false
                    else
                        usedAsFirstClassValueInExpr expr
@@ -463,9 +463,13 @@ let rec labelLambdas exprs =
         | IdentifierDefinition (id, expr)
             -> IdentifierDefinition (id, label (Some id) expr)
         | Conditional (e1, e2, e3)
-            -> Conditional (label None e1, label name e2, Option.map (label name) e3)
+            -> Conditional (label None e1, label name e2, Option.map (label None) e3)
         | ProcedureCall (proc, args)
             -> ProcedureCall (label None proc, List.map (label None) args)
+        | SequenceExpression (t, exprs)
+            -> SequenceExpression (t, List.map (label None) exprs)
+        | TailExpression e
+            -> TailExpression (label None e)
         | e -> e
 
     exprs |> List.map (label None)
