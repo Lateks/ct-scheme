@@ -132,3 +132,10 @@ makeASTandAnalyse "(zero? 1)"
 makeASTandAnalyse "(zero? 1 2)"
 
 kebabCaseToCamelCase "foo--bar----baz"
+
+convertPredicateName "foo?"
+convertMutatorName "set!"
+
+let symbolGen = SymbolGenerator()
+
+symbolGen.generateSymbol "is-thing" <> symbolGen.generateSymbol "thing?"
