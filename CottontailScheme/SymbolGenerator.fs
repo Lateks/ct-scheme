@@ -1,10 +1,12 @@
 ﻿module CottontailScheme.SymbolGenerator
 
+open System.Text.RegularExpressions
+
 let kebabCaseToCamelCase (name : string) =
-    name.Split [|'-'|]
+    name.Split([|'-'|])
     |> Array.map (fun s -> if s.Length > 0 then
                               s.[0].ToString().ToUpper() + s.Substring (1)
-                           else "Dash")
+                           else "")
     |> Array.toList
     |> String.concat ""
 
@@ -22,34 +24,36 @@ let convertMutatorName (name : string) =
     replaceSuffixWithPrefix name "!" "do-"
 
 let replaceSymbols (name: string) =
-    let replaceExtraDashAtEnd (newName: string) =
+    let removeExtraDashAtEnd (newName: string) =
         if newName.Chars (newName.Length - 1) <> name.Chars (name.Length - 1) then
             newName.TrimEnd [|'-'|]
         else
             newName
 
-    let replaceExtraDashAtBeginning (newName : string) =
-        if newName.Chars 0 <> name.Chars 0 then
-            newName.TrimStart [|'-'|]
-        else
-            newName
+    let replaceNonKebabCaseDashes =
+        fun s -> let allDashes = new Regex("^\-+$")
+                 if allDashes.IsMatch s then s.Replace("-", "Minus") else s
+        >> fun s -> let dashesAtBeginning = new Regex("^\-+")
+                    dashesAtBeginning.Replace(s, fun m -> (m.Groups.Item 0).Value.Replace("-", "Minus") + "-")
+        >> fun s -> let dashesAtEnd = new Regex("\-+$")
+                    dashesAtEnd.Replace(s, fun m -> "-" + (m.Groups.Item 0).Value.Replace("-", "Minus"))
 
-    name.Replace("!", "-exclamation-")
-        .Replace("$", "-dollar-")
-        .Replace("%", "-percent-")
-        .Replace("&", "-and-")
-        .Replace("*", "-star-")
-        .Replace("/", "-div-")
-        .Replace(":", "-colon-")
-        .Replace("<", "-lt-")
-        .Replace("=", "-eq-")
-        .Replace(">", "-gt-")
-        .Replace("?", "-question-")
-        .Replace("^", "-hat-")
-        .Replace("~", "-tilde-")
-        .Replace("+", "-plus-")
-    |> replaceExtraDashAtBeginning
-    |> replaceExtraDashAtEnd
+    name.Replace("!", "Exclamation-")
+        .Replace("$", "Dollar-")
+        .Replace("%", "Percent-")
+        .Replace("&", "And-")
+        .Replace("*", "Star-")
+        .Replace("/", "Div-")
+        .Replace(":", "Colon-")
+        .Replace("<", "Lt-")
+        .Replace("=", "Eq-")
+        .Replace(">", "Gt-")
+        .Replace("?", "Question-")
+        .Replace("^", "Hat-")
+        .Replace("~", "Tilde-")
+        .Replace("+", "Plus-")
+    |> removeExtraDashAtEnd
+    |> replaceNonKebabCaseDashes
 
 type SymbolGenerator () =
     let counters = new System.Collections.Generic.Dictionary<string, int>()

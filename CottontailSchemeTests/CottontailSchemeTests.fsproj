@@ -57,6 +57,7 @@
     <Content Include="app.config" />
     <Compile Include="ParserTest.fs" />
     <Compile Include="ASTBuilderTest.fs" />
+    <Compile Include="SymbolGeneratorTest.fs" />
     <Compile Include="SemanticAnalysisTest.fs" />
   </ItemGroup>
   <ItemGroup>
