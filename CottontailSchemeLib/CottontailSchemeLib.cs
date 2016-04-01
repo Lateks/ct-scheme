@@ -21,7 +21,7 @@ namespace CottontailSchemeLib
         static string CdrFunctionName = "cdr";
         static string CarFunctionName = "car";
 
-        private static void AssertPair(String functionName, CTObject arg)
+        private static void AssertPair(string functionName, CTObject arg)
         {
             if (arg.GetType() != typeof(CTPair))
             {
@@ -66,7 +66,7 @@ namespace CottontailSchemeLib
     {
         public virtual bool ToBool() { return true; }
         public virtual CTObject ToCTBool() { return Constants.True; }
-        public abstract String Display();
+        public abstract string Display();
 
         public override string ToString()
         {
@@ -145,7 +145,7 @@ namespace CottontailSchemeLib
         public override string Display()
         {
             double fraction = value - (int)value;
-            if (fraction > 0)
+            if (fraction > 0) // Double.Epsilon?
             {
                 return value.ToString();
             }
@@ -238,6 +238,6 @@ namespace CottontailSchemeLib
         }
     }
 
-    // TODO: function objects
+    // TODO: procedure objects
     // - remember typename
 }
