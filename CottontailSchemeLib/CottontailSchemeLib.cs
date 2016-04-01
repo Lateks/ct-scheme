@@ -37,7 +37,7 @@ namespace CottontailSchemeLib
 
         public override CTObject ToCTBool()
         {
-            throw new NotImplementedException();
+            return Constants.True;
         }
     }
 
@@ -69,6 +69,39 @@ namespace CottontailSchemeLib
         public override CTObject ToCTBool()
         {
             return this;
+        }
+    }
+
+    public class CTNumber : CTObject
+    {
+        private double value;
+
+        public CTNumber(double value)
+        {
+            this.value = value;
+        }
+
+        public override string Display()
+        {
+            double fraction = value - (int)value;
+            if (fraction > 0)
+            {
+                return value.ToString();
+            }
+            else
+            {
+                return ((int)value).ToString();
+            }
+        }
+
+        public override bool ToBool()
+        {
+            return true;
+        }
+
+        public override CTObject ToCTBool()
+        {
+            return Constants.True;
         }
     }
 }
