@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Text;
 
 namespace CottontailSchemeLib
@@ -78,7 +79,7 @@ namespace CottontailSchemeLib
 
         public override bool Equals(object obj)
         {
-            return (obj is CTObject) && IsEqualTo((CTObject)obj);
+            return obj == this || (obj is CTObject) && IsEqualTo((CTObject)obj);
         }
 
         protected abstract bool IsEqualTo(CTObject obj);
@@ -165,7 +166,7 @@ namespace CottontailSchemeLib
             double fraction = value - (int)value;
             if (fraction > 0)
             {
-                return value.ToString();
+                return value.ToString(CultureInfo.InvariantCulture);
             }
             else
             {
@@ -210,13 +211,11 @@ namespace CottontailSchemeLib
                     repr.Append(" ").Append(rest.DisplayValue());
                     tail = rest.Cdr();
                 }
-                else if (tail.GetType() == typeof(CTEmptyList))
-                {
-                    break;
-                }
                 else
                 {
-                    repr.Append(" . ").Append(tail.Display());
+                    if (tail.GetType() != typeof(CTEmptyList))
+                        repr.Append(" . ").Append(tail.Display());
+                    break;
                 }
             }
 
