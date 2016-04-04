@@ -82,3 +82,12 @@ type ``printing objects`` () =
                CTPair(Constants.True, CTPair(Constants.False, CTEmptyList())))
                .ToString()
         |> should equal "((1 2 3) #t #f)"
+
+    [<Test>]
+    member x.``printing strings`` () =
+        CTString("Hello, world!\n").ToString() |> should equal "\"Hello, world!\n\""
+        CTString("foo").GetValue() |> should equal "foo"
+
+    [<Test>]
+    member x.``printing symbols`` () =
+        CTSymbol("fib").ToString() |> should equal "fib"

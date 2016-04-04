@@ -278,6 +278,65 @@ namespace CottontailSchemeLib
         }
     }
 
+    public class CTString : CTObject
+    {
+        internal static readonly string TypeName = "string";
+
+        private readonly string value;
+
+        public CTString(string value)
+        {
+            this.value = value;
+        }
+
+        public string GetValue()
+        {
+            return value;
+        }
+
+        public override string Display()
+        {
+            return "\"" + value + "\"";
+        }
+
+        public override string DisplayType()
+        {
+            return TypeName;
+        }
+
+        protected override bool IsEqualTo(CTObject obj)
+        {
+            return obj.GetType() == typeof(CTString) && ((CTString)obj).value.Equals(value);
+        }
+    }
+
+    public class CTSymbol : CTObject
+    {
+        internal static readonly string TypeName = "symbol";
+
+        private readonly string name;
+
+        public CTSymbol(string name)
+        {
+            this.name = name;
+        }
+
+        public override string Display()
+        {
+            return name;
+        }
+
+        public override string DisplayType()
+        {
+            return TypeName;
+        }
+
+        protected override bool IsEqualTo(CTObject obj)
+        {
+            return obj.GetType() == typeof(CTSymbol) && ((CTSymbol)obj).name.Equals(name);
+        }
+    }
+
     // TODO: procedure objects
     // - remember typename
 }
