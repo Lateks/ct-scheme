@@ -83,12 +83,12 @@ module IdentifierHelpers =
              makeBuiltInId "cons", SetNumberOfArgs 2
              makeBuiltInId "null?", SetNumberOfArgs 1
              makeBuiltInId "+", VarArgs
-             makeBuiltInId "-", VarArgs
+             makeBuiltInId "-", VarArgsAtLeast 1
              makeBuiltInId "*", VarArgs
              makeBuiltInId "/", VarArgsAtLeast 1
              makeBuiltInId "<", VarArgsAtLeast 2
              makeBuiltInId ">", VarArgsAtLeast 2
-             makeBuiltInId "eq?", VarArgs
+             makeBuiltInId "eq?", SetNumberOfArgs 2
              makeBuiltInId "zero?", SetNumberOfArgs 1
              makeBuiltInId "not", SetNumberOfArgs 1]
 

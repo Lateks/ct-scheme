@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace CottontailSchemeLib
@@ -16,6 +17,21 @@ namespace CottontailSchemeLib
         public static readonly CTObject Undefined = new CTUndefined();
         public static readonly CTObject True = new CTBool(true);
         public static readonly CTObject False = new CTBool(false);
+    }
+
+    public class GenericOperations
+    {
+        public static string GetDisplayValue(CTObject obj)
+        {
+            if (obj.GetType() == typeof(CTString))
+            {
+                return ((CTString)obj).value;
+            }
+            else
+            {
+                return obj.ToString();
+            }
+        }
     }
 
     public class ListOperations
@@ -61,6 +77,129 @@ namespace CottontailSchemeLib
         public static bool IsNull(CTObject v)
         {
             return v.GetType() == typeof(CTEmptyList);
+        }
+    }
+
+    public class NumberOperations
+    {
+        private static readonly string PlusFunctionName = "+";
+        private static readonly string MinusFunctionName = "-";
+        private static readonly string DivFunctionName = "/";
+        private static readonly string MultFunctionName = "*";
+        private static readonly string IsZeroFunctionName = "zero?";
+        private static readonly string LessThanFunctionName = "<";
+        private static readonly string GreaterThanFunctionName = ">";
+
+        private static void AssertNumber(string functionName, CTObject arg)
+        {
+            if (arg.GetType() != typeof(CTNumber))
+            {
+                throw new TypeError(functionName, CTNumber.TypeName, arg.DisplayType());
+            }
+        }
+
+        private static double getValue(CTObject obj)
+        {
+            return ((CTNumber)obj).value;
+        }
+
+        private static void CheckArgs(string functionName, CTObject[] args)
+        {
+            foreach (var arg in args)
+            {
+                AssertNumber(functionName, arg);
+            }
+        }
+
+        public static CTNumber Plus(CTObject[] args)
+        {
+            CheckArgs(PlusFunctionName, args);
+
+            double sum = args.Select(getValue)
+                             .Aggregate(0.0, (a, n) => a + n);
+
+            return new CTNumber(sum);
+        }
+
+        public static CTNumber Minus(CTObject[] args)
+        {
+            CheckArgs(MinusFunctionName, args);
+
+            double result = 0;
+            if (args.Length == 1)
+                result = -getValue(args[0]);
+            else
+                result = args.Skip(1)
+                             .Select(getValue)
+                             .Aggregate(getValue(args[0]), (a, n) => a - n);
+
+            return new CTNumber(result);
+        }
+
+        public static CTNumber Div(CTObject[] args)
+        {
+            CheckArgs(DivFunctionName, args);
+
+            double result = 0;
+            if (args.Length == 1)
+            {
+                
+                result = 1.0 / getValue(args[0]);
+            }
+            else
+            {
+                result = args.Skip(1)
+                                .Select(getValue)
+                                .Aggregate(getValue(args[0]), (a, n) => a / n);
+            }
+
+            return new CTNumber(result);
+        }
+
+        public static CTNumber Mult(CTObject[] args)
+        {
+            CheckArgs(MultFunctionName, args);
+
+            var result = args.Select(getValue)
+                             .Aggregate(1.0, (a, n) => a * n);
+
+            return new CTNumber(result);
+        }
+
+        public static bool IsZero(CTObject arg)
+        {
+            AssertNumber(IsZeroFunctionName, arg);
+            return Math.Abs(((CTNumber)arg).value) <= double.Epsilon;
+        }
+
+        private static bool ComparePairs(CTObject[] args, Func<double, double, bool> compare)
+        {
+            var values = args.Select(getValue).ToArray();
+            double prev = values[0];
+            for (int i = 1; i < args.Length; ++i)
+            {
+                if (compare(prev, values[i]))
+                {
+                    prev = values[i];
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        public static bool LessThan(CTObject[] args)
+        {
+            CheckArgs(LessThanFunctionName, args);
+            return ComparePairs(args, (a, b) => a < b);
+        }
+
+        public static bool GreaterThan(CTObject[] args)
+        {
+            CheckArgs(GreaterThanFunctionName, args);
+            return ComparePairs(args, (a, b) => a > b);
         }
     }
 
@@ -154,7 +293,7 @@ namespace CottontailSchemeLib
     {
         internal static readonly string TypeName = "number";
 
-        private double value;
+        public double value { get; private set; }
 
         public CTNumber(double value)
         {
@@ -282,16 +421,11 @@ namespace CottontailSchemeLib
     {
         internal static readonly string TypeName = "string";
 
-        private readonly string value;
+        public string value { get; private set; }
 
         public CTString(string value)
         {
             this.value = value;
-        }
-
-        public string GetValue()
-        {
-            return value;
         }
 
         public override string Display()
