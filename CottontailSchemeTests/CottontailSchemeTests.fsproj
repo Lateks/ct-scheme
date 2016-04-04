@@ -59,6 +59,7 @@
     <Compile Include="ASTBuilderTest.fs" />
     <Compile Include="SymbolGeneratorTest.fs" />
     <Compile Include="SemanticAnalysisTest.fs" />
+    <Compile Include="LibTest.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="FParsec">
@@ -86,6 +87,11 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Numerics" />
+    <ProjectReference Include="..\CottontailSchemeLib\CottontailSchemeLib.csproj">
+      <Name>CottontailSchemeLib</Name>
+      <Project>{3ca8ccbb-f0d9-4391-8b0f-f065a8d9b132}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\CottontailScheme\CottontailScheme.fsproj">
       <Name>CottontailScheme</Name>
       <Project>{b591c6d1-4dae-4a2b-85b7-b53b3cf746bf}</Project>

@@ -1,11 +1,12 @@
 ﻿using System;
+using System.Text;
 
 namespace CottontailSchemeLib
 {
     public class TypeError : Exception
     {
         public TypeError(string functionName, string expectedType, string receivedType)
-            : base(String.Format("{0}: contract violation:\n\texpected: {1}\n\tgiven: {2}", functionName, expectedType, receivedType))
+            : base(string.Format("{0}: contract violation:\n\texpected: {1}\n\tgiven: {2}", functionName, expectedType, receivedType))
         { }
     }
 
@@ -18,8 +19,8 @@ namespace CottontailSchemeLib
 
     public class ListOperations
     {
-        static string CdrFunctionName = "cdr";
-        static string CarFunctionName = "car";
+        private static readonly string CdrFunctionName = "cdr";
+        private static readonly string CarFunctionName = "car";
 
         private static void AssertPair(string functionName, CTObject arg)
         {
@@ -74,6 +75,13 @@ namespace CottontailSchemeLib
         }
 
         public abstract string DisplayType();
+
+        public override bool Equals(object obj)
+        {
+            return (obj is CTObject) && IsEqualTo((CTObject)obj);
+        }
+
+        protected abstract bool IsEqualTo(CTObject obj);
     }
 
     public class CTUndefined : CTObject
@@ -90,6 +98,11 @@ namespace CottontailSchemeLib
         public override string DisplayType()
         {
             return TypeName;
+        }
+
+        protected override bool IsEqualTo(CTObject obj)
+        {
+            return obj.GetType() == typeof(CTUndefined);
         }
     }
 
@@ -129,6 +142,11 @@ namespace CottontailSchemeLib
         {
             return this;
         }
+
+        protected override bool IsEqualTo(CTObject obj)
+        {
+            return obj.GetType() == typeof(CTBool) && ((CTBool)obj).value == value;
+        }
     }
 
     public class CTNumber : CTObject
@@ -145,7 +163,7 @@ namespace CottontailSchemeLib
         public override string Display()
         {
             double fraction = value - (int)value;
-            if (fraction > 0) // Double.Epsilon?
+            if (fraction > 0)
             {
                 return value.ToString();
             }
@@ -158,6 +176,11 @@ namespace CottontailSchemeLib
         public override string DisplayType()
         {
             return TypeName;
+        }
+
+        protected override bool IsEqualTo(CTObject obj)
+        {
+            return obj.GetType() == typeof(CTNumber) && ((CTNumber)obj).value == value;
         }
     }
 
@@ -174,32 +197,32 @@ namespace CottontailSchemeLib
             cdr = v2;
         }
 
-        // TODO: use a string builder and test
         public override string Display()
         {
-            string repr = "(" + DisplayValue();
+            StringBuilder repr = new StringBuilder("(");
+            repr.Append(DisplayValue());
             CTObject tail = cdr;
             while (true)
             {
                 if (tail.GetType() == typeof(CTPair))
                 {
                     CTPair rest = (CTPair)tail;
-                    repr += " " + rest.DisplayValue();
+                    repr.Append(" ").Append(rest.DisplayValue());
                     tail = rest.Cdr();
                 }
-                else if (tail.GetType() != typeof(CTEmptyList))
-                {
-                    repr += " . " + tail.Display();
-                }
-                else
+                else if (tail.GetType() == typeof(CTEmptyList))
                 {
                     break;
                 }
+                else
+                {
+                    repr.Append(" . ").Append(tail.Display());
+                }
             }
 
-            repr += ")";
+            repr.Append(")");
 
-            return repr;
+            return repr.ToString();
         }
 
         public string DisplayValue()
@@ -221,6 +244,19 @@ namespace CottontailSchemeLib
         {
             return TypeName;
         }
+
+        protected override bool IsEqualTo(CTObject obj)
+        {
+            if (obj.GetType() == typeof(CTPair))
+            {
+                CTPair other = (CTPair)obj;
+                return other.car.Equals(car) && other.cdr.Equals(cdr);
+            }
+            else
+            {
+                return false;
+            }
+        }
     }
 
     public class CTEmptyList : CTObject
@@ -235,6 +271,11 @@ namespace CottontailSchemeLib
         public override string DisplayType()
         {
             return TypeName;
+        }
+
+        protected override bool IsEqualTo(CTObject obj)
+        {
+            return obj.GetType() == typeof(CTEmptyList);
         }
     }
 
