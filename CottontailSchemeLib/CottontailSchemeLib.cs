@@ -12,6 +12,13 @@ namespace CottontailSchemeLib
         { }
     }
 
+    public class InvalidNumberOfArgsError : Exception
+    {
+        public InvalidNumberOfArgsError(string functionName, int expectedArgs, int receivedArgs)
+            : base(string.Format("{0}: contract violation:\n\tinvalid number of arguments\n\texpected: {1}\n\tgiven: {2}", functionName, expectedArgs, receivedArgs))
+        { }
+    }
+
     public class Constants
     {
         public static readonly CTObject Undefined = new CTUndefined();
@@ -480,16 +487,24 @@ namespace CottontailSchemeLib
 
         private readonly int identifier;
         private readonly string name;
+        private readonly int arity;
 
-        public CTProcedure()
+        public CTProcedure(int arity)
         {
+            this.arity = arity;
             ++counter;
             identifier = counter;
         }
 
-        public CTProcedure(string name)
+        public CTProcedure(int arity, string name)
         {
+            this.arity = arity;
             this.name = name;
+        }
+
+        private string GetName()
+        {
+            return name != null ? name : Display();
         }
 
         public override string Display()
@@ -505,6 +520,36 @@ namespace CottontailSchemeLib
         protected override bool IsEqualTo(CTObject obj)
         {
             return obj == this;
+        }
+
+        public CTObject funcall0()
+        {
+            throw new InvalidNumberOfArgsError(GetName(), arity, 0);
+        }
+
+        public CTObject funcall1(CTObject a1)
+        {
+            throw new InvalidNumberOfArgsError(GetName(), arity, 1);
+        }
+
+        public CTObject funcall2(CTObject a1, CTObject a2)
+        {
+            throw new InvalidNumberOfArgsError(GetName(), arity, 2);
+        }
+
+        public CTObject funcall3(CTObject a1, CTObject a2, CTObject a3)
+        {
+            throw new InvalidNumberOfArgsError(GetName(), arity, 3);
+        }
+
+        public CTObject funcallMany(CTObject[] args)
+        {
+            throw new InvalidNumberOfArgsError(GetName(), arity, args.Length);
+        }
+
+        public CTObject funcallVarargs(CTObject[] args)
+        {
+            throw new InvalidNumberOfArgsError(GetName(), arity, args.Length);
         }
     }
 }
