@@ -473,4 +473,38 @@ namespace CottontailSchemeLib
 
     // TODO: procedure objects
     // - remember typename
+    public class CTProcedure : CTObject
+    {
+        internal static readonly string TypeName = "procedure";
+        private static int counter = 0;
+
+        private readonly int identifier;
+        private readonly string name;
+
+        public CTProcedure()
+        {
+            ++counter;
+            identifier = counter;
+        }
+
+        public CTProcedure(string name)
+        {
+            this.name = name;
+        }
+
+        public override string Display()
+        {
+            return string.Format("#<procedure:{0}>", name != null ? name : "anonymous" + identifier.ToString());
+        }
+
+        public override string DisplayType()
+        {
+            return TypeName;
+        }
+
+        protected override bool IsEqualTo(CTObject obj)
+        {
+            return obj == this;
+        }
+    }
 }
