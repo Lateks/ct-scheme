@@ -1,6 +1,9 @@
 ﻿open CottontailScheme.Parsing
 open FParsec
 
+open CottontailScheme.SemanticAnalysis
+open CottontailScheme.CodeGenerator
+
 let testParser p str =
     match run p str with
     | Success(result, _, _)   -> printfn "Success: %A" result
@@ -8,5 +11,5 @@ let testParser p str =
 
 [<EntryPoint>]
 let main args =
-    testParser parseExpression "#true"
+    generateCodeFor (ProgramAnalysisError "placeholder") "hello"
     0
