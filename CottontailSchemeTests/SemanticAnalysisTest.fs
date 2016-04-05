@@ -132,7 +132,7 @@ type ``Transformations made during semantic analysis`` () =
         let testConditional =
             function
             | Conditional (e1, e2, e3) -> match e1, e2, e3 with
-                                          | VariableReference _, TailExpression _, Some (TailExpression _) -> ()
+                                          | VariableReference _, TailExpression _, TailExpression _ -> ()
                                           | f1, f2, f3 -> sprintf "Expected branches to be tagged as TailExpressions but got: %A\n%A\n%A\n" f1 f2 f3
                                                           |> Assert.Fail 
             | e -> sprintf "Expected a Conditional but got a %A" e
@@ -151,14 +151,12 @@ type ``Transformations made during semantic analysis`` () =
         |> getTail
         |> testConditional
 
-        // TODO: should the missing branch be tagged in some way,
-        // e.g. marked as returning an undefined value?
         parseAndBuild "(lambda (v) (if v (display \"v is truthy\")))"
         |> getTail
         |> function
            | Conditional (e1, e2, e3) ->
                 match e1, e2, e3 with
-                | VariableReference _, TailExpression _, None -> ()
+                | VariableReference _, TailExpression _, TailExpression UndefinedValue -> ()
                 | f1, f2, f3 -> sprintf "Expected branches to be tagged as TailExpressions but got: %A\n%A\n%A\n" f1 f2 f3
                                 |> Assert.Fail 
            | e -> sprintf "Expected a Conditional but got a %A" e

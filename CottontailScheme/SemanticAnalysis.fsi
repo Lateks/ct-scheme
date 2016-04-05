@@ -8,10 +8,11 @@ type Expression =
      | ProcedureCall of Expression * Expression list
      | ValueExpression of Literals.LiteralValue
      | Assignment of Scope.Identifier * Expression
-     | Conditional of Expression * Expression * Expression option
+     | Conditional of Expression * Expression * Expression
      | IdentifierDefinition of Scope.Identifier * Expression
      | SequenceExpression of SequenceExpressionType * Expression list
      | TailExpression of Expression
+     | UndefinedValue
 and ClosureFormals = SingleArgFormals of Scope.Identifier
                    | MultiArgFormals of Scope.Identifier list
 and ClosureDefinition = { formals: ClosureFormals;

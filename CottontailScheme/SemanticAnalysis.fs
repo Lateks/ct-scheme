@@ -38,10 +38,11 @@ type Expression =
      | ProcedureCall of Expression * Expression list
      | ValueExpression of LiteralValue
      | Assignment of Identifier * Expression
-     | Conditional of Expression * Expression * Expression option
+     | Conditional of Expression * Expression * Expression
      | IdentifierDefinition of Identifier * Expression
      | SequenceExpression of SequenceExpressionType * Expression list
      | TailExpression of Expression
+     | UndefinedValue
 and ClosureFormals = SingleArgFormals of Identifier
                    | MultiArgFormals of Identifier list
 and ClosureDefinition = { formals: ClosureFormals;
@@ -152,11 +153,7 @@ module LambdaHelpers =
             | Assignment (id, expr) ->
                 List.append (collect id) (collectFreeVariables expr)
             | Conditional (cond, thenExpr, elseExpr) ->
-                match elseExpr with
-                | Some expr ->
-                    [cond; thenExpr; expr]
-                | None ->
-                    [cond; thenExpr]
+                [cond; thenExpr; elseExpr]
                 |> collectFromExprList
             | SequenceExpression (_, exprs) ->
                 collectFromExprList exprs
@@ -181,7 +178,7 @@ module LambdaHelpers =
 
         match expr with
         | Conditional (cond, thenExpr, elseExpr)
-            -> Conditional (cond, toTailExpression thenExpr, Option.map toTailExpression elseExpr)
+            -> Conditional (cond, toTailExpression thenExpr, toTailExpression elseExpr)
         | SequenceExpression (t, exprs) as seq
             -> if List.isEmpty exprs then
                   TailExpression seq
@@ -205,10 +202,9 @@ module LambdaHelpers =
 
         match expr with
         | Conditional (cond, thenExpr, elseExpr)
-            -> match elseExpr with
-               | Some e -> List.map findTailExprs [thenExpr; e]
-                           |> List.concat
-               | None -> findTailExprs thenExpr
+            -> [thenExpr; elseExpr]
+               |> List.map findTailExprs
+               |> List.concat
         | SequenceExpression (_, exprs)
             -> List.last exprs
                |> findTailExprs
@@ -246,12 +242,7 @@ module LambdaHelpers =
                    else
                        usedAsFirstClassValueInExpr expr
             | Conditional (e1, e2, e3) ->
-                let usedInCondition = usedAsFirstClassValueInExpr e1
-                let usedInThenBranch = usedAsFirstClassValueInExpr e2
-                let usedInElseBranch = match e3 with
-                                       | Some e -> usedAsFirstClassValueInExpr e
-                                       | None -> false
-                usedInCondition || usedInThenBranch || usedInElseBranch
+                usedAsFirstClassValueInExpr e1 || usedAsFirstClassValueInExpr e2 || usedAsFirstClassValueInExpr e3
             | SequenceExpression (_, exprs) ->
                 usedAsFirstClassValueInList exprs
             | TailExpression e -> usedAsFirstClassValueInExpr e
@@ -337,7 +328,9 @@ and handleDefinition scope =
 and handleConditional scope cond thenBranch elseBranch =
     let condExpr = handleExpression scope cond
     let thenExpr = handleExpression scope thenBranch
-    let elseExpr = elseBranch |> Option.map (handleExpression scope)
+    let elseExpr = match elseBranch with
+                   | Some e -> handleExpression scope e
+                   | None   -> UndefinedValue
     Conditional (condExpr, thenExpr, elseExpr)
 and handleProcedureCall scope procExpr exprs =
     let proc = handleExpression scope procExpr
@@ -427,7 +420,7 @@ let rec checkVariableInitialization scope exprs =
                                                recur expr
                | Conditional (e1, e2, e3) as e -> recur e1
                                                   recur e2
-                                                  Option.map recur e3 |> ignore
+                                                  recur e3 |> ignore
                | SequenceExpression (t, exprs) as e -> List.map recur exprs |> ignore
                | TailExpression ex as e -> recur ex
                | _ -> ()
@@ -460,7 +453,7 @@ let rec labelLambdas exprs =
         | IdentifierDefinition (id, expr)
             -> IdentifierDefinition (id, label (Some id) expr)
         | Conditional (e1, e2, e3)
-            -> Conditional (label None e1, label name e2, Option.map (label None) e3)
+            -> Conditional (label None e1, label name e2, label name e3)
         | ProcedureCall (proc, args)
             -> ProcedureCall (label None proc, List.map (label None) args)
         | SequenceExpression (t, exprs)
@@ -550,7 +543,7 @@ let checkProcedureCalls exprs =
             |> fun fs -> List.map (checkCalls fs) c.body |> ignore
         | Conditional (e1, e2, e3) -> recur e1
                                       recur e2
-                                      Option.map recur e3 |> ignore
+                                      recur e3 |> ignore
         | SequenceExpression (_, exprs) -> List.map recur exprs |> ignore
         | TailExpression expr -> recur expr
         | ProcedureCall (proc, args) -> checkProcedureCall functionDefs proc args.Length
