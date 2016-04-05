@@ -1,15 +1,22 @@
 ﻿open CottontailScheme.Parsing
-open FParsec
-
+open CottontailScheme.ASTBuilder
 open CottontailScheme.SemanticAnalysis
 open CottontailScheme.CodeGenerator
 
-let testParser p str =
-    match run p str with
-    | Success(result, _, _)   -> printfn "Success: %A" result
-    | Failure(errorMsg, _, _) -> printfn "Failure: %s" errorMsg
+open FParsec
 
 [<EntryPoint>]
 let main args =
-    generateCodeFor (ProgramAnalysisError "placeholder") "hello"
+    let programName = "hello"
+    let programCode = ""
+
+    match run CottontailScheme.Parsing.parseProgram programCode with
+    | Success(result, _, _)
+        -> match buildAST result with
+            | ASTBuildSuccess exprs
+               -> match analyse exprs with
+                  | ValidProgram (exprs, scope) -> generateCodeFor exprs scope programName
+                  | ProgramAnalysisError err -> failwithf "Program analysis failed: %A" err
+            | ASTBuildFailure errs -> failwithf "AST building failed with errors: %A" errs
+    | Failure(errorMsg, _, _) -> failwithf "Parsing failed: %A" errorMsg
     0
