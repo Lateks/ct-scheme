@@ -139,12 +139,7 @@ module LambdaHelpers =
         let collect id =
             let findDefinitionInScope scope = findDefinition scope id.name
             match findDefinitionInScope bodyScope, findDefinitionInScope lambdaScope with
-            | None, None ->
-                match findDefinitionRec lambdaScope id.name, findDefinitionRec programScope id.name with
-                | Some id1, Some id2 -> if id1 <> id2 then [id] else []
-                | Some id', None       -> [id]
-                | None, _ -> assert false
-                             []
+            | None, None -> [id]
             | _, _ -> []
 
         let rec collectFreeVariables expr =
@@ -165,6 +160,8 @@ module LambdaHelpers =
                 |> collectFromExprList
             | SequenceExpression (_, exprs) ->
                 collectFromExprList exprs
+            | TailExpression e ->
+                collectFreeVariables e
             | _ -> []
         and collectFromExprList =
             List.map collectFreeVariables >> List.concat

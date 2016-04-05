@@ -290,6 +290,42 @@ type ``Lambda labeling`` () =
            | e -> sprintf "Expected ProcedureCall calling the anonymous function but got %A" e
                   |> Assert.Fail
 
+    [<Test>]
+    member x.``free variables are correctly recognised`` () =
+        let shouldBeNamed name (id: CottontailScheme.Scope.Identifier) = id.name |> should equal name
+
+        parseAndBuild "(define add\
+                         (lambda (x)\
+                           (lambda (y)\
+                             (+ x y))))"
+        |> getTree
+        |> List.head
+        |> function
+           | IdentifierDefinition (id, (Closure c))
+               -> List.isEmpty c.environment |> should equal true
+                  match List.head c.body with
+                  | TailExpression (Closure c2) ->
+                      c2.environment.Length |> should equal 2
+                      c2.environment |> List.head |> shouldBeNamed "+"
+                      c2.environment |> List.last |> shouldBeNamed "x"
+                  | _ -> Assert.Fail "Lambda body was not as expected"
+           | e -> sprintf "Program tree was not as expected, first expression in module body is %A" e
+                  |> Assert.Fail
+
+        parseAndBuild "(define y 1)\
+                       (define test\
+                         (lambda (x)\
+                           (+ x y)))"
+        |> getTree
+        |> List.last
+        |> function
+           | IdentifierDefinition (id, (Closure c))
+               -> c.environment.Length |> should equal 2
+                  c.environment |> List.head |> shouldBeNamed "+"
+                  c.environment |> List.last |> shouldBeNamed "y"
+           | e -> sprintf "Program tree was not as expected, last expression in module body is %A" e
+                  |> Assert.Fail
+
 [<TestFixture>]
 type ``Name bindings`` () =
     let rec getId = function
