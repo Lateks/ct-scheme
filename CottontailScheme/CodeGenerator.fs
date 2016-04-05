@@ -3,6 +3,8 @@
 open Scope
 open SemanticAnalysis
 
+open CottontailSchemeLib
+
 open System
 open System.Reflection
 
@@ -23,6 +25,8 @@ let generateCodeFor (program : Program) (name : string) =
                                                  typeof<int>, [| typeof<string array> |])
     let ilGen = methodBuilder.GetILGenerator()
     // Emit instructions for the main method
+    ilGen.Emit(Emit.OpCodes.Ldsfld, typeof<Constants>.GetField("True"))
+    ilGen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<Object> |]))
     ilGen.Emit(Emit.OpCodes.Ldstr, "Hello, world!")
     ilGen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<string> |]))
     ilGen.Emit(Emit.OpCodes.Ldc_I4_0)
@@ -32,3 +36,7 @@ let generateCodeFor (program : Program) (name : string) =
     // Save assembly and mark it as a console application
     assemblyBuilder.SetEntryPoint(methodBuilder, Emit.PEFileKinds.ConsoleApplication)
     assemblyBuilder.Save(outputFileName)
+
+    let exePath = Assembly.GetExecutingAssembly().Location |> IO.Path.GetDirectoryName
+    let csLib = "CottontailSchemeLib.dll"
+    IO.File.Copy(exePath + "/" + csLib, IO.Directory.GetCurrentDirectory() + "/" + csLib)
