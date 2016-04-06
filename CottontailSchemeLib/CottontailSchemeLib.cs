@@ -26,21 +26,6 @@ namespace CottontailSchemeLib
         public static readonly CTObject False = new CTBool(false);
     }
 
-    public class GenericOperations
-    {
-        public static string GetDisplayValue(CTObject obj)
-        {
-            if (obj.GetType() == typeof(CTString))
-            {
-                return ((CTString)obj).value;
-            }
-            else
-            {
-                return obj.ToString();
-            }
-        }
-    }
-
     public class ListOperations
     {
         private static readonly string CdrFunctionName = "cdr";
@@ -217,6 +202,11 @@ namespace CottontailSchemeLib
         public abstract string Display();
 
         public override string ToString()
+        {
+            return Display();
+        }
+
+        public virtual string REPLDisplayValue()
         {
             return Display();
         }
@@ -436,6 +426,11 @@ namespace CottontailSchemeLib
         }
 
         public override string Display()
+        {
+            return value;
+        }
+
+        public override string REPLDisplayValue()
         {
             return "\"" + value + "\"";
         }

@@ -184,8 +184,8 @@ type ``printing objects`` () =
 
     [<Test>]
     member x.``printing strings`` () =
-        CTString("Hello, world!\n").ToString() |> should equal "\"Hello, world!\n\""
-        CTString("foo").value |> should equal "foo"
+        CTString("Hello, world!\n").ToString() |> should equal "Hello, world!\n"
+        CTString("Hello!").REPLDisplayValue() |> should equal "\"Hello!\""
 
     [<Test>]
     member x.``printing symbols`` () =
