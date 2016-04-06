@@ -23,9 +23,21 @@ let copyLibs () =
         IO.File.Delete(target)
     IO.File.Copy(exePath + "/" + csLib, target)
 
-let emitStringObjectCreation (gen : Emit.ILGenerator) (s : string) =
+let loadStringObject (gen : Emit.ILGenerator) (s : string) =
     gen.Emit(Emit.OpCodes.Ldstr, s)
     gen.Emit(Emit.OpCodes.Newobj, typeof<CTString>.GetConstructor([| typeof<string> |]))
+
+let loadBooleanObject (gen : Emit.ILGenerator) (b : bool) =
+    let constantInfo = typeof<Constants>.GetField(if b then "True" else "False")
+    gen.Emit(Emit.OpCodes.Ldsfld, constantInfo)
+
+let loadNumberObject (gen : Emit.ILGenerator) (f : float) =
+    gen.Emit(Emit.OpCodes.Ldc_R8, f)
+    gen.Emit(Emit.OpCodes.Newobj, typeof<CTNumber>.GetConstructor([| typeof<float> |]))
+
+let loadSymbolObject (gen : Emit.ILGenerator) (s : string) =
+    gen.Emit(Emit.OpCodes.Ldstr, s)
+    gen.Emit(Emit.OpCodes.Newobj, typeof<CTSymbol>.GetConstructor([| typeof<string> |]))
 
 let emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     match id.uniqueName with
@@ -41,6 +53,24 @@ let emitFunctionCall (gen : Emit.ILGenerator) (id : Identifier) (scope : Scope) 
 let popStack (gen : Emit.ILGenerator) =
     gen.Emit(Emit.OpCodes.Pop)
 
+let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
+    match lit with
+    | String s -> loadStringObject gen s
+    | Boolean b -> loadBooleanObject gen b
+    | Number f -> loadNumberObject gen f
+    | Symbol s -> loadSymbolObject gen s
+    | List lits -> gen.Emit(Emit.OpCodes.Ldc_I4, lits.Length)
+                   gen.Emit(Emit.OpCodes.Newarr, typeof<CTObject>)
+                   let indexedLits = seq{0..lits.Length-1}
+                                     |> Seq.toList
+                                     |> List.zip lits
+                   for (l, i) in indexedLits do
+                         gen.Emit(Emit.OpCodes.Dup)
+                         gen.Emit(Emit.OpCodes.Ldc_I4, i)
+                         emitLiteral gen l
+                         gen.Emit(Emit.OpCodes.Stelem_Ref)
+                   gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List"))
+
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
     let rec generate expr pushOnStack =
         match expr with
@@ -50,9 +80,7 @@ let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Sco
                | VariableReference id -> emitFunctionCall gen id scope
                | e -> failwithf "Not implemented yet! %A" e
         | ValueExpression lit
-            -> match lit with
-               | String s -> emitStringObjectCreation gen s
-               | e -> failwithf "Not implemented yet! %A" e
+            -> emitLiteral gen lit
                if not pushOnStack then
                   popStack gen
         | e -> failwithf "Not implemented yet! %A" e
