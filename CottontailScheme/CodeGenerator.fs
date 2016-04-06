@@ -78,6 +78,10 @@ let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     | "car" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Car", [| ctObject |]))
     | "cdr" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Cdr", [| ctObject |]))
     | "cons" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Cons", [| ctObject; ctObject |]))
+    | "+" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Plus", [| typeof<CTObject array> |]))
+    | "-" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Minus", [| typeof<CTObject array> |]))
+    | "*" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Mult", [| typeof<CTObject array> |]))
+    | "/" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Div", [| typeof<CTObject array> |]))
     | e -> failwithf "Not implemented yet! (built-in function %s)" e
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let emitFunctionCall id args =
