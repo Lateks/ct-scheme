@@ -66,27 +66,27 @@ let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     | List lits -> emitArray gen lits emitLiteral
                    gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List"))
 
-let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) (scope: Scope) (args : Expression list) =
-    if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
-        emitArray gen args (fun g -> generateSubExpression g scope true)
-    else
-        for arg in args do generateSubExpression gen scope true arg
-
+let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     match id.uniqueName with
     | "display" -> gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<Object> |]))
     | "zero?" -> gen.Emit(Emit.OpCodes.Call, typeof<NumberOperations>.GetMethod("IsZero", [| typeof<CTObject> |]))
     | "list" -> gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List", [| typeof<CTObject array> |]))
     | e -> failwithf "Not implemented yet! (built-in function %s)" e
-and emitFunctionCall (gen : Emit.ILGenerator) (id : Identifier) (scope : Scope) (args : Expression list) =
-    if List.contains id (getBuiltIns scope) then
-        emitBuiltInFunctionCall gen id scope args
-    else // TODO: what if identifier identifies a variable?
-        failwithf "Not implemented yet ! (generic procedure calls)"
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
+    let emitFunctionCall id args =
+        if List.contains id (getBuiltIns scope) then
+           if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
+               emitArray gen args (fun g -> generateSubExpression g scope true)
+           else
+               for arg in args do generateSubExpression gen scope true arg
+           emitBuiltInFunctionCall gen id 
+        else
+            failwithf "Not implemented yet! (generic procedure calls)"
+
     match expr with
     | ProcedureCall (proc, args)
         ->  match proc with
-            | VariableReference id -> emitFunctionCall gen id scope args
+            | VariableReference id -> emitFunctionCall id args
             | e -> failwithf "Not implemented yet! %A" e
     | ValueExpression lit
         -> emitLiteral gen lit
