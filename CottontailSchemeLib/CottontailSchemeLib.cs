@@ -158,10 +158,19 @@ namespace CottontailSchemeLib
             return new CTNumber(result);
         }
 
-        public static bool IsZero(CTObject arg)
+        public static CTObject IsZero(CTObject arg)
         {
             AssertNumber(IsZeroFunctionName, arg);
-            return Math.Abs(((CTNumber)arg).value) <= double.Epsilon;
+            var res = Math.Abs(((CTNumber)arg).value) <= double.Epsilon;
+            return ToCTBool(res);
+        }
+
+        private static CTObject ToCTBool(bool v)
+        {
+            if (v)
+                return Constants.True;
+            else
+                return Constants.False;
         }
 
         private static bool ComparePairs(CTObject[] args, Func<double, double, bool> compare)

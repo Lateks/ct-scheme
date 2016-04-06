@@ -106,9 +106,9 @@ type ``numeric operations`` () =
 
     [<Test>]
     member x.``zero?`` () =
-        NumberOperations.IsZero(CTNumber(0.0)) |> should equal true
-        NumberOperations.IsZero(CTNumber(-0.01)) |> should equal false
-        NumberOperations.IsZero(CTNumber(0.01)) |> should equal false
+        NumberOperations.IsZero(CTNumber(0.0)) |> should equal Constants.True
+        NumberOperations.IsZero(CTNumber(-0.01)) |> should equal Constants.False
+        NumberOperations.IsZero(CTNumber(0.01)) |> should equal Constants.False
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]

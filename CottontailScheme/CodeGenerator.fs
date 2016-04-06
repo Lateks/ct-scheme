@@ -42,6 +42,7 @@ let loadSymbolObject (gen : Emit.ILGenerator) (s : string) =
 let emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     match id.uniqueName with
     | "display" -> gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<Object> |]))
+    | "zero?" -> gen.Emit(Emit.OpCodes.Call, typeof<NumberOperations>.GetMethod("IsZero", [| typeof<CTObject> |]))
     | e -> failwithf "Not implemented yet! (built-in function %s)" e
 
 let emitFunctionCall (gen : Emit.ILGenerator) (id : Identifier) (scope : Scope) =

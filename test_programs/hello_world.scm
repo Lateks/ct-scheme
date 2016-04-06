@@ -11,3 +11,7 @@
 (display "\n")
 (display '(1 2 3))
 (display "\n")
+(display '(1 2 (3 4)))
+(display "\n")
+(display '((1 2 3) (4 5 6)))
+(display "\n")
