@@ -5,17 +5,22 @@ using System.Text;
 
 namespace CottontailSchemeLib
 {
-    public class TypeError : Exception
+    public class CottontailSchemeException : Exception
+    {
+        public CottontailSchemeException(string msg) : base(msg) { }
+    }
+
+    public class TypeError : CottontailSchemeException
     {
         public TypeError(string functionName, string expectedType, string receivedType)
-            : base(string.Format("{0}: contract violation:\n\texpected: {1}\n\tgiven: {2}", functionName, expectedType, receivedType))
+            : base(string.Format("{0}: contract violation:\n\texpected: {1}\n\tgiven:    {2}", functionName, expectedType, receivedType))
         { }
     }
 
-    public class InvalidNumberOfArgsError : Exception
+    public class InvalidNumberOfArgsError : CottontailSchemeException
     {
         public InvalidNumberOfArgsError(string functionName, int expectedArgs, int receivedArgs)
-            : base(string.Format("{0}: contract violation:\n\tinvalid number of arguments\n\texpected: {1}\n\tgiven: {2}", functionName, expectedArgs, receivedArgs))
+            : base(string.Format("{0}: contract violation:\n\tinvalid number of arguments\n\texpected: {1}\n\tgiven:    {2}", functionName, expectedArgs, receivedArgs))
         { }
     }
 

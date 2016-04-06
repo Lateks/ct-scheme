@@ -90,8 +90,20 @@ let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Sco
 
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
+
+    ilGen.BeginExceptionBlock() |> ignore
+
     for expr in program.expressions do
         generateExpression ilGen expr program.scope
+
+    ilGen.BeginCatchBlock(typeof<CottontailSchemeException>)
+
+    ilGen.Emit(Emit.OpCodes.Ldstr, "")
+    ilGen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<string> |]))
+    ilGen.Emit(Emit.OpCodes.Call, typeof<Exception>.GetMethod("get_Message"))
+    ilGen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<string> |]))
+
+    ilGen.EndExceptionBlock()
 
     ilGen.Emit(Emit.OpCodes.Ldc_I4_0)
     ilGen.Emit(Emit.OpCodes.Ret)
