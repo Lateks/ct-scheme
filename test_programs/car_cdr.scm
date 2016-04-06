@@ -1,0 +1,5 @@
+(display (car '(1 2 3)))
+(display (cdr '(1 2 3)))
+(display (cons 1 (cons 2 '())))
+(display (cdr (cons 1 (cons "foo" "bar"))))
+(display (car "foo"))

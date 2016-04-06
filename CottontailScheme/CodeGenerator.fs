@@ -69,11 +69,15 @@ let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
 let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     let listOps = typeof<ListOperations>
     let numberOps = typeof<NumberOperations>
+    let ctObject = typeof<CTObject>
     match id.uniqueName with
     | "display" -> gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<Object> |]))
-    | "zero?" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("IsZero", [| typeof<CTObject> |]))
+    | "zero?" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("IsZero", [| ctObject |]))
     | "list" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("List", [| typeof<CTObject array> |]))
-    | "null?" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("IsNull", [| typeof<CTObject> |]))
+    | "null?" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("IsNull", [| ctObject |]))
+    | "car" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Car", [| ctObject |]))
+    | "cdr" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Cdr", [| ctObject |]))
+    | "cons" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Cons", [| ctObject; ctObject |]))
     | e -> failwithf "Not implemented yet! (built-in function %s)" e
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let emitFunctionCall id args =
