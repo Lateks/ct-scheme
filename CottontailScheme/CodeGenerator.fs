@@ -124,7 +124,7 @@ let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
 
     ilGen.Emit(Emit.OpCodes.Ldstr, "")
     ilGen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<string> |]))
-    ilGen.Emit(Emit.OpCodes.Call, typeof<Exception>.GetMethod("get_Message"))
+    ilGen.Emit(Emit.OpCodes.Callvirt, typeof<Exception>.GetProperty("Message").GetGetMethod())
     ilGen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<string> |]))
 
     ilGen.EndExceptionBlock()
