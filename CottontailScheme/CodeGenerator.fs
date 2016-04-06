@@ -39,20 +39,23 @@ let loadSymbolObject (gen : Emit.ILGenerator) (s : string) =
     gen.Emit(Emit.OpCodes.Ldstr, s)
     gen.Emit(Emit.OpCodes.Newobj, typeof<CTSymbol>.GetConstructor([| typeof<string> |]))
 
-let emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
-    match id.uniqueName with
-    | "display" -> gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<Object> |]))
-    | "zero?" -> gen.Emit(Emit.OpCodes.Call, typeof<NumberOperations>.GetMethod("IsZero", [| typeof<CTObject> |]))
-    | e -> failwithf "Not implemented yet! (built-in function %s)" e
-
-let emitFunctionCall (gen : Emit.ILGenerator) (id : Identifier) (scope : Scope) =
-    if List.contains id (getBuiltIns scope) then
-        emitBuiltInFunctionCall gen id
-    else // TODO: what if identifier identifies a variable?
-        failwithf "Not implemented yet ! (generic procedure calls)"
+let builtInFunctionsTakingArrayParams = ["list"; "+"; "-"; "/"; "*"]
 
 let popStack (gen : Emit.ILGenerator) =
     gen.Emit(Emit.OpCodes.Pop)
+
+let emitArray (gen : Emit.ILGenerator) members emitMember =
+    let memberCount = List.length members
+    gen.Emit(Emit.OpCodes.Ldc_I4, memberCount)
+    gen.Emit(Emit.OpCodes.Newarr, typeof<CTObject>)
+    let indexedMembers = seq{0..memberCount-1}
+                         |> Seq.toList
+                         |> List.zip members
+    for (m, i) in indexedMembers do
+        gen.Emit(Emit.OpCodes.Dup)
+        gen.Emit(Emit.OpCodes.Ldc_I4, i)
+        emitMember gen m
+        gen.Emit(Emit.OpCodes.Stelem_Ref)
 
 let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     match lit with
@@ -60,33 +63,39 @@ let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     | Boolean b -> loadBooleanObject gen b
     | Number f -> loadNumberObject gen f
     | Symbol s -> loadSymbolObject gen s
-    | List lits -> gen.Emit(Emit.OpCodes.Ldc_I4, lits.Length)
-                   gen.Emit(Emit.OpCodes.Newarr, typeof<CTObject>)
-                   let indexedLits = seq{0..lits.Length-1}
-                                     |> Seq.toList
-                                     |> List.zip lits
-                   for (l, i) in indexedLits do
-                         gen.Emit(Emit.OpCodes.Dup)
-                         gen.Emit(Emit.OpCodes.Ldc_I4, i)
-                         emitLiteral gen l
-                         gen.Emit(Emit.OpCodes.Stelem_Ref)
+    | List lits -> emitArray gen lits emitLiteral
                    gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List"))
 
-let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
-    let rec generate expr pushOnStack =
-        match expr with
-        | ProcedureCall (proc, args)
-            -> for arg in args do generate arg true
-               match proc with
-               | VariableReference id -> emitFunctionCall gen id scope
-               | e -> failwithf "Not implemented yet! %A" e
-        | ValueExpression lit
-            -> emitLiteral gen lit
-               if not pushOnStack then
-                  popStack gen
-        | e -> failwithf "Not implemented yet! %A" e
+let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) (scope: Scope) (args : Expression list) =
+    if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
+        emitArray gen args (fun g -> generateSubExpression g scope true)
+    else
+        for arg in args do generateSubExpression gen scope true arg
 
-    generate expr false
+    match id.uniqueName with
+    | "display" -> gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<Object> |]))
+    | "zero?" -> gen.Emit(Emit.OpCodes.Call, typeof<NumberOperations>.GetMethod("IsZero", [| typeof<CTObject> |]))
+    | "list" -> gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List", [| typeof<CTObject array> |]))
+    | e -> failwithf "Not implemented yet! (built-in function %s)" e
+and emitFunctionCall (gen : Emit.ILGenerator) (id : Identifier) (scope : Scope) (args : Expression list) =
+    if List.contains id (getBuiltIns scope) then
+        emitBuiltInFunctionCall gen id scope args
+    else // TODO: what if identifier identifies a variable?
+        failwithf "Not implemented yet ! (generic procedure calls)"
+and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
+    match expr with
+    | ProcedureCall (proc, args)
+        ->  match proc with
+            | VariableReference id -> emitFunctionCall gen id scope args
+            | e -> failwithf "Not implemented yet! %A" e
+    | ValueExpression lit
+        -> emitLiteral gen lit
+           if not pushOnStack then
+              popStack gen
+    | e -> failwithf "Not implemented yet! %A" e
+
+let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
+    generateSubExpression gen scope false expr
 
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
