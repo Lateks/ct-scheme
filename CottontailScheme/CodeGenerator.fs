@@ -30,23 +30,32 @@ let emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
                    gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<string> |]))
     | e -> failwithf "Not implemented yet! (built-in function %s)" e
 
-// TODO: handling args differently? (when to pop results off the stack?)
-let rec generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
-    match expr with
-    | ProcedureCall (proc, args)
-        -> for arg in args do
-               generateExpression gen arg scope
-           match proc with
-           | VariableReference id -> if List.contains id (getBuiltIns scope) then
-                                        emitBuiltInFunctionCall gen id
-                                     else
-                                        failwithf "Not implemented yet ! (generic procedure calls)"
-           | e -> failwithf "Not implemented yet! %A" e
-    | ValueExpression lit
-        -> match lit with
-           | String s -> emitStringObjectCreation gen s
-           | e -> failwithf "Not implemented yet! %A" e
-    | e -> failwithf "Not implemented yet! %A" e
+let emitFunctionCall (gen : Emit.ILGenerator) (id : Identifier) (scope : Scope) =
+    if List.contains id (getBuiltIns scope) then
+        emitBuiltInFunctionCall gen id
+    else // TODO: what if identifier identifies a variable?
+        failwithf "Not implemented yet ! (generic procedure calls)"
+
+let popStack (gen : Emit.ILGenerator) =
+    gen.Emit(Emit.OpCodes.Pop)
+
+let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
+    let rec generate expr pushOnStack =
+        match expr with
+        | ProcedureCall (proc, args)
+            -> for arg in args do generate arg true
+               match proc with
+               | VariableReference id -> emitFunctionCall gen id scope
+               | e -> failwithf "Not implemented yet! %A" e
+        | ValueExpression lit
+            -> match lit with
+               | String s -> emitStringObjectCreation gen s
+               | e -> failwithf "Not implemented yet! %A" e
+               if not pushOnStack then
+                  popStack gen
+        | e -> failwithf "Not implemented yet! %A" e
+
+    generate expr false
 
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
