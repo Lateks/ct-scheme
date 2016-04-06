@@ -117,10 +117,10 @@ type ``numeric operations`` () =
 
     [<Test>]
     member x.``less than (<)`` () =
-        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(0.0)|]) |> should equal false
-        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(2.0)|]) |> should equal true
-        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]) |> should equal true
-        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(2.0); CTNumber(1.5)|]) |> should equal false
+        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(0.0)|]) |> should equal Constants.False
+        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(2.0)|]) |> should equal Constants.True
+        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]) |> should equal Constants.True
+        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(2.0); CTNumber(1.5)|]) |> should equal Constants.False
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
@@ -129,10 +129,10 @@ type ``numeric operations`` () =
 
     [<Test>]
     member x.``greater than (>)`` () =
-        NumberOperations.GreaterThan([|CTNumber(2.0); CTNumber(1.0)|]) |> should equal true
-        NumberOperations.GreaterThan([|CTNumber(1.0); CTNumber(2.0)|]) |> should equal false
-        NumberOperations.GreaterThan([|CTNumber(3.0); CTNumber(2.0); CTNumber(1.0)|]) |> should equal true
-        NumberOperations.GreaterThan([|CTNumber(3.0); CTNumber(2.0); CTNumber(2.5)|]) |> should equal false
+        NumberOperations.GreaterThan([|CTNumber(2.0); CTNumber(1.0)|]) |> should equal Constants.True
+        NumberOperations.GreaterThan([|CTNumber(1.0); CTNumber(2.0)|]) |> should equal Constants.False
+        NumberOperations.GreaterThan([|CTNumber(3.0); CTNumber(2.0); CTNumber(1.0)|]) |> should equal Constants.True
+        NumberOperations.GreaterThan([|CTNumber(3.0); CTNumber(2.0); CTNumber(2.5)|]) |> should equal Constants.False
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]

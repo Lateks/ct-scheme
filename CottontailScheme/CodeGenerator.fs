@@ -39,7 +39,7 @@ let loadSymbolObject (gen : Emit.ILGenerator) (s : string) =
     gen.Emit(Emit.OpCodes.Ldstr, s)
     gen.Emit(Emit.OpCodes.Newobj, typeof<CTSymbol>.GetConstructor([| typeof<string> |]))
 
-let builtInFunctionsTakingArrayParams = ["list"; "+"; "-"; "/"; "*"]
+let builtInFunctionsTakingArrayParams = ["list"; "+"; "-"; "/"; "*"; "<"; ">"]
 
 let popStack (gen : Emit.ILGenerator) =
     gen.Emit(Emit.OpCodes.Pop)
@@ -70,18 +70,22 @@ let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     let listOps = typeof<ListOperations>
     let numberOps = typeof<NumberOperations>
     let ctObject = typeof<CTObject>
+    let arrayType = typeof<CTObject array>
+
     match id.uniqueName with
     | "display" -> gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<Object> |]))
     | "zero?" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("IsZero", [| ctObject |]))
-    | "list" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("List", [| typeof<CTObject array> |]))
+    | "list" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("List", [| arrayType |]))
     | "null?" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("IsNull", [| ctObject |]))
     | "car" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Car", [| ctObject |]))
     | "cdr" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Cdr", [| ctObject |]))
     | "cons" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Cons", [| ctObject; ctObject |]))
-    | "+" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Plus", [| typeof<CTObject array> |]))
-    | "-" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Minus", [| typeof<CTObject array> |]))
-    | "*" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Mult", [| typeof<CTObject array> |]))
-    | "/" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Div", [| typeof<CTObject array> |]))
+    | "+" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Plus", [| arrayType |]))
+    | "-" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Minus", [| arrayType |]))
+    | "*" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Mult", [| arrayType |]))
+    | "/" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Div", [| arrayType |]))
+    | "<" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("LessThan", [| arrayType |]))
+    | ">" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("GreaterThan", [| arrayType |]))
     | e -> failwithf "Not implemented yet! (built-in function %s)" e
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let emitFunctionCall id args =

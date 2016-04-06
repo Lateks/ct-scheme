@@ -179,7 +179,7 @@ namespace CottontailSchemeLib
             return Constants.ToCTBool(res);
         }
 
-        private static bool ComparePairs(CTObject[] args, Func<double, double, bool> compare)
+        private static CTObject ComparePairs(CTObject[] args, Func<double, double, bool> compare)
         {
             var values = args.Select(getValue).ToArray();
             double prev = values[0];
@@ -191,19 +191,19 @@ namespace CottontailSchemeLib
                 }
                 else
                 {
-                    return false;
+                    return Constants.False;
                 }
             }
-            return true;
+            return Constants.True;
         }
 
-        public static bool LessThan(CTObject[] args)
+        public static CTObject LessThan(CTObject[] args)
         {
             CheckArgs(LessThanFunctionName, args);
             return ComparePairs(args, (a, b) => a < b);
         }
 
-        public static bool GreaterThan(CTObject[] args)
+        public static CTObject GreaterThan(CTObject[] args)
         {
             CheckArgs(GreaterThanFunctionName, args);
             return ComparePairs(args, (a, b) => a > b);
