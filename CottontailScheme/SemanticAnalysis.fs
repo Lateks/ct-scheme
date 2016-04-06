@@ -53,8 +53,13 @@ and ClosureDefinition = { formals: ClosureFormals;
                           functionName: Identifier option;
                           usedAsFirstClassValue: bool }
 
+type ProgramStructure = { functionDefinitions: Expression list;
+                          variableDefinitions: Expression list;
+                          expressions : Expression list;
+                          scope : Scope.Scope }
+
 type Program =
-    | ValidProgram of Expression list * Scope
+    | ValidProgram of ProgramStructure
     | ProgramAnalysisError of string
 
 let placeholder name = failwithf "Not implemented yet: %s" name
@@ -555,6 +560,22 @@ let checkProcedureCalls exprs =
     |> List.map (checkCalls functions)
     |> ignore
 
+let isFunctionDefinition =
+    function
+    | IdentifierDefinition (_, Closure _) -> true
+    | _ -> false
+
+let isVariableDefinition =
+    function
+    | IdentifierDefinition (_, Closure _) -> false
+    | IdentifierDefinition (_, _) -> true
+    | _ -> false
+
+let isNonDefinition =
+    function
+    | IdentifierDefinition _ -> false
+    | _ -> true
+
 // Performs several passes through the AST (passes documented
 // above) producing a Program value (either ValidProgram or
 // ProgramAnalysisError).
@@ -570,6 +591,12 @@ let analyse exprs =
                          |> labelLambdas
 
         checkProcedureCalls moduleBody
-        ValidProgram (moduleBody, topLevelScope)
+        let functionDefinitions = List.filter isFunctionDefinition moduleBody
+        let variableDefinitions = List.filter isVariableDefinition moduleBody
+        let otherExpressions = List.filter isNonDefinition moduleBody
+        ValidProgram { functionDefinitions = functionDefinitions;
+                       variableDefinitions = variableDefinitions;
+                       expressions = otherExpressions;
+                       scope = topLevelScope }
     with
         | AnalysisException msg -> ProgramAnalysisError msg

@@ -17,19 +17,19 @@ let parseAndBuild str = match run CottontailScheme.Parsing.parseProgram str with
 
 let shouldProduceError expectedMsg program =
     match program with
-    | ValidProgram (_, _) as prog -> sprintf "Expected ProgramAnalysisError but got ValidProgram: %A" prog
-                                     |> Assert.Fail
+    | ValidProgram p as prog -> sprintf "Expected ProgramAnalysisError but got ValidProgram: %A" prog
+                                |> Assert.Fail
     | ProgramAnalysisError errMsg -> errMsg |> should equal expectedMsg
 
 let shouldBeValid program =
     match program with
-    | ValidProgram (_, _) -> ()
+    | ValidProgram p -> ()
     | ProgramAnalysisError errMsg -> sprintf "Expected ValidProgram but got ProgramAnalysisError: %s" errMsg
                                      |> Assert.Fail
 
-let getTree program =
+let getStructure program =
     match program with
-    | ValidProgram (tree, _) -> tree
+    | ValidProgram p -> p
     | ProgramAnalysisError errMsg -> failwithf "Expected ValidProgram but got ProgramAnalysisError: %s" errMsg
 
 let buildArgumentErrorMsgExactCount name expected got =
@@ -39,9 +39,12 @@ let buildArgumentErrorMsgAtLeast name expected got =
     sprintf "Arity mismatch for function %s: expected at least %i arguments, got %i" name expected got
 
 let getFunction =
-    getTree >> List.head >> function
-                            | IdentifierDefinition (id, (Closure c)) -> c
-                            | e -> failwithf "Expected a function definition but got %A" e
+    getStructure
+    >> fun p -> p.functionDefinitions
+    >> List.head
+    >> function
+       | IdentifierDefinition (id, (Closure c)) -> c
+       | e -> failwithf "Expected a function definition but got %A" e
 
 [<TestFixture>]
 type ``Errors detected by semantic analysis`` () =
@@ -107,20 +110,20 @@ type ``Transformations made during semantic analysis`` () =
         let gotWrongExpression e = sprintf "Expected an Assignment but got %A" e
                                    |> Assert.Fail
         parseAndBuild "(define x 1)(define y 2)(define x 3)"
-        |> getTree
-        |> fun exprs -> let def1 = List.head exprs
-                        let def2 = List.last exprs
-                        match def1 with
-                        | IdentifierDefinition (id1, expr1) ->
-                            match def2 with
-                            | Assignment (id2, expr2) ->
-                                id1 |> should equal id2
-                                expr1 |> should equal (ValueExpression (Number 1.0))
-                                expr2 |> should equal (ValueExpression (Number 3.0))
-                            | IdentifierDefinition (_, _) ->
-                                Assert.Fail "Expected identifier definition to have been converted to assignment but it wasn't"
-                            | e -> gotWrongExpression e
+        |> getStructure
+        |> fun p -> let def1 = List.head p.variableDefinitions
+                    let def2 = List.head p.expressions
+                    match def1 with
+                    | IdentifierDefinition (id1, expr1) ->
+                        match def2 with
+                        | Assignment (id2, expr2) ->
+                            id1 |> should equal id2
+                            expr1 |> should equal (ValueExpression (Number 1.0))
+                            expr2 |> should equal (ValueExpression (Number 3.0))
+                        | IdentifierDefinition (_, _) ->
+                            Assert.Fail "Expected identifier definition to have been converted to assignment but it wasn't"
                         | e -> gotWrongExpression e
+                    | e -> gotWrongExpression e
 
     [<Test>]
     member x.``tail expressions are labeled`` () =
@@ -128,7 +131,7 @@ type ``Transformations made during semantic analysis`` () =
             match closure with
             | Closure c -> List.last c.body
             | e -> failwithf "Expected a Closure but got %A" e
-        let getTail = getTree >> List.head >> getTailExpression
+        let getTail = getStructure >> (fun p -> p.expressions) >> List.head >> getTailExpression
         let testConditional =
             function
             | Conditional (e1, e2, e3) -> match e1, e2, e3 with
@@ -273,7 +276,8 @@ type ``Lambda labeling`` () =
                               |> Assert.Fail
 
         parseAndBuild "(lambda (x) (+ x 1))"
-        |> getTree
+        |> getStructure
+        |> fun p -> p.expressions
         |> List.head
         |> function
            | Closure c -> c.usedAsFirstClassValue |> should equal true
@@ -281,7 +285,8 @@ type ``Lambda labeling`` () =
                   |> Assert.Fail
 
         parseAndBuild "((lambda (x) (+ x 1)) 5)"
-        |> getTree
+        |> getStructure
+        |> fun p -> p.expressions
         |> List.head
         |> function
            | ProcedureCall ((Closure c), _) -> c.usedAsFirstClassValue |> should equal false
@@ -296,7 +301,8 @@ type ``Lambda labeling`` () =
                          (lambda (x)\
                            (lambda (y)\
                              (+ x y))))"
-        |> getTree
+        |> getStructure
+        |> fun p -> p.functionDefinitions
         |> List.head
         |> function
            | IdentifierDefinition (id, (Closure c))
@@ -314,8 +320,9 @@ type ``Lambda labeling`` () =
                        (define test\
                          (lambda (x)\
                            (+ x y)))"
-        |> getTree
-        |> List.last
+        |> getStructure
+        |> fun p -> p.functionDefinitions
+        |> List.head
         |> function
            | IdentifierDefinition (id, (Closure c))
                -> c.environment.Length |> should equal 2
@@ -342,30 +349,30 @@ type ``Name bindings`` () =
     member x.``variable references are bound to the definition in the nearest scope`` () =
         parseAndBuild "(define x 1)\
                        x"
-        |> getTree
-        |> fun exprs -> getId (List.head exprs) |> should equal (getId (List.last exprs))
+        |> getStructure
+        |> fun p -> getId (List.head p.variableDefinitions) |> should equal (getId (List.head p.expressions))
 
         parseAndBuild "(define x 1)\
                        (lambda ()\
                          (define x 2)
                          x)"
-        |> getTree
-        |> fun exprs -> let firstX = List.head exprs |> getId
-                        List.last exprs
-                        |> handleClosure (fun c ->
-                                              let secondX = List.head c.body |> getId
-                                              let thirdX = List.last c.body |> getId
-                                              firstX |> should not' (equal secondX)
-                                              secondX |> should equal thirdX)
+        |> getStructure
+        |> fun p -> let firstX = List.head p.variableDefinitions |> getId
+                    List.head p.expressions
+                    |> handleClosure (fun c ->
+                                            let secondX = List.head c.body |> getId
+                                            let thirdX = List.last c.body |> getId
+                                            firstX |> should not' (equal secondX)
+                                            secondX |> should equal thirdX)
 
         parseAndBuild "(define x 1)\
                        (lambda () x)"
-        |> getTree
-        |> fun exprs -> let firstX = List.head exprs |> getId
-                        List.last exprs
-                        |> handleClosure (fun c ->
-                                              let secondX = List.head c.body |> getId
-                                              firstX |> should equal secondX)
+        |> getStructure
+        |> fun p -> let firstX = List.head p.variableDefinitions |> getId
+                    List.head p.expressions
+                    |> handleClosure (fun c ->
+                                            let secondX = List.head c.body |> getId
+                                            firstX |> should equal secondX)
 
         parseAndBuild "(define test (lambda () test))"
         |> getFunction

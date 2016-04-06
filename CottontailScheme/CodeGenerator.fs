@@ -19,7 +19,7 @@ let copyLibs () =
     let csLib = "CottontailSchemeLib.dll"
     IO.File.Copy(exePath + "/" + csLib, IO.Directory.GetCurrentDirectory() + "/" + csLib)
 
-let generateCodeFor (exprs : SemanticAnalysis.Expression list) (scope : Scope.Scope) (name : string) =
+let generateCodeFor (program : ProgramStructure) (name : string) =
     let capitalizedName = SymbolGenerator.capitalizeWord name
     let outputFileName = sprintf "%s.exe" capitalizedName
     let assemblyBuilder = setupAssembly capitalizedName
@@ -30,7 +30,7 @@ let generateCodeFor (exprs : SemanticAnalysis.Expression list) (scope : Scope.Sc
 
     // Create main method
     let methodBuilder = typeBuilder.DefineMethod("Main", MethodAttributes.Public ||| MethodAttributes.Static,
-                                                    typeof<int>, [| typeof<string array> |])
+                                                 typeof<int>, [| typeof<string array> |])
     let ilGen = methodBuilder.GetILGenerator()
     // Emit instructions for the main method
     ilGen.Emit(Emit.OpCodes.Ldsfld, typeof<Constants>.GetField("True"))

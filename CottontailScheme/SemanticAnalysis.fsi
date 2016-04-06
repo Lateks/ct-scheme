@@ -23,8 +23,13 @@ and ClosureDefinition = { formals: ClosureFormals;
                           functionName: Scope.Identifier option;
                           usedAsFirstClassValue: bool }
 
+type ProgramStructure = { functionDefinitions: Expression list;
+                          variableDefinitions: Expression list;
+                          expressions : Expression list;
+                          scope : Scope.Scope }
+
 type Program =
-    | ValidProgram of Expression list * Scope.Scope
+    | ValidProgram of ProgramStructure
     | ProgramAnalysisError of string
 
 val analyse: ASTBuilder.Expression list -> Program

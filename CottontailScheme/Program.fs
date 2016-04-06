@@ -23,7 +23,7 @@ let main args =
             -> match buildAST result with
                 | ASTBuildSuccess exprs
                    -> match analyse exprs with
-                      | ValidProgram (exprs, scope) -> generateCodeFor exprs scope programName
+                      | ValidProgram p -> generateCodeFor p programName
                       | ProgramAnalysisError err -> printfn "Error: %s" err
                 | ASTBuildFailure errs -> errs |> List.map (fun e -> printfn "Error (line %i, column %i): %A" e.position.line e.position.column e.message) |> ignore
         | Failure(errorMsg, _, _) -> printfn "Error: %s" errorMsg
