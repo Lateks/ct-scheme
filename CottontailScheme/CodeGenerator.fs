@@ -18,7 +18,10 @@ let setupAssembly name =
 let copyLibs () =
     let exePath = Assembly.GetExecutingAssembly().Location |> IO.Path.GetDirectoryName
     let csLib = "CottontailSchemeLib.dll"
-    IO.File.Copy(exePath + "/" + csLib, IO.Directory.GetCurrentDirectory() + "/" + csLib)
+    let target = IO.Directory.GetCurrentDirectory() + "/" + csLib
+    if IO.File.Exists(target) then
+        IO.File.Delete(target)
+    IO.File.Copy(exePath + "/" + csLib, target)
 
 let emitStringObjectCreation (gen : Emit.ILGenerator) (s : string) =
     gen.Emit(Emit.OpCodes.Ldstr, s)
