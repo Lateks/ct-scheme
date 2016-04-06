@@ -64,13 +64,16 @@ let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     | Number f -> loadNumberObject gen f
     | Symbol s -> loadSymbolObject gen s
     | List lits -> emitArray gen lits emitLiteral
-                   gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List"))
+                   gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List", [| typeof<CTObject array> |]))
 
 let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
+    let listOps = typeof<ListOperations>
+    let numberOps = typeof<NumberOperations>
     match id.uniqueName with
     | "display" -> gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<Object> |]))
-    | "zero?" -> gen.Emit(Emit.OpCodes.Call, typeof<NumberOperations>.GetMethod("IsZero", [| typeof<CTObject> |]))
-    | "list" -> gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List", [| typeof<CTObject array> |]))
+    | "zero?" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("IsZero", [| typeof<CTObject> |]))
+    | "list" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("List", [| typeof<CTObject array> |]))
+    | "null?" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("IsNull", [| typeof<CTObject> |]))
     | e -> failwithf "Not implemented yet! (built-in function %s)" e
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let emitFunctionCall id args =

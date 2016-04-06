@@ -43,9 +43,9 @@ type ``List and pair operations`` () =
 
     [<Test>]
     member x.``implements null?`` () =
-        ListOperations.IsNull(p) |> should equal false
-        ListOperations.IsNull(empty) |> should equal true
-        ListOperations.IsNull(car) |> should equal false
+        ListOperations.IsNull(p) |> should equal Constants.False
+        ListOperations.IsNull(empty) |> should equal Constants.True
+        ListOperations.IsNull(car) |> should equal Constants.False
 
     [<Test>]
     member x.``implements list`` () =

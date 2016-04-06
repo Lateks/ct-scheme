@@ -29,6 +29,15 @@ namespace CottontailSchemeLib
         public static readonly CTObject Undefined = new CTUndefined();
         public static readonly CTObject True = new CTBool(true);
         public static readonly CTObject False = new CTBool(false);
+
+
+        internal static CTObject ToCTBool(bool v)
+        {
+            if (v)
+                return Constants.True;
+            else
+                return Constants.False;
+        }
     }
 
     public class ListOperations
@@ -71,9 +80,9 @@ namespace CottontailSchemeLib
             return new CTPair(a, b);
         }
 
-        public static bool IsNull(CTObject v)
+        public static CTObject IsNull(CTObject v)
         {
-            return v.GetType() == typeof(CTEmptyList);
+            return Constants.ToCTBool(v.GetType() == typeof(CTEmptyList));
         }
     }
 
@@ -167,15 +176,7 @@ namespace CottontailSchemeLib
         {
             AssertNumber(IsZeroFunctionName, arg);
             var res = Math.Abs(((CTNumber)arg).value) <= double.Epsilon;
-            return ToCTBool(res);
-        }
-
-        private static CTObject ToCTBool(bool v)
-        {
-            if (v)
-                return Constants.True;
-            else
-                return Constants.False;
+            return Constants.ToCTBool(res);
         }
 
         private static bool ComparePairs(CTObject[] args, Func<double, double, bool> compare)
