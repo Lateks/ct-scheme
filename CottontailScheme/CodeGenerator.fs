@@ -89,6 +89,8 @@ let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     | ">" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("GreaterThan", [| arrayType |]))
     | "eq?" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("AreEq", [| ctObject; ctObject |]))
     | "not" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("Not", [| ctObject |]))
+    | "newline" -> gen.Emit(Emit.OpCodes.Ldstr, "\n")
+                   gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<string> |]))
     | e -> failwithf "Built-in function %s is not implemented!" e
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let emitFunctionCall id args =
