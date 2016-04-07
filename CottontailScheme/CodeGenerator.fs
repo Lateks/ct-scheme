@@ -66,6 +66,9 @@ let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     | List lits -> emitArray gen lits emitLiteral
                    gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List", [| typeof<CTObject array> |]))
 
+let emitBooleanConversion (gen : Emit.ILGenerator) =
+    gen.Emit(Emit.OpCodes.Callvirt, typeof<CTObject>.GetMethod("ToBool", [||]))
+
 let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     let listOps = typeof<ListOperations>
     let numberOps = typeof<NumberOperations>
@@ -93,15 +96,32 @@ let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
                    gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<string> |]))
     | e -> failwithf "Built-in function %s is not implemented!" e
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
+    let pushExprResultToStack = generateSubExpression gen scope true
+
     let emitFunctionCall id args =
         if List.contains id (getBuiltIns scope) then
            if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
                emitArray gen args (fun g -> generateSubExpression g scope true)
            else
-               for arg in args do generateSubExpression gen scope true arg
+               for arg in args do pushExprResultToStack arg
            emitBuiltInFunctionCall gen id 
         else
             failwithf "Not implemented yet! (generic procedure calls)"
+    let emitConditional condition thenExpression elseExpression =
+        let elseLabel = gen.DefineLabel()
+        let exitLabel = gen.DefineLabel()
+
+        pushExprResultToStack condition
+        emitBooleanConversion gen
+        gen.Emit(Emit.OpCodes.Brfalse, elseLabel)
+
+        pushExprResultToStack thenExpression
+        gen.Emit(Emit.OpCodes.Br_S, exitLabel)
+
+        gen.MarkLabel(elseLabel)
+        pushExprResultToStack elseExpression
+
+        gen.MarkLabel(exitLabel)
 
     match expr with
     | ProcedureCall (proc, args)
@@ -112,6 +132,8 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
         -> emitLiteral gen lit
            if not pushOnStack then
               popStack gen
+    | Conditional (cond, thenBranch, elseBranch)
+        -> emitConditional cond thenBranch elseBranch
     | e -> failwithf "Not implemented yet! %A" e
 
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
@@ -127,7 +149,7 @@ let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
 
     ilGen.BeginCatchBlock(typeof<CottontailSchemeException>)
 
-    ilGen.Emit(Emit.OpCodes.Ldstr, "")
+    ilGen.Emit(Emit.OpCodes.Ldstr, "\nError:")
     ilGen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<string> |]))
     ilGen.Emit(Emit.OpCodes.Callvirt, typeof<Exception>.GetProperty("Message").GetGetMethod())
     ilGen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("WriteLine", [| typeof<string> |]))
