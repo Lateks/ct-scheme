@@ -34,9 +34,23 @@ namespace CottontailSchemeLib
         internal static CTObject ToCTBool(bool v)
         {
             if (v)
-                return Constants.True;
+                return True;
             else
-                return Constants.False;
+                return False;
+        }
+    }
+
+    public class CommonOperations
+    {
+        public static CTObject AreEq(CTObject a, CTObject b)
+        {
+            return Constants.ToCTBool(a.Equals(b));
+        }
+
+        public static CTObject Not(CTObject v)
+        {
+            bool b = v.ToBool();
+            return Constants.ToCTBool(!b);
         }
     }
 
@@ -488,8 +502,6 @@ namespace CottontailSchemeLib
         }
     }
 
-    // TODO: procedure objects
-    // - remember typename
     public class CTProcedure : CTObject
     {
         internal static readonly string TypeName = "procedure";

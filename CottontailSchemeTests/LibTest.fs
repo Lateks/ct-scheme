@@ -140,6 +140,42 @@ type ``numeric operations`` () =
         NumberOperations.GreaterThan([|CTNumber(1.0); Constants.True|]) |> ignore
 
 [<TestFixture>]
+type ``boolean operations`` () =
+    let isTruthy (v : CTObject) = v.ToBool() |> should equal true
+    let isFalsy (v : CTObject) = v.ToBool() |> should equal false
+
+    [<Test>]
+    member x.``everything is truthy, except #f`` () =
+        CTNumber(0.0) |> isTruthy
+        CTNumber(1.0) |> isTruthy
+        CTNumber(-1.0) |> isTruthy
+        CTString("") |> isTruthy
+        CTString("foo") |> isTruthy
+        CTEmptyList() |> isTruthy
+        ListOperations.List([|CTNumber(1.0); CTNumber(2.0)|]) |> isTruthy
+        CTSymbol("foo") |> isTruthy
+        CTProcedure(0) |> isTruthy
+        Constants.Undefined |> isTruthy
+        Constants.True |> isTruthy
+        Constants.False |> isFalsy
+
+    [<Test>]
+    member x.``not inverts the boolean value of any object`` () =
+        CommonOperations.Not(CTNumber(0.0)) |> should equal Constants.False
+        CommonOperations.Not(Constants.True) |> should equal Constants.False
+        CommonOperations.Not(Constants.False) |> should equal Constants.True
+
+    [<Test>]
+    member x.``eq? compares equality`` () =
+        CommonOperations.AreEq(CTNumber(1.0), CTNumber(1.0)) |> isTruthy
+        CommonOperations.AreEq(CTNumber(1.0), CTNumber(2.0)) |> isFalsy
+        CommonOperations.AreEq(Constants.True, Constants.True) |> isTruthy
+        CommonOperations.AreEq(Constants.True, Constants.False) |> isFalsy
+        CommonOperations.AreEq(CTString("test"), CTString("test")) |> isTruthy
+        CommonOperations.AreEq(CTString("test"), CTString("testy")) |> isFalsy
+        CommonOperations.AreEq(CTProcedure(0), CTProcedure(0)) |> isFalsy // procedures are compared for instance equality
+
+[<TestFixture>]
 type ``printing objects`` () =
     [<Test>]
     member x.``printing integers`` () =
