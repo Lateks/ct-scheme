@@ -39,6 +39,9 @@ let loadSymbolObject (gen : Emit.ILGenerator) (s : string) =
     gen.Emit(Emit.OpCodes.Ldstr, s)
     gen.Emit(Emit.OpCodes.Newobj, typeof<CTSymbol>.GetConstructor([| typeof<string> |]))
 
+let loadUndefined (gen : Emit.ILGenerator) =
+    gen.Emit(Emit.OpCodes.Ldsfld, typeof<Constants>.GetField("Undefined"))
+
 let builtInFunctionsTakingArrayParams = ["list"; "+"; "-"; "/"; "*"; "<"; ">"]
 
 let popStack (gen : Emit.ILGenerator) =
@@ -77,7 +80,7 @@ let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     let arrayType = typeof<CTObject array>
 
     match id.uniqueName with
-    | "display" -> gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<Object> |]))
+    | "display" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("Display", [| ctObject |]))
     | "zero?" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("IsZero", [| ctObject |]))
     | "list" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("List", [| arrayType |]))
     | "null?" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("IsNull", [| ctObject |]))
@@ -92,19 +95,19 @@ let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     | ">" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("GreaterThan", [| arrayType |]))
     | "eq?" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("AreEq", [| ctObject; ctObject |]))
     | "not" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("Not", [| ctObject |]))
-    | "newline" -> gen.Emit(Emit.OpCodes.Ldstr, "\n")
-                   gen.Emit(Emit.OpCodes.Call, typeof<Console>.GetMethod("Write", [| typeof<string> |]))
+    | "newline" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("Newline", [||]))
     | e -> failwithf "Built-in function %s is not implemented!" e
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let pushExprResultToStack = generateSubExpression gen scope true
 
     let emitFunctionCall id args =
         if List.contains id (getBuiltIns scope) then
-           if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
-               emitArray gen args (fun g -> generateSubExpression g scope true)
-           else
-               for arg in args do pushExprResultToStack arg
-           emitBuiltInFunctionCall gen id 
+            if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
+                emitArray gen args (fun g -> generateSubExpression g scope true)
+            else
+                for arg in args do pushExprResultToStack arg
+
+            emitBuiltInFunctionCall gen id
         else
             failwithf "Not implemented yet! (generic procedure calls)"
     let emitConditional condition thenExpression elseExpression =
@@ -122,18 +125,55 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
         pushExprResultToStack elseExpression
 
         gen.MarkLabel(exitLabel)
+    let emitBeginSequence =
+        function
+        | [] -> if pushOnStack then loadUndefined gen
+        | exprs -> let tailExpr = List.last exprs
+                   let nonTailExprs = List.take (exprs.Length - 1) exprs
+                   for expr in nonTailExprs do
+                       generateSubExpression gen scope false expr
+                   generateSubExpression gen scope pushOnStack tailExpr
+    let emitAndExpression =
+        function
+        | [] -> if pushOnStack then loadBooleanObject gen true
+        | exprs ->
+            let exitLabel = gen.DefineLabel()
+            let tempVar = if pushOnStack then Some <| gen.DeclareLocal(typeof<CTObject>) else None
+            for expr in exprs do
+                pushExprResultToStack expr
+
+                tempVar
+                |> Option.map (fun (v : Emit.LocalBuilder) ->
+                                   gen.Emit(Emit.OpCodes.Stloc, v.LocalIndex)
+                                   gen.Emit(Emit.OpCodes.Ldloc, v.LocalIndex))
+                |> ignore
+
+                emitBooleanConversion gen
+                gen.Emit(Emit.OpCodes.Brfalse, exitLabel)
+
+            gen.MarkLabel(exitLabel)
+
+            tempVar
+            |> Option.map (fun (v : Emit.LocalBuilder) -> gen.Emit(Emit.OpCodes.Ldloc, v.LocalIndex))
+            |> ignore
 
     match expr with
     | ProcedureCall (proc, args)
-        ->  match proc with
-            | VariableReference id -> emitFunctionCall id args
-            | e -> failwithf "Not implemented yet! %A" e
+        -> match proc with
+           | VariableReference id -> emitFunctionCall id args
+           | e -> failwithf "Not implemented yet! %A" e
+           if not pushOnStack then popStack gen
     | ValueExpression lit
         -> emitLiteral gen lit
-           if not pushOnStack then
-              popStack gen
+           if not pushOnStack then popStack gen
     | Conditional (cond, thenBranch, elseBranch)
         -> emitConditional cond thenBranch elseBranch
+           if not pushOnStack then popStack gen
+    | SequenceExpression (seqType, exprs)
+        -> match seqType with
+           | BeginSequence -> emitBeginSequence exprs
+           | AndSequence -> emitAndExpression exprs
+           | _ -> failwith "Not implemented yet: sequence other than begin"
     | e -> failwithf "Not implemented yet! %A" e
 
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =

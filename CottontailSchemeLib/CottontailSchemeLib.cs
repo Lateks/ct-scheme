@@ -52,6 +52,18 @@ namespace CottontailSchemeLib
             bool b = v.ToBool();
             return Constants.ToCTBool(!b);
         }
+
+        public static CTObject Display(CTObject v)
+        {
+            Console.Write(v);
+            return Constants.Undefined;
+        }
+
+        public static CTObject Newline()
+        {
+            Console.Write("\n");
+            return Constants.Undefined;
+        }
     }
 
     public class ListOperations

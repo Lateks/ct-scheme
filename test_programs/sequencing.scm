@@ -1,0 +1,16 @@
+(begin (display "hello")
+       (newline)
+	   (display "world")
+	   (newline))
+
+(display (and #t #f #t))
+(and (display "hello\n") #f (display "world\n"))
+(and (display "foo\n") #t (display "baz\n"))
+(display (and))
+(newline)
+(display (and #t))
+(newline)
+(display (and #f))
+(newline)
+
+(display (begin (display "hello, ") "world\n"))
