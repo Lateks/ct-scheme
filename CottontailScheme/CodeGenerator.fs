@@ -133,29 +133,39 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
                    for expr in nonTailExprs do
                        generateSubExpression gen scope false expr
                    generateSubExpression gen scope pushOnStack tailExpr
-    let emitAndExpression =
+    let emitBooleanCombinationExpression breakValue =
         function
-        | [] -> if pushOnStack then loadBooleanObject gen true
+        | [] -> if pushOnStack then loadBooleanObject gen (not breakValue)
         | exprs ->
             let exitLabel = gen.DefineLabel()
             let tempVar = if pushOnStack then Some <| gen.DeclareLocal(typeof<CTObject>) else None
-            for expr in exprs do
-                pushExprResultToStack expr
+            let storeTempValue () = tempVar |> Option.map (fun (v : Emit.LocalBuilder) -> gen.Emit(Emit.OpCodes.Stloc, v.LocalIndex))
+                                            |> ignore
+            let loadTempValue () = tempVar |> Option.map (fun (v : Emit.LocalBuilder) -> gen.Emit(Emit.OpCodes.Ldloc, v.LocalIndex))
+                                           |> ignore
+            let comparison = if breakValue then
+                                Emit.OpCodes.Brtrue
+                             else
+                                Emit.OpCodes.Brfalse
+            let tailExpr = List.last exprs
+            let nonTailExprs = List.take (exprs.Length - 1) exprs
 
-                tempVar
-                |> Option.map (fun (v : Emit.LocalBuilder) ->
-                                   gen.Emit(Emit.OpCodes.Stloc, v.LocalIndex)
-                                   gen.Emit(Emit.OpCodes.Ldloc, v.LocalIndex))
-                |> ignore
+            for expr in nonTailExprs do
+                pushExprResultToStack expr
+                storeTempValue ()
+                loadTempValue ()
 
                 emitBooleanConversion gen
-                gen.Emit(Emit.OpCodes.Brfalse, exitLabel)
+                gen.Emit(comparison, exitLabel)
+
+            pushExprResultToStack tailExpr
+            if pushOnStack then
+                storeTempValue ()
+            else
+                popStack gen
 
             gen.MarkLabel(exitLabel)
-
-            tempVar
-            |> Option.map (fun (v : Emit.LocalBuilder) -> gen.Emit(Emit.OpCodes.Ldloc, v.LocalIndex))
-            |> ignore
+            loadTempValue ()
 
     match expr with
     | ProcedureCall (proc, args)
@@ -172,8 +182,8 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
     | SequenceExpression (seqType, exprs)
         -> match seqType with
            | BeginSequence -> emitBeginSequence exprs
-           | AndSequence -> emitAndExpression exprs
-           | _ -> failwith "Not implemented yet: sequence other than begin"
+           | AndSequence -> emitBooleanCombinationExpression false exprs
+           | OrSequence -> emitBooleanCombinationExpression true exprs
     | e -> failwithf "Not implemented yet! %A" e
 
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
