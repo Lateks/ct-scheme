@@ -9,7 +9,11 @@ open CottontailSchemeLib
 open System
 open System.Reflection
 
-type Scope = { fields : Map<string, Emit.FieldBuilder> }
+type Procedure = { methodBuilder : Emit.MethodBuilder;
+                   closure : ClosureDefinition }
+
+type Scope = { fields : Map<string, Emit.FieldBuilder>;
+               procedures : Map<string, Procedure> }
 
 let builtIns = ref []
 
@@ -210,6 +214,11 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
     generateSubExpression gen scope false expr
 
+let generateProcedureBody (gen : Emit.ILGenerator) (c : ClosureDefinition) scope =
+    // TODO
+    loadUndefined gen
+    gen.Emit(Emit.OpCodes.Ret)
+
 let defineVariables (c : Emit.TypeBuilder) =
     List.map (function
               | IdentifierDefinition (id, _) ->
@@ -217,10 +226,35 @@ let defineVariables (c : Emit.TypeBuilder) =
               | e -> failwithf "Expected a definition but got %A" e)
     >> Map.ofList
 
+let defineProcedures (c : Emit.TypeBuilder) =
+    List.map (function
+              | IdentifierDefinition (id, Closure clos) ->
+                  let parameterTypes = match clos.formals with
+                                       | SingleArgFormals id -> [| typeof<CTObject array> |]
+                                       | MultiArgFormals ids -> if ids.Length < 4 then
+                                                                    ids |> List.map (fun _ -> typeof<CTObject> )
+                                                                        |> Array.ofList
+                                                                else
+                                                                    [| typeof<CTObject array> |]
+                  let procedure = c.DefineMethod(id.uniqueName,
+                                                 MethodAttributes.Static ||| MethodAttributes.Private,
+                                                 typeof<CTObject>,
+                                                 parameterTypes)
+                  (id.uniqueName, { methodBuilder = procedure; closure = clos })
+              | e -> failwithf "Expected a function definition but got %A" e)
+    >> Map.ofList
+
+let generateTopLevelProcedureBodies (scope : Scope) =
+    for (_, proc) in Map.toSeq scope.procedures do
+        generateProcedureBody (proc.methodBuilder.GetILGenerator()) proc.closure scope
+
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
 
-    let scope = { fields = defineVariables mainClass program.variableDefinitions }
+    let scope = { fields = defineVariables mainClass program.variableDefinitions;
+                  procedures = defineProcedures mainClass program.functionDefinitions }
+
+    generateTopLevelProcedureBodies scope
 
     ilGen.BeginExceptionBlock() |> ignore
 
