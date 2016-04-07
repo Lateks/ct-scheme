@@ -17,6 +17,8 @@ type Scope = { fields : Map<string, Emit.FieldBuilder>;
 
 let builtIns = ref []
 
+let maxArgsToUserDefinedProc = 3
+
 let setupAssembly name =
     let assemblyName = AssemblyName()
     assemblyName.Name <- name
@@ -109,13 +111,26 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
     let pushExprResultToStack = generateSubExpression gen scope true
 
     let emitFunctionCall id args =
+        let pushArgsAsArray () = emitArray gen args (fun g -> generateSubExpression g scope true)
+        let pushIndividualArgs () = for arg in args do pushExprResultToStack arg
         if List.contains id !builtIns then
             if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
-                emitArray gen args (fun g -> generateSubExpression g scope true)
+                pushArgsAsArray ()
             else
-                for arg in args do pushExprResultToStack arg
+                pushIndividualArgs ()
 
             emitBuiltInFunctionCall gen id
+        elif scope.procedures.ContainsKey id.uniqueName then
+            // TODO: check that the number of arguments is ok during semantic analysis
+            let procedure = scope.procedures.Item(id.uniqueName)
+            match procedure.closure.formals with
+            | SingleArgFormals _ -> pushArgsAsArray ()
+            | MultiArgFormals _ -> if args.Length <= maxArgsToUserDefinedProc then
+                                       pushIndividualArgs ()
+                                   else
+                                       pushArgsAsArray ()
+
+            gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
         else
             failwithf "Not implemented yet! (generic procedure calls)"
     let emitConditional condition thenExpression elseExpression =
@@ -231,7 +246,7 @@ let defineProcedures (c : Emit.TypeBuilder) =
               | IdentifierDefinition (id, Closure clos) ->
                   let parameterTypes = match clos.formals with
                                        | SingleArgFormals id -> [| typeof<CTObject array> |]
-                                       | MultiArgFormals ids -> if ids.Length < 4 then
+                                       | MultiArgFormals ids -> if ids.Length <= maxArgsToUserDefinedProc then
                                                                     ids |> List.map (fun _ -> typeof<CTObject> )
                                                                         |> Array.ofList
                                                                 else
