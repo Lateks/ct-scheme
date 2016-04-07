@@ -252,6 +252,7 @@ module LambdaHelpers =
             | SequenceExpression (_, exprs) ->
                 usedAsFirstClassValueInList exprs
             | TailExpression e -> usedAsFirstClassValueInExpr e
+            | UndefinedValue -> false
         and usedAsFirstClassValueInList exprs =
             exprs
             |> List.fold (fun usedSoFar e -> usedSoFar || usedAsFirstClassValueInExpr e) false
@@ -572,10 +573,10 @@ let isVariableDefinition =
     | IdentifierDefinition (_, _) -> true
     | _ -> false
 
-let isNonDefinition =
+let definitionToAssignment =
     function
-    | IdentifierDefinition _ -> false
-    | _ -> true
+    | IdentifierDefinition (id, expr) -> Assignment (id, expr)
+    | e -> e
 
 // Performs several passes through the AST (passes documented
 // above) producing a Program value (either ValidProgram or
@@ -594,7 +595,9 @@ let analyse exprs =
         checkProcedureCalls moduleBody
         let functionDefinitions = List.filter isFunctionDefinition moduleBody
         let variableDefinitions = List.filter isVariableDefinition moduleBody
-        let otherExpressions = List.filter isNonDefinition moduleBody
+        let otherExpressions = moduleBody
+                               |> List.filter (isFunctionDefinition >> not)
+                               |> List.map definitionToAssignment
         ValidProgram { functionDefinitions = functionDefinitions;
                        variableDefinitions = variableDefinitions;
                        expressions = otherExpressions;

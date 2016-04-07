@@ -9,6 +9,10 @@ open CottontailSchemeLib
 open System
 open System.Reflection
 
+type Scope = { fields : Map<string, Emit.FieldBuilder> }
+
+let builtIns = ref []
+
 let setupAssembly name =
     let assemblyName = AssemblyName()
     assemblyName.Name <- name
@@ -101,7 +105,7 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
     let pushExprResultToStack = generateSubExpression gen scope true
 
     let emitFunctionCall id args =
-        if List.contains id (getBuiltIns scope) then
+        if List.contains id !builtIns then
             if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
                 emitArray gen args (fun g -> generateSubExpression g scope true)
             else
@@ -166,6 +170,18 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
 
             gen.MarkLabel(exitLabel)
             loadTempValue ()
+    let emitAssignment (id : Identifier) expr =
+        assert scope.fields.ContainsKey(id.uniqueName)
+
+        let field = scope.fields.Item(id.uniqueName)
+        pushExprResultToStack expr
+        gen.Emit(Emit.OpCodes.Stsfld, field)
+
+        if pushOnStack then loadUndefined gen
+    let emitVariableLoad (id : Identifier) =
+        assert scope.fields.ContainsKey(id.uniqueName)
+        let field = scope.fields.Item(id.uniqueName)
+        gen.Emit(Emit.OpCodes.Ldsfld, field)
 
     match expr with
     | ProcedureCall (proc, args)
@@ -184,18 +200,32 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
            | BeginSequence -> emitBeginSequence exprs
            | AndSequence -> emitBooleanCombinationExpression false exprs
            | OrSequence -> emitBooleanCombinationExpression true exprs
+    | Assignment (id, expr)
+        -> emitAssignment id expr
+    | VariableReference id
+        -> emitVariableLoad id
+           if not pushOnStack then popStack gen
     | e -> failwithf "Not implemented yet! %A" e
 
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
     generateSubExpression gen scope false expr
 
+let defineVariables (c : Emit.TypeBuilder) =
+    List.map (function
+              | IdentifierDefinition (id, _) ->
+                  (id.uniqueName, c.DefineField(id.uniqueName, typeof<CTObject>, FieldAttributes.Static ||| FieldAttributes.Private))
+              | e -> failwithf "Expected a definition but got %A" e)
+    >> Map.ofList
+
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
+
+    let scope = { fields = defineVariables mainClass program.variableDefinitions }
 
     ilGen.BeginExceptionBlock() |> ignore
 
     for expr in program.expressions do
-        generateExpression ilGen expr program.scope
+        generateExpression ilGen expr scope
 
     ilGen.BeginCatchBlock(typeof<CottontailSchemeException>)
 
@@ -222,6 +252,7 @@ let generateCodeFor (program : ProgramStructure) (name : string) =
     let mainMethod = mainClass.DefineMethod("Main", MethodAttributes.Public ||| MethodAttributes.Static,
                                             typeof<int>, [| typeof<string array> |])
 
+    builtIns := getBuiltIns program.scope
     generateMainModule mainClass mainMethod program |> ignore
 
     // Save assembly and mark it as a console application

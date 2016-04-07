@@ -1,0 +1,13 @@
+(define pi 3.14159)
+(define boolean-val #t)
+
+(display boolean-val)
+(newline)
+(set! boolean-val #f)
+(display boolean-val)
+(newline)
+(display pi)
+(newline)
+(set! pi 3)
+(display pi)
+(newline)

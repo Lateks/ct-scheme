@@ -112,7 +112,7 @@ type ``Transformations made during semantic analysis`` () =
         parseAndBuild "(define x 1)(define y 2)(define x 3)"
         |> getStructure
         |> fun p -> let def1 = List.head p.variableDefinitions
-                    let def2 = List.head p.expressions
+                    let def2 = List.last p.expressions
                     match def1 with
                     | IdentifierDefinition (id1, expr1) ->
                         match def2 with
@@ -350,7 +350,7 @@ type ``Name bindings`` () =
         parseAndBuild "(define x 1)\
                        x"
         |> getStructure
-        |> fun p -> getId (List.head p.variableDefinitions) |> should equal (getId (List.head p.expressions))
+        |> fun p -> getId (List.head p.variableDefinitions) |> should equal (getId (List.last p.expressions))
 
         parseAndBuild "(define x 1)\
                        (lambda ()\
@@ -358,7 +358,7 @@ type ``Name bindings`` () =
                          x)"
         |> getStructure
         |> fun p -> let firstX = List.head p.variableDefinitions |> getId
-                    List.head p.expressions
+                    List.last p.expressions
                     |> handleClosure (fun c ->
                                             let secondX = List.head c.body |> getId
                                             let thirdX = List.last c.body |> getId
@@ -369,7 +369,7 @@ type ``Name bindings`` () =
                        (lambda () x)"
         |> getStructure
         |> fun p -> let firstX = List.head p.variableDefinitions |> getId
-                    List.head p.expressions
+                    List.last p.expressions
                     |> handleClosure (fun c ->
                                             let secondX = List.head c.body |> getId
                                             firstX |> should equal secondX)
