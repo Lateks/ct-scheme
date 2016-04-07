@@ -174,6 +174,16 @@ type ``boolean operations`` () =
         CommonOperations.AreEq(CTString("test"), CTString("test")) |> isTruthy
         CommonOperations.AreEq(CTString("test"), CTString("testy")) |> isFalsy
         CommonOperations.AreEq(CTProcedure(0), CTProcedure(0)) |> isFalsy // procedures are compared for instance equality
+        CommonOperations.AreEq(ListOperations.List([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]),
+                               ListOperations.List([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]))
+                               |> isTruthy
+        CommonOperations.AreEq(CTEmptyList(), CTEmptyList()) |> isTruthy
+        CommonOperations.AreEq(ListOperations.List([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]),
+                               CTPair(CTNumber(1.0), CTPair(CTNumber(2.0), CTNumber(3.0))))
+                               |> isFalsy
+        CommonOperations.AreEq(CTPair(CTNumber(1.0), CTNumber(2.0)),
+                               CTPair(CTNumber(1.0), CTNumber(2.0)))
+                               |> isTruthy
 
 [<TestFixture>]
 type ``printing objects`` () =

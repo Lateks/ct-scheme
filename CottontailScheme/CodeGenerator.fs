@@ -69,6 +69,7 @@ let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
 let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     let listOps = typeof<ListOperations>
     let numberOps = typeof<NumberOperations>
+    let commonOps = typeof<CommonOperations>
     let ctObject = typeof<CTObject>
     let arrayType = typeof<CTObject array>
 
@@ -86,7 +87,9 @@ let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     | "/" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Div", [| arrayType |]))
     | "<" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("LessThan", [| arrayType |]))
     | ">" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("GreaterThan", [| arrayType |]))
-    | e -> failwithf "Not implemented yet! (built-in function %s)" e
+    | "eq?" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("AreEq", [| ctObject; ctObject |]))
+    | "not" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("Not", [| ctObject |]))
+    | e -> failwithf "Built-in function %s is not implemented!" e
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let emitFunctionCall id args =
         if List.contains id (getBuiltIns scope) then
