@@ -32,29 +32,33 @@ exception AnalysisException of string
 
 type SequenceExpressionType = BeginSequence | AndSequence | OrSequence
 
+type ClosureFormals = SingleArgFormals of Scope.Identifier
+                    | MultiArgFormals of Scope.Identifier list
+
 type Expression =
-     | VariableReference of Identifier
+     | VariableReference of Scope.Identifier
      | Closure of ClosureDefinition
      | ProcedureCall of Expression * Expression list
-     | ValueExpression of LiteralValue
-     | Assignment of Identifier * Expression
+     | ValueExpression of Literals.LiteralValue
+     | Assignment of Scope.Identifier * Expression
      | Conditional of Expression * Expression * Expression
-     | IdentifierDefinition of Identifier * Expression
      | SequenceExpression of SequenceExpressionType * Expression list
      | TailExpression of Expression
      | UndefinedValue
-and ClosureFormals = SingleArgFormals of Identifier
-                   | MultiArgFormals of Identifier list
 and ClosureDefinition = { formals: ClosureFormals;
+                          procedureDefinitions: ProcedureDefinition list;
+                          variableDeclarations : VariableDeclaration list;
                           body: Expression list;
                           environment: Identifier list;
                           scope: Scope
                           isTailRecursive: bool;
                           functionName: Identifier option;
                           usedAsFirstClassValue: bool }
+and ProcedureDefinition = ProcedureDefinition of Scope.Identifier * ClosureDefinition
+and VariableDeclaration = VariableDeclaration of Scope.Identifier
 
-type ProgramStructure = { functionDefinitions: Expression list;
-                          variableDefinitions: Expression list;
+type ProgramStructure = { procedureDefinitions: ProcedureDefinition list;
+                          variableDeclarations: VariableDeclaration list;
                           expressions : Expression list;
                           scope : Scope.Scope }
 
@@ -62,13 +66,31 @@ type Program =
     | ValidProgram of ProgramStructure
     | ProgramAnalysisError of string
 
-let placeholder name = failwithf "Not implemented yet: %s" name
+// Internal representation that handles definitions as expressions
+type AnalysisExpression =
+     | AnalysisVariableReference of Identifier
+     | AnalysisClosure of AnalysisClosureDefinition
+     | AnalysisProcedureCall of AnalysisExpression * AnalysisExpression list
+     | AnalysisValueExpression of LiteralValue
+     | AnalysisAssignment of Identifier * AnalysisExpression
+     | AnalysisConditional of AnalysisExpression * AnalysisExpression * AnalysisExpression
+     | AnalysisIdentifierDefinition of Identifier * AnalysisExpression
+     | AnalysisSequenceExpression of SequenceExpressionType * AnalysisExpression list
+     | AnalysisTailExpression of AnalysisExpression
+     | AnalysisUndefinedValue
+and AnalysisClosureDefinition = { formals: ClosureFormals;
+                                  body: AnalysisExpression list;
+                                  environment: Identifier list;
+                                  scope: Scope
+                                  isTailRecursive: bool;
+                                  functionName: Identifier option;
+                                  usedAsFirstClassValue: bool }
 
 let failWithErrorNode err = failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
 
 let isProcedureCall =
     function
-    | ProcedureCall (_, _) -> true
+    | AnalysisProcedureCall (_, _) -> true
     | _ -> false
 
 module IdentifierHelpers =
@@ -151,19 +173,19 @@ module LambdaHelpers =
 
         let rec collectFreeVariables expr =
             match expr with
-            | VariableReference id -> collect id
-            | ProcedureCall (proc, args) ->
+            | AnalysisVariableReference id -> collect id
+            | AnalysisProcedureCall (proc, args) ->
                 args
                 |> collectFromExprList
                 |> List.append (collectFreeVariables proc)
-            | Assignment (id, expr) ->
+            | AnalysisAssignment (id, expr) ->
                 List.append (collect id) (collectFreeVariables expr)
-            | Conditional (cond, thenExpr, elseExpr) ->
+            | AnalysisConditional (cond, thenExpr, elseExpr) ->
                 [cond; thenExpr; elseExpr]
                 |> collectFromExprList
-            | SequenceExpression (_, exprs) ->
+            | AnalysisSequenceExpression (_, exprs) ->
                 collectFromExprList exprs
-            | TailExpression e ->
+            | AnalysisTailExpression e ->
                 collectFreeVariables e
             | _ -> []
         and collectFromExprList =
@@ -175,52 +197,52 @@ module LambdaHelpers =
     let rec toTailExpression expr =
         let isValidArg =
             match expr with
-            | IdentifierDefinition (_, _)
-            | TailExpression _
+            | AnalysisIdentifierDefinition (_, _)
+            | AnalysisTailExpression _
                 -> false
             | _ -> true
 
         assert isValidArg
 
         match expr with
-        | Conditional (cond, thenExpr, elseExpr)
-            -> Conditional (cond, toTailExpression thenExpr, toTailExpression elseExpr)
-        | SequenceExpression (t, exprs) as seq
+        | AnalysisConditional (cond, thenExpr, elseExpr)
+            -> AnalysisConditional (cond, toTailExpression thenExpr, toTailExpression elseExpr)
+        | AnalysisSequenceExpression (t, exprs) as seq
             -> if List.isEmpty exprs then
-                  TailExpression seq
+                  AnalysisTailExpression seq
                else
                    let init = List.take (exprs.Length - 1) exprs
                    let tailExpr = List.last exprs |> toTailExpression
                    List.append init [tailExpr]
-                   |> fun es -> SequenceExpression (t, es)
-        | expr -> TailExpression expr
+                   |> fun es -> AnalysisSequenceExpression (t, es)
+        | expr -> AnalysisTailExpression expr
 
     let rec findTailExprs expr =
         let isValidArg =
             match expr with
-            | Conditional (_, _, _)
-            | SequenceExpression (_, _)
-            | TailExpression _
+            | AnalysisConditional (_, _, _)
+            | AnalysisSequenceExpression (_, _)
+            | AnalysisTailExpression _
                 -> true
             | _ -> false
 
         assert isValidArg
 
         match expr with
-        | Conditional (cond, thenExpr, elseExpr)
+        | AnalysisConditional (cond, thenExpr, elseExpr)
             -> [thenExpr; elseExpr]
                |> List.map findTailExprs
                |> List.concat
-        | SequenceExpression (_, exprs)
+        | AnalysisSequenceExpression (_, exprs)
             -> List.last exprs
                |> findTailExprs
-        | TailExpression e -> [e]
+        | AnalysisTailExpression e -> [e]
         | _ -> []
 
     let isTailRecursive lambdaBody lambdaName =
         let isRecursiveCall expr =
             isProcedureCall expr && (match expr with
-                                     | ProcedureCall (VariableReference id, _) -> id = lambdaName
+                                     | AnalysisProcedureCall (AnalysisVariableReference id, _) -> id = lambdaName
                                      | _ -> false)
 
         let tailExprs = findTailExprs <| List.last lambdaBody
@@ -234,25 +256,25 @@ module LambdaHelpers =
             | None -> false
         let rec usedAsFirstClassValueInExpr =
             function
-            | VariableReference id -> isNameReference id
-            | Closure c' -> c = c' || usedAsFirstClassValueInList c'.body
-            | ProcedureCall (_, args) -> usedAsFirstClassValueInList args
-            | ValueExpression _ -> false
-            | Assignment (id, expr) // treat as if used as first class value if value can be overwritten
+            | AnalysisVariableReference id -> isNameReference id
+            | AnalysisClosure c' -> c = c' || usedAsFirstClassValueInList c'.body
+            | AnalysisProcedureCall (_, args) -> usedAsFirstClassValueInList args
+            | AnalysisValueExpression _ -> false
+            | AnalysisAssignment (id, expr) // treat as if used as first class value if value can be overwritten
                 -> isNameReference id || usedAsFirstClassValueInExpr expr
-            | IdentifierDefinition (id, expr)
+            | AnalysisIdentifierDefinition (id, expr)
                 -> if isNameReference id then
                        match expr with
-                       | Closure c' -> usedAsFirstClassValueInList c'.body
+                       | AnalysisClosure c' -> usedAsFirstClassValueInList c'.body
                        | _ -> false
                    else
                        usedAsFirstClassValueInExpr expr
-            | Conditional (e1, e2, e3) ->
+            | AnalysisConditional (e1, e2, e3) ->
                 usedAsFirstClassValueInExpr e1 || usedAsFirstClassValueInExpr e2 || usedAsFirstClassValueInExpr e3
-            | SequenceExpression (_, exprs) ->
+            | AnalysisSequenceExpression (_, exprs) ->
                 usedAsFirstClassValueInList exprs
-            | TailExpression e -> usedAsFirstClassValueInExpr e
-            | UndefinedValue -> false
+            | AnalysisTailExpression e -> usedAsFirstClassValueInExpr e
+            | AnalysisUndefinedValue -> false
         and usedAsFirstClassValueInList exprs =
             exprs
             |> List.fold (fun usedSoFar e -> usedSoFar || usedAsFirstClassValueInExpr e) false
@@ -302,7 +324,7 @@ let buildScope parentScope exprs =
     List.fold addToScope scope exprs
 
 let handleIdentifierExpression scope id =
-    VariableReference (IdentifierHelpers.bindingForVariableReference scope id)
+    AnalysisVariableReference (IdentifierHelpers.bindingForVariableReference scope id)
 
 // TODO: source code positions for exceptions
 // First pass through AST:
@@ -317,7 +339,7 @@ let rec handleExpression scope =
     | AssignmentExpression binding -> handleAssignment scope binding
     | ProcedureCallExpression (expr, exprs) -> handleProcedureCall scope expr exprs
     | ConditionalExpression (cond, thenBranch, elseBranch) -> handleConditional scope cond thenBranch elseBranch
-    | LiteralExpression lit -> ValueExpression lit
+    | LiteralExpression lit -> AnalysisValueExpression lit
     | Definition binding -> handleDefinition scope binding
     | BeginExpression exprs -> handleBeginExpression scope exprs
     | BooleanExpression (t, exprs) -> handleBooleanExpression scope t exprs
@@ -330,25 +352,25 @@ and handleDefinition scope =
                         | LambdaExpression (fs, ds, es) ->
                             handleLambdaExpression scope fs ds es
                         | _ -> handleExpression scope expr
-        IdentifierDefinition (variableRef, valueExpr)
+        AnalysisIdentifierDefinition (variableRef, valueExpr)
     | BindingError err -> failWithErrorNode err
 and handleConditional scope cond thenBranch elseBranch =
     let condExpr = handleExpression scope cond
     let thenExpr = handleExpression scope thenBranch
     let elseExpr = match elseBranch with
                    | Some e -> handleExpression scope e
-                   | None   -> UndefinedValue
-    Conditional (condExpr, thenExpr, elseExpr)
+                   | None   -> AnalysisUndefinedValue
+    AnalysisConditional (condExpr, thenExpr, elseExpr)
 and handleProcedureCall scope procExpr exprs =
     let proc = handleExpression scope procExpr
     let args = List.map (handleExpression scope) exprs
-    ProcedureCall (proc, args)
+    AnalysisProcedureCall (proc, args)
 and handleAssignment scope binding =
     match binding with
     | Binding (id, expr) ->
         let variableRef = IdentifierHelpers.bindingForVariableReference scope id
         let valueExpr = handleExpression scope expr
-        Assignment (variableRef, valueExpr)
+        AnalysisAssignment (variableRef, valueExpr)
     | BindingError err -> failWithErrorNode err
 and handleLambdaExpression scope formals defs exprs =
     let body = List.append defs exprs
@@ -369,18 +391,18 @@ and handleLambdaExpression scope formals defs exprs =
       functionName = None;
       isTailRecursive = false;
       usedAsFirstClassValue = false }
-    |> Closure
+    |> AnalysisClosure
 and handleBeginExpression scope exprs =
     exprs
     |> List.map (handleExpression scope)
-    |> fun es -> SequenceExpression (BeginSequence, es)
+    |> fun es -> AnalysisSequenceExpression (BeginSequence, es)
 and handleBooleanExpression scope exprType exprs =
     exprs
     |> List.map (handleExpression scope)
     |> fun es -> match exprType with
                  | AndExpression -> (AndSequence, es)
                  | OrExpression -> (OrSequence, es)
-    |> SequenceExpression
+    |> AnalysisSequenceExpression
 
 // Second pass through AST:
 // Checks that variables are initialized before they are
@@ -408,31 +430,31 @@ let rec checkVariableInitialization scope exprs =
     let rec check inits expr =
         let recur = check inits >> ignore
         match expr with
-        | IdentifierDefinition (id, expr) as e ->
+        | AnalysisIdentifierDefinition (id, expr) as e ->
             let markAsInitialized = Map.remove id.uniqueName
                                     >> Map.add id.uniqueName true
             recur expr
             match Map.tryFind id.uniqueName inits with
             | Some b -> if b then
-                           inits, Assignment (id, expr)
+                           inits, AnalysisAssignment (id, expr)
                         else
                            markAsInitialized inits, e
             | None -> markAsInitialized inits, e
-        | _ -> match expr with
-               | VariableReference id as e -> verifyInitialized inits id
-               | Closure c as e -> checkVariableInitialization c.scope c.body |> ignore
-               | ProcedureCall (proc, args) as e -> recur proc
-                                                    List.map recur args |> ignore
-               | Assignment (id, expr) as e -> verifyInitialized inits id
-                                               recur expr
-               | Conditional (e1, e2, e3) as e -> recur e1
-                                                  recur e2
-                                                  recur e3 |> ignore
-               | SequenceExpression (t, exprs) as e -> List.map recur exprs |> ignore
-               | TailExpression ex as e -> recur ex
+        | e -> match e with
+               | AnalysisVariableReference id -> verifyInitialized inits id
+               | AnalysisClosure c -> checkVariableInitialization c.scope c.body |> ignore
+               | AnalysisProcedureCall (proc, args) -> recur proc
+                                                       List.map recur args |> ignore
+               | AnalysisAssignment (id, expr) -> verifyInitialized inits id
+                                                  recur expr
+               | AnalysisConditional (e1, e2, e3) -> recur e1
+                                                     recur e2
+                                                     recur e3 |> ignore
+               | AnalysisSequenceExpression (t, exprs) -> List.map recur exprs |> ignore
+               | AnalysisTailExpression ex -> recur ex
                | _ -> ()
 
-               inits, expr
+               inits, e
     and checkExprs inits acc =
         function
         | []    -> List.rev acc
@@ -454,19 +476,19 @@ let rec checkVariableInitialization scope exprs =
 let rec labelLambdas exprs =
     let rec label name =
         function
-        | Closure c -> Closure <| labelClosure c name exprs
-        | Assignment (id, expr)
-            -> Assignment (id, label (Some id) expr)
-        | IdentifierDefinition (id, expr)
-            -> IdentifierDefinition (id, label (Some id) expr)
-        | Conditional (e1, e2, e3)
-            -> Conditional (label None e1, label name e2, label name e3)
-        | ProcedureCall (proc, args)
-            -> ProcedureCall (label None proc, List.map (label None) args)
-        | SequenceExpression (t, exprs)
-            -> SequenceExpression (t, List.map (label None) exprs)
-        | TailExpression e
-            -> TailExpression (label None e)
+        | AnalysisClosure c -> AnalysisClosure <| labelClosure c name exprs
+        | AnalysisAssignment (id, expr)
+            -> AnalysisAssignment (id, label (Some id) expr)
+        | AnalysisIdentifierDefinition (id, expr)
+            -> AnalysisIdentifierDefinition (id, label (Some id) expr)
+        | AnalysisConditional (e1, e2, e3)
+            -> AnalysisConditional (label None e1, label name e2, label name e3)
+        | AnalysisProcedureCall (proc, args)
+            -> AnalysisProcedureCall (label None proc, List.map (label None) args)
+        | AnalysisSequenceExpression (t, exprs)
+            -> AnalysisSequenceExpression (t, List.map (label None) exprs)
+        | AnalysisTailExpression e
+            -> AnalysisTailExpression (label None e)
         | e -> e
 
     exprs |> List.map (label None)
@@ -496,13 +518,13 @@ let checkProcedureCalls exprs =
     let findFunctionDefinitions exprs =
         exprs
         |> List.filter (function
-                        | IdentifierDefinition (_, expr) ->
+                        | AnalysisIdentifierDefinition (_, expr) ->
                             match expr with
-                            | Closure c -> c.functionName.IsSome && (not c.usedAsFirstClassValue)
+                            | AnalysisClosure c -> c.functionName.IsSome && (not c.usedAsFirstClassValue)
                             | _ -> false
                         | _ -> false)
         |> List.map (fun e -> match e with
-                              | IdentifierDefinition (_, Closure c) -> c
+                              | AnalysisIdentifierDefinition (_, AnalysisClosure c) -> c
                               | _ -> assert false
                                      "Analysis failure" |> AnalysisException |> raise)
         |> List.fold (fun m c -> Map.add c.functionName.Value.uniqueName c m)
@@ -522,7 +544,7 @@ let checkProcedureCalls exprs =
 
     let checkProcedureCall functionDefs proc numArgs =
         match proc with
-        | VariableReference id ->
+        | AnalysisVariableReference id ->
             match Map.tryFind id IdentifierHelpers.builtIns with
             | Some (IdentifierHelpers.SetNumberOfArgs n) -> checkNumArgsEqual id.name n numArgs
             | Some IdentifierHelpers.VarArgs -> ()
@@ -539,21 +561,21 @@ let checkProcedureCalls exprs =
     let rec checkCalls functionDefs e =
         let recur = checkCalls functionDefs
         match e with
-        | IdentifierDefinition (_, expr)
-        | Assignment (_, expr)
+        | AnalysisIdentifierDefinition (_, expr)
+        | AnalysisAssignment (_, expr)
             -> recur expr
-        | Closure c ->
+        | AnalysisClosure c ->
             let newFunctions = findFunctionDefinitions c.body
             newFunctions
             |> Map.fold (fun m k v -> Map.add k v m)
                         functionDefs
             |> fun fs -> List.map (checkCalls fs) c.body |> ignore
-        | Conditional (e1, e2, e3) -> recur e1
-                                      recur e2
-                                      recur e3 |> ignore
-        | SequenceExpression (_, exprs) -> List.map recur exprs |> ignore
-        | TailExpression expr -> recur expr
-        | ProcedureCall (proc, args) -> checkProcedureCall functionDefs proc args.Length
+        | AnalysisConditional (e1, e2, e3) -> recur e1
+                                              recur e2
+                                              recur e3 |> ignore
+        | AnalysisSequenceExpression (_, exprs) -> List.map recur exprs |> ignore
+        | AnalysisTailExpression expr -> recur expr
+        | AnalysisProcedureCall (proc, args) -> checkProcedureCall functionDefs proc args.Length
         | _ -> ()
 
     let functions = findFunctionDefinitions exprs
@@ -564,23 +586,88 @@ let checkProcedureCalls exprs =
 
 let isFunctionDefinition =
     function
-    | IdentifierDefinition (_, Closure _) -> true
+    | AnalysisIdentifierDefinition (_, AnalysisClosure _) -> true
     | _ -> false
 
-let isVariableDefinition =
-    function
-    | IdentifierDefinition (_, Closure _) -> false
-    | IdentifierDefinition (_, _) -> true
-    | _ -> false
+let getValuesFromOptionList (exprs : 'a option list) =
+    exprs
+    |> List.filter Option.isSome
+    |> List.map (fun opt -> opt.Value)
 
-let definitionToAssignment =
+// This phase finalizes the AST representation:
+// - Variable definitions and procedure definitions
+//   are separated from expressions. (Procedure
+//   definition = an identifier definition that
+//   directly defines a procedure: the final
+//   procedure value is known at compile time.
+// - Variable definitions are split into a declaration
+//   and an assignment.
+let rec convertModuleOrProcedureBody exprs =
+    let functionDefinitions = exprs
+                              |> List.map toProcedureDefinition
+                              |> getValuesFromOptionList
+    let variableDeclarations = exprs
+                               |> List.map toVariableDeclaration
+                               |> getValuesFromOptionList
+    let otherExpressions = exprs
+                           |> List.filter (isFunctionDefinition >> not)
+                           |> List.map convertExpression
+    (functionDefinitions, variableDeclarations, otherExpressions)
+and convertClosure c =
+    let procs, vars, exprs = convertModuleOrProcedureBody c.body
+    { formals = c.formals;
+      procedureDefinitions = procs;
+      variableDeclarations = vars;
+      body = exprs
+      environment = c.environment;
+      scope = c.scope;
+      isTailRecursive = c.isTailRecursive;
+      functionName = c.functionName;
+      usedAsFirstClassValue = c.usedAsFirstClassValue }
+and convertExpression =
     function
-    | IdentifierDefinition (id, expr) -> Assignment (id, expr)
-    | e -> e
+    | AnalysisVariableReference id -> VariableReference id
+    | AnalysisClosure c -> convertClosure c |> Closure
+    | AnalysisProcedureCall (proc, args) -> let finalProc = convertExpression proc
+                                            let finalArgs = List.map convertExpression args
+                                            ProcedureCall (finalProc, finalArgs)
+    | AnalysisValueExpression lit -> ValueExpression lit
+    | AnalysisAssignment (id, expr)
+    | AnalysisIdentifierDefinition (id, expr)
+        -> Assignment (id, convertExpression expr)
+    | AnalysisConditional (cond, thenExpr, elseExpr)
+        -> let finalCond = convertExpression cond
+           let finalThen = convertExpression thenExpr
+           let finalElse = convertExpression elseExpr
+           Conditional (finalCond, finalThen, finalElse)
+    | AnalysisSequenceExpression (t, exprs)
+        -> SequenceExpression (t, List.map convertExpression exprs)
+    | AnalysisTailExpression expr
+        -> convertExpression expr |> TailExpression
+    | AnalysisUndefinedValue
+        -> UndefinedValue
+and toProcedureDefinition =
+    function
+    | AnalysisIdentifierDefinition (id, AnalysisClosure c)
+        -> Some <| ProcedureDefinition (id, convertClosure c)
+    | _ -> None
+and toVariableDeclaration =
+    function
+    | AnalysisIdentifierDefinition (id, expr)
+        -> match expr with
+           | AnalysisClosure _ -> None
+           | _ -> Some <| VariableDeclaration id
+    | _ -> None
 
 // Performs several passes through the AST (passes documented
 // above) producing a Program value (either ValidProgram or
 // ProgramAnalysisError).
+//
+// TODO: should arguments be numbered during analysis?
+// TODO: how should top level procedures whose value may
+//       be reassigned be handled?
+//       - just use a variable and create closures?
+// TODO: prevent attempts to set constants (for simplicity)
 let analyse exprs =
     try
         let builtInNames = Map.toList IdentifierHelpers.builtIns
@@ -593,14 +680,12 @@ let analyse exprs =
                          |> labelLambdas
 
         checkProcedureCalls moduleBody
-        let functionDefinitions = List.filter isFunctionDefinition moduleBody
-        let variableDefinitions = List.filter isVariableDefinition moduleBody
-        let otherExpressions = moduleBody
-                               |> List.filter (isFunctionDefinition >> not)
-                               |> List.map definitionToAssignment
-        ValidProgram { functionDefinitions = functionDefinitions;
-                       variableDefinitions = variableDefinitions;
-                       expressions = otherExpressions;
+
+        let procs, vars, exprs = convertModuleOrProcedureBody moduleBody
+
+        ValidProgram { procedureDefinitions = procs;
+                       variableDeclarations = vars;
+                       expressions = exprs;
                        scope = topLevelScope }
     with
         | AnalysisException msg -> ProgramAnalysisError msg

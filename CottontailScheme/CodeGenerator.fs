@@ -235,15 +235,13 @@ let generateProcedureBody (gen : Emit.ILGenerator) (c : ClosureDefinition) scope
     gen.Emit(Emit.OpCodes.Ret)
 
 let defineVariables (c : Emit.TypeBuilder) =
-    List.map (function
-              | IdentifierDefinition (id, _) ->
-                  (id.uniqueName, c.DefineField(id.uniqueName, typeof<CTObject>, FieldAttributes.Static ||| FieldAttributes.Private))
-              | e -> failwithf "Expected a definition but got %A" e)
+    List.map (fun (VariableDeclaration id) ->
+                    (id.uniqueName, c.DefineField(id.uniqueName, typeof<CTObject>, FieldAttributes.Static ||| FieldAttributes.Private)))
     >> Map.ofList
 
 let defineProcedures (c : Emit.TypeBuilder) =
     List.map (function
-              | IdentifierDefinition (id, Closure clos) ->
+              | ProcedureDefinition (id, clos) ->
                   let parameterTypes = match clos.formals with
                                        | SingleArgFormals id -> [| typeof<CTObject array> |]
                                        | MultiArgFormals ids -> if ids.Length <= maxArgsToUserDefinedProc then
@@ -266,8 +264,8 @@ let generateTopLevelProcedureBodies (scope : Scope) =
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
 
-    let scope = { fields = defineVariables mainClass program.variableDefinitions;
-                  procedures = defineProcedures mainClass program.functionDefinitions }
+    let scope = { fields = defineVariables mainClass program.variableDeclarations;
+                  procedures = defineProcedures mainClass program.procedureDefinitions }
 
     generateTopLevelProcedureBodies scope
 

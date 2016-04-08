@@ -2,6 +2,9 @@
 
 type SequenceExpressionType = BeginSequence | AndSequence | OrSequence
 
+type ClosureFormals = SingleArgFormals of Scope.Identifier
+                    | MultiArgFormals of Scope.Identifier list
+
 type Expression =
      | VariableReference of Scope.Identifier
      | Closure of ClosureDefinition
@@ -9,22 +12,23 @@ type Expression =
      | ValueExpression of Literals.LiteralValue
      | Assignment of Scope.Identifier * Expression
      | Conditional of Expression * Expression * Expression
-     | IdentifierDefinition of Scope.Identifier * Expression
      | SequenceExpression of SequenceExpressionType * Expression list
      | TailExpression of Expression
      | UndefinedValue
-and ClosureFormals = SingleArgFormals of Scope.Identifier
-                   | MultiArgFormals of Scope.Identifier list
 and ClosureDefinition = { formals: ClosureFormals;
+                          procedureDefinitions: ProcedureDefinition list;
+                          variableDeclarations : VariableDeclaration list;
                           body: Expression list;
                           environment: Scope.Identifier list;
                           scope: Scope.Scope
                           isTailRecursive: bool;
                           functionName: Scope.Identifier option;
                           usedAsFirstClassValue: bool }
+and ProcedureDefinition = ProcedureDefinition of Scope.Identifier * ClosureDefinition
+and VariableDeclaration = VariableDeclaration of Scope.Identifier
 
-type ProgramStructure = { functionDefinitions: Expression list;
-                          variableDefinitions: Expression list;
+type ProgramStructure = { procedureDefinitions: ProcedureDefinition list;
+                          variableDeclarations: VariableDeclaration list;
                           expressions : Expression list;
                           scope : Scope.Scope }
 

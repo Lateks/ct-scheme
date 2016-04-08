@@ -61,10 +61,10 @@
     <Compile Include="Parsing.fsi" />
     <Compile Include="Parsing.fs" />
     <Compile Include="Literals.fs" />
+    <Compile Include="Scope.fs" />
     <Compile Include="ASTBuilder.fsi" />
     <Compile Include="ASTBuilder.fs" />
     <Compile Include="SymbolGenerator.fs" />
-    <Compile Include="Scope.fs" />
     <Compile Include="SemanticAnalysis.fsi" />
     <Compile Include="SemanticAnalysis.fs" />
     <None Include="Test.fsx" />

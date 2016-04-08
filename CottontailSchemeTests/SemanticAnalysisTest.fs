@@ -40,11 +40,9 @@ let buildArgumentErrorMsgAtLeast name expected got =
 
 let getFunction =
     getStructure
-    >> fun p -> p.functionDefinitions
+    >> fun p -> p.procedureDefinitions
     >> List.head
-    >> function
-       | IdentifierDefinition (id, (Closure c)) -> c
-       | e -> failwithf "Expected a function definition but got %A" e
+    >> fun (ProcedureDefinition (id, c)) -> c
 
 [<TestFixture>]
 type ``Errors detected by semantic analysis`` () =
@@ -111,18 +109,12 @@ type ``Transformations made during semantic analysis`` () =
                                    |> Assert.Fail
         parseAndBuild "(define x 1)(define y 2)(define x 3)"
         |> getStructure
-        |> fun p -> let def1 = List.head p.variableDefinitions
-                    let def2 = List.last p.expressions
-                    match def1 with
-                    | IdentifierDefinition (id1, expr1) ->
-                        match def2 with
-                        | Assignment (id2, expr2) ->
-                            id1 |> should equal id2
-                            expr1 |> should equal (ValueExpression (Number 1.0))
-                            expr2 |> should equal (ValueExpression (Number 3.0))
-                        | IdentifierDefinition (_, _) ->
-                            Assert.Fail "Expected identifier definition to have been converted to assignment but it wasn't"
-                        | e -> gotWrongExpression e
+        |> fun p -> let (VariableDeclaration id1) = List.head p.variableDeclarations
+                    let def = List.last p.expressions
+                    match def with
+                    | Assignment (id2, expr) ->
+                        id1 |> should equal id2
+                        expr |> should equal (ValueExpression (Number 3.0))
                     | e -> gotWrongExpression e
 
     [<Test>]
@@ -302,42 +294,37 @@ type ``Lambda labeling`` () =
                            (lambda (y)\
                              (+ x y))))"
         |> getStructure
-        |> fun p -> p.functionDefinitions
+        |> fun p -> p.procedureDefinitions
         |> List.head
-        |> function
-           | IdentifierDefinition (id, (Closure c))
-               -> List.isEmpty c.environment |> should equal true
-                  match List.head c.body with
-                  | TailExpression (Closure c2) ->
-                      c2.environment.Length |> should equal 2
-                      c2.environment |> List.head |> shouldBeNamed "+"
-                      c2.environment |> List.last |> shouldBeNamed "x"
-                  | _ -> Assert.Fail "Lambda body was not as expected"
-           | e -> sprintf "Program tree was not as expected, first expression in module body is %A" e
-                  |> Assert.Fail
+        |> fun (ProcedureDefinition (id, c))
+              -> List.isEmpty c.environment |> should equal true
+                 match List.head c.body with
+                 | TailExpression (Closure c2) ->
+                     c2.environment.Length |> should equal 2
+                     c2.environment |> List.head |> shouldBeNamed "+"
+                     c2.environment |> List.last |> shouldBeNamed "x"
+                 | _ -> Assert.Fail "Lambda body was not as expected"
 
         parseAndBuild "(define y 1)\
                        (define test\
                          (lambda (x)\
                            (+ x y)))"
         |> getStructure
-        |> fun p -> p.functionDefinitions
+        |> fun p -> p.procedureDefinitions
         |> List.head
-        |> function
-           | IdentifierDefinition (id, (Closure c))
+        |> fun (ProcedureDefinition (id, c))
                -> c.environment.Length |> should equal 2
                   c.environment |> List.head |> shouldBeNamed "+"
                   c.environment |> List.last |> shouldBeNamed "y"
-           | e -> sprintf "Program tree was not as expected, last expression in module body is %A" e
-                  |> Assert.Fail
 
 [<TestFixture>]
 type ``Name bindings`` () =
+    let getDeclaredId (VariableDeclaration id) = id
     let rec getId = function
                     | VariableReference id -> id
-                    | IdentifierDefinition (id, _) -> id
                     | TailExpression e -> getId e
-                    | e -> failwithf "Expected a variable reference or identifier definition but got %A" e
+                    | Assignment (id, expr) -> id
+                    | e -> failwithf "Expected a variable reference or assignment but got %A" e
 
     let handleClosure f closure =
         match closure with
@@ -350,14 +337,14 @@ type ``Name bindings`` () =
         parseAndBuild "(define x 1)\
                        x"
         |> getStructure
-        |> fun p -> getId (List.head p.variableDefinitions) |> should equal (getId (List.last p.expressions))
+        |> fun p -> getDeclaredId (List.head p.variableDeclarations) |> should equal (getId (List.last p.expressions))
 
         parseAndBuild "(define x 1)\
                        (lambda ()\
                          (define x 2)
                          x)"
         |> getStructure
-        |> fun p -> let firstX = List.head p.variableDefinitions |> getId
+        |> fun p -> let firstX = List.head p.variableDeclarations |> getDeclaredId
                     List.last p.expressions
                     |> handleClosure (fun c ->
                                             let secondX = List.head c.body |> getId
@@ -368,7 +355,7 @@ type ``Name bindings`` () =
         parseAndBuild "(define x 1)\
                        (lambda () x)"
         |> getStructure
-        |> fun p -> let firstX = List.head p.variableDefinitions |> getId
+        |> fun p -> let firstX = List.head p.variableDeclarations |> getDeclaredId
                     List.last p.expressions
                     |> handleClosure (fun c ->
                                             let secondX = List.head c.body |> getId
