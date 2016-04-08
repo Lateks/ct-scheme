@@ -12,7 +12,10 @@ open System.Reflection
 type Procedure = { methodBuilder : Emit.MethodBuilder;
                    closure : ClosureDefinition }
 
-type Scope = { fields : Map<string, Emit.FieldBuilder>;
+type Variable = Field of Emit.FieldBuilder
+              | LocalVar of Emit.LocalBuilder
+
+type Scope = { variables : Map<string, Variable>;
                procedures : Map<string, Procedure> }
 
 let builtIns = ref []
@@ -189,17 +192,31 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
             gen.MarkLabel(exitLabel)
             loadTempValue ()
     let emitAssignment (id : Identifier) expr =
-        assert scope.fields.ContainsKey(id.uniqueName)
+        assert scope.variables.ContainsKey(id.uniqueName)
 
-        let field = scope.fields.Item(id.uniqueName)
         pushExprResultToStack expr
-        gen.Emit(Emit.OpCodes.Stsfld, field)
+
+        match scope.variables.Item(id.uniqueName) with
+        | LocalVar v -> gen.Emit(Emit.OpCodes.Stloc, v)
+        | Field v -> gen.Emit(Emit.OpCodes.Stsfld, v)
 
         if pushOnStack then loadUndefined gen
     let emitVariableLoad (id : Identifier) =
-        assert scope.fields.ContainsKey(id.uniqueName)
-        let field = scope.fields.Item(id.uniqueName)
-        gen.Emit(Emit.OpCodes.Ldsfld, field)
+        match id.argIndex with
+        | Some n ->
+            let opcode = match n with // TODO: limit number of arguments to 5-7?
+                        | 0 -> Emit.OpCodes.Ldarg_0
+                        | 1 -> Emit.OpCodes.Ldarg_1
+                        | 2 -> Emit.OpCodes.Ldarg_2
+                        | 3 -> Emit.OpCodes.Ldarg_3
+                        | _ -> failwith "Not implemented yet: functions with more than 3 arguments"
+            gen.Emit(opcode)
+        | None ->
+            assert scope.variables.ContainsKey(id.uniqueName)
+
+            match scope.variables.Item(id.uniqueName) with
+            | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
+            | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
 
     match expr with
     | ProcedureCall (proc, args)
@@ -223,19 +240,29 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
     | VariableReference id
         -> emitVariableLoad id
            if not pushOnStack then popStack gen
+    | TailExpression e // TODO: tail calls and conditional expressions
+        -> pushExprResultToStack e
+           gen.Emit(Emit.OpCodes.Ret)
     | e -> failwithf "Not implemented yet! %A" e
 
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
     generateSubExpression gen scope false expr
 
 let generateProcedureBody (gen : Emit.ILGenerator) (c : ClosureDefinition) scope =
-    // TODO
-    loadUndefined gen
-    gen.Emit(Emit.OpCodes.Ret)
+    let locals = c.variableDeclarations
+                 |> List.map (fun (VariableDeclaration id) ->
+                                  (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
+    let extendedScope = { scope with variables = Map.toSeq scope.variables
+                                                 |> Seq.append locals
+                                                 |> Map.ofSeq }
+    for expr in c.body do
+        generateExpression gen expr extendedScope
 
 let defineVariables (c : Emit.TypeBuilder) =
     List.map (fun (VariableDeclaration id) ->
-                    (id.uniqueName, c.DefineField(id.uniqueName, typeof<CTObject>, FieldAttributes.Static ||| FieldAttributes.Private)))
+                    (id.uniqueName, Field <| c.DefineField(id.uniqueName,
+                                                           typeof<CTObject>,
+                                                           FieldAttributes.Static ||| FieldAttributes.Private)))
     >> Map.ofList
 
 let defineProcedures (c : Emit.TypeBuilder) =
@@ -261,7 +288,7 @@ let generateTopLevelProcedureBodies (scope : Scope) =
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
 
-    let scope = { fields = defineVariables mainClass program.variableDeclarations;
+    let scope = { variables = defineVariables mainClass program.variableDeclarations;
                   procedures = defineProcedures mainClass program.procedureDefinitions }
 
     generateTopLevelProcedureBodies scope

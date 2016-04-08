@@ -1,3 +1,32 @@
-(define test (lambda (x) (display x)))
+(define println
+  (lambda (x)
+    (display x)
+	(newline)))
 
-(test "Hello, world!")
+(define test2
+  (lambda (x y)
+    (define temp (+ x y))
+	temp))
+
+(define by-value-and
+  (lambda (v1 v2)
+    (and v1 v2)))
+	
+(define min
+  (lambda (x y)
+    (if (< x y)
+	    x
+		y)))
+
+(println "Hello, world!")
+
+(display (test2 5 4))
+(newline)
+
+(display (by-value-and #t #f))
+(newline)
+
+(display (min 5 4))
+(newline)
+(display (min 2 3))
+(newline)
