@@ -43,7 +43,6 @@ type Expression =
      | Assignment of Scope.Identifier * Expression
      | Conditional of Expression * Expression * Expression
      | SequenceExpression of SequenceExpressionType * Expression list
-     | TailExpression of Expression
      | UndefinedValue
 and ClosureDefinition = { formals: ClosureFormals;
                           procedureDefinitions: ProcedureDefinition list;
@@ -648,7 +647,7 @@ and convertExpression =
     | AnalysisSequenceExpression (t, exprs)
         -> SequenceExpression (t, List.map convertExpression exprs)
     | AnalysisTailExpression expr
-        -> convertExpression expr |> TailExpression
+        -> convertExpression expr
     | AnalysisUndefinedValue
         -> UndefinedValue
 and toProcedureDefinition =

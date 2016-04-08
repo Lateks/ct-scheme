@@ -205,11 +205,11 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
         match id.argIndex with
         | Some n ->
             let opcode = match n with // TODO: limit number of arguments to 5-7?
-                        | 0 -> Emit.OpCodes.Ldarg_0
-                        | 1 -> Emit.OpCodes.Ldarg_1
-                        | 2 -> Emit.OpCodes.Ldarg_2
-                        | 3 -> Emit.OpCodes.Ldarg_3
-                        | _ -> failwith "Not implemented yet: functions with more than 3 arguments"
+                         | 0 -> Emit.OpCodes.Ldarg_0
+                         | 1 -> Emit.OpCodes.Ldarg_1
+                         | 2 -> Emit.OpCodes.Ldarg_2
+                         | 3 -> Emit.OpCodes.Ldarg_3
+                         | _ -> failwith "Not implemented yet: functions with more than 3 arguments"
             gen.Emit(opcode)
         | None ->
             assert scope.variables.ContainsKey(id.uniqueName)
@@ -240,9 +240,6 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
     | VariableReference id
         -> emitVariableLoad id
            if not pushOnStack then popStack gen
-    | TailExpression e // TODO: tail calls and conditional expressions
-        -> pushExprResultToStack e
-           gen.Emit(Emit.OpCodes.Ret)
     | e -> failwithf "Not implemented yet! %A" e
 
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
@@ -255,8 +252,16 @@ let generateProcedureBody (gen : Emit.ILGenerator) (c : ClosureDefinition) scope
     let extendedScope = { scope with variables = Map.toSeq scope.variables
                                                  |> Seq.append locals
                                                  |> Map.ofSeq }
-    for expr in c.body do
+
+    let body = List.take (c.body.Length - 1) c.body
+    let tailExpr = List.last c.body
+
+    for expr in body do
         generateExpression gen expr extendedScope
+
+    // TODO: tailcalls
+    generateSubExpression gen extendedScope true tailExpr
+    gen.Emit(Emit.OpCodes.Ret)
 
 let defineVariables (c : Emit.TypeBuilder) =
     List.map (fun (VariableDeclaration id) ->

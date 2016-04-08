@@ -13,7 +13,6 @@ type Expression =
      | Assignment of Scope.Identifier * Expression
      | Conditional of Expression * Expression * Expression
      | SequenceExpression of SequenceExpressionType * Expression list
-     | TailExpression of Expression
      | UndefinedValue
 and ClosureDefinition = { formals: ClosureFormals;
                           procedureDefinitions: ProcedureDefinition list;

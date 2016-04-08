@@ -15,8 +15,10 @@
 (define min
   (lambda (x y)
     (if (< x y)
-	    x
-		y)))
+	    (begin (display "x is smaller\n")
+			   x)
+		(begin (display "y is smaller\n")
+			   y))))
 
 (println "Hello, world!")
 

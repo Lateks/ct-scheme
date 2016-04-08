@@ -117,65 +117,6 @@ type ``Transformations made during semantic analysis`` () =
                         expr |> should equal (ValueExpression (Number 3.0))
                     | e -> gotWrongExpression e
 
-    [<Test>]
-    member x.``tail expressions are labeled`` () =
-        let getTailExpression closure =
-            match closure with
-            | Closure c -> List.last c.body
-            | e -> failwithf "Expected a Closure but got %A" e
-        let getTail = getStructure >> (fun p -> p.expressions) >> List.head >> getTailExpression
-        let testConditional =
-            function
-            | Conditional (e1, e2, e3) -> match e1, e2, e3 with
-                                          | VariableReference _, TailExpression _, TailExpression _ -> ()
-                                          | f1, f2, f3 -> sprintf "Expected branches to be tagged as TailExpressions but got: %A\n%A\n%A\n" f1 f2 f3
-                                                          |> Assert.Fail 
-            | e -> sprintf "Expected a Conditional but got a %A" e
-                   |> Assert.Fail
-
-        parseAndBuild "(lambda () 1)"
-        |> getTail
-        |> should equal (TailExpression (ValueExpression (Number 1.0)))
-
-        parseAndBuild "(lambda () (+ 1 2))"
-        |> getTail
-        |> should equal (TailExpression (ProcedureCall (VariableReference { name = "+"; uniqueName = "+"; argIndex = None },
-                                                        [ValueExpression (Number 1.0); ValueExpression (Number 2.0)])))
-
-        parseAndBuild "(lambda (v) (display \"started\\n\") (if v (display \"true\") (display \"false\")))"
-        |> getTail
-        |> testConditional
-
-        parseAndBuild "(lambda (v) (if v (display \"v is truthy\")))"
-        |> getTail
-        |> function
-           | Conditional (e1, e2, e3) ->
-                match e1, e2, e3 with
-                | VariableReference _, TailExpression _, TailExpression UndefinedValue -> ()
-                | f1, f2, f3 -> sprintf "Expected branches to be tagged as TailExpressions but got: %A\n%A\n%A\n" f1 f2 f3
-                                |> Assert.Fail 
-           | e -> sprintf "Expected a Conditional but got a %A" e
-                  |> Assert.Fail
-
-        parseAndBuild "(lambda (x y z) (and x y z))"
-        |> getTail
-        |> function
-           | SequenceExpression (t, exprs) -> match List.last exprs with
-                                              | TailExpression _ -> ()
-                                              | e -> sprintf "Expected a tail expression but got %A" e
-                                                     |> Assert.Fail
-           | e -> sprintf "Expected a SequenceExpression but got %A" e
-                  |> Assert.Fail
-
-        parseAndBuild "(lambda (x y z v) (and v (if x y z)))"
-        |> getTail
-        |> function
-           | SequenceExpression (t, exprs) ->
-                List.last exprs
-                |> testConditional
-           | e -> sprintf "Expected a SequenceExpression but got %A" e
-                  |> Assert.Fail
-
 [<TestFixture>]
 type ``Lambda labeling`` () =
     [<Test>]
@@ -259,12 +200,8 @@ type ``Lambda labeling`` () =
         |> getFunction
         |> fun c -> List.last c.body
                     |> function
-                       | TailExpression e ->
-                           match e with
-                           | Closure c -> c.usedAsFirstClassValue |> should equal true
-                           | e -> sprintf "Expected Closure but got %A" e
-                                  |> Assert.Fail
-                       | e -> sprintf "Expected TailExpression but got %A" e
+                       | Closure c -> c.usedAsFirstClassValue |> should equal true
+                       | e -> sprintf "Expected Closure but got %A" e
                               |> Assert.Fail
 
         parseAndBuild "(lambda (x) (+ x 1))"
@@ -299,7 +236,7 @@ type ``Lambda labeling`` () =
         |> fun (ProcedureDefinition (id, c))
               -> List.isEmpty c.environment |> should equal true
                  match List.head c.body with
-                 | TailExpression (Closure c2) ->
+                 | Closure c2 ->
                      c2.environment.Length |> should equal 2
                      c2.environment |> List.head |> shouldBeNamed "+"
                      c2.environment |> List.last |> shouldBeNamed "x"
@@ -322,7 +259,6 @@ type ``Name bindings`` () =
     let getDeclaredId (VariableDeclaration id) = id
     let rec getId = function
                     | VariableReference id -> id
-                    | TailExpression e -> getId e
                     | Assignment (id, expr) -> id
                     | e -> failwithf "Expected a variable reference or assignment but got %A" e
 
