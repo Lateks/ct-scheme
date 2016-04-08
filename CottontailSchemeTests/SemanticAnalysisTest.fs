@@ -152,6 +152,73 @@ type ``Lambda labeling`` () =
         |> shouldNotBeTailRecursive
 
     [<Test>]
+    member x.``tail calls are correctly labeled`` () =
+        let fail () = Assert.Fail "Lambda body was not as expected"
+        parseAndBuild "(define sum\
+                         (lambda (l acc)\
+                           (if (null? l)\
+                               acc\
+                               (sum (cdr l) (+ (car l) acc)))))"
+        |> getFunction
+        |> fun c -> match List.head c.body with
+                    | Conditional (cond, thenExpr, elseExpr)
+                        -> match cond with
+                           | ProcedureCall (_, _, tailCall) -> tailCall |> should equal false
+                           | _ -> fail ()
+                           match elseExpr with
+                           | ProcedureCall (_, args, tailCall)
+                               -> tailCall |> should equal true
+                                  match List.head args with
+                                  | ProcedureCall (_, _, tailCall) -> tailCall |> should equal false
+                                  | _ -> fail ()
+                           | _ -> fail ()
+                    | _ -> fail ()
+
+        parseAndBuild "(define println\
+                         (lambda (s)\
+                           (display s)\
+                           (newline)))"
+        |> getFunction
+        |> fun c -> match List.head c.body with
+                    | ProcedureCall (_, _, tailCall) -> tailCall |> should equal false
+                    | _ -> fail ()
+                    match List.last c.body with
+                    | ProcedureCall (_, _, tailCall) -> tailCall |> should equal true
+                    | _ -> fail ()
+
+        parseAndBuild "(define println\
+                        (lambda (s)\
+                          (begin\
+                            (display s)\
+                            (newline))))"
+        |> getFunction
+        |> fun c -> match List.head c.body with
+                    | SequenceExpression (_, exprs) ->
+                        match List.head exprs with
+                        | ProcedureCall (_, _, tailCall) -> tailCall |> should equal false
+                        | _ -> fail ()
+                        match List.last exprs with
+                        | ProcedureCall (_, _, tailCall) -> tailCall |> should equal true
+                        | _ -> fail ()
+                    | _ -> fail ()
+        
+        parseAndBuild "(define println\
+                        (lambda (s)\
+                          (and\
+                            (display s)\
+                            (newline))))"
+        |> getFunction
+        |> fun c -> match List.head c.body with
+                    | SequenceExpression (_, exprs) ->
+                        match List.head exprs with
+                        | ProcedureCall (_, _, tailCall) -> tailCall |> should equal false
+                        | _ -> fail ()
+                        match List.last exprs with
+                        | ProcedureCall (_, _, tailCall) -> tailCall |> should equal true
+                        | _ -> fail ()
+                    | _ -> fail ()
+
+    [<Test>]
     member x.``lambdas are correctly labeled for first class use`` () =
         let isFirstClassValue = getFunction >> fun c -> c.usedAsFirstClassValue
         let shouldBeFirstClass = isFirstClassValue >> should equal true
