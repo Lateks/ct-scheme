@@ -8,7 +8,7 @@ type ClosureFormals = SingleArgFormals of Scope.Identifier
 type Expression =
      | VariableReference of Scope.Identifier
      | Closure of ClosureDefinition
-     | ProcedureCall of Expression * Expression list
+     | ProcedureCall of Expression * Expression list * bool
      | ValueExpression of Literals.LiteralValue
      | Assignment of Scope.Identifier * Expression
      | Conditional of Expression * Expression * Expression

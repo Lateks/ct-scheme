@@ -113,9 +113,13 @@ let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
 and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let pushExprResultToStack = generateSubExpression gen scope true
 
-    let emitFunctionCall id args =
+    let emitFunctionCall id args isTailCall =
         let pushArgsAsArray () = emitArray gen args (fun g -> generateSubExpression g scope true)
         let pushIndividualArgs () = for arg in args do pushExprResultToStack arg
+
+        // Tail annotations are not emitted for built-in procedures because
+        // the built-in procedures currently defined in the library never
+        // result in recursion or other tail call continuations.
         if List.contains id !builtIns then
             if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
                 pushArgsAsArray ()
@@ -132,6 +136,7 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
                                    else
                                        pushArgsAsArray ()
 
+            if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
             gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
         else
             failwithf "Not implemented yet! (generic procedure calls)"
@@ -219,9 +224,9 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
             | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
 
     match expr with
-    | ProcedureCall (proc, args)
+    | ProcedureCall (proc, args, isTailCall)
         -> match proc with
-           | VariableReference id -> emitFunctionCall id args
+           | VariableReference id -> emitFunctionCall id args isTailCall
            | e -> failwithf "Not implemented yet! %A" e
            if not pushOnStack then popStack gen
     | ValueExpression lit

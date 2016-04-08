@@ -218,7 +218,7 @@ type ``Lambda labeling`` () =
         |> fun p -> p.expressions
         |> List.head
         |> function
-           | ProcedureCall ((Closure c), _) -> c.usedAsFirstClassValue |> should equal false
+           | ProcedureCall ((Closure c), _, _) -> c.usedAsFirstClassValue |> should equal false
            | e -> sprintf "Expected ProcedureCall calling the anonymous function but got %A" e
                   |> Assert.Fail
 

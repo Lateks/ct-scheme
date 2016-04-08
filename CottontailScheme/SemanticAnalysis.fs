@@ -38,7 +38,7 @@ type ClosureFormals = SingleArgFormals of Scope.Identifier
 type Expression =
      | VariableReference of Scope.Identifier
      | Closure of ClosureDefinition
-     | ProcedureCall of Expression * Expression list
+     | ProcedureCall of Expression * Expression list * bool
      | ValueExpression of Literals.LiteralValue
      | Assignment of Scope.Identifier * Expression
      | Conditional of Expression * Expression * Expression
@@ -634,7 +634,7 @@ and convertExpression =
     | AnalysisClosure c -> convertClosure c |> Closure
     | AnalysisProcedureCall (proc, args) -> let finalProc = convertExpression proc
                                             let finalArgs = List.map convertExpression args
-                                            ProcedureCall (finalProc, finalArgs)
+                                            ProcedureCall (finalProc, finalArgs, false)
     | AnalysisValueExpression lit -> ValueExpression lit
     | AnalysisAssignment (id, expr)
     | AnalysisIdentifierDefinition (id, expr)
@@ -647,7 +647,10 @@ and convertExpression =
     | AnalysisSequenceExpression (t, exprs)
         -> SequenceExpression (t, List.map convertExpression exprs)
     | AnalysisTailExpression expr
-        -> convertExpression expr
+        -> let e = convertExpression expr
+           match e with
+           | ProcedureCall (p, args, isTailCall) -> ProcedureCall (p, args, true)
+           | other -> other
     | AnalysisUndefinedValue
         -> UndefinedValue
 and toProcedureDefinition =
