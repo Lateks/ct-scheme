@@ -19,7 +19,7 @@
 			   x)
 		(begin (display "y is smaller\n")
 			   y))))
-
+			   
 (println "Hello, world!")
 
 (display (test2 5 4))
@@ -32,3 +32,14 @@
 (newline)
 (display (min 2 3))
 (newline)
+
+(define accepted-id 5)
+
+(define get-access
+  (lambda (id)
+    (if (eq? id accepted-id)
+	    "access granted")))
+
+(display (get-access 1))
+(newline)
+(display (get-access 5))

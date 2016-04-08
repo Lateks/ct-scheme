@@ -245,6 +245,8 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
     | VariableReference id
         -> emitVariableLoad id
            if not pushOnStack then popStack gen
+    | UndefinedValue
+        -> if pushOnStack then loadUndefined gen
     | e -> failwithf "Not implemented yet! %A" e
 
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
