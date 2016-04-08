@@ -121,7 +121,6 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
 
             emitBuiltInFunctionCall gen id
         elif scope.procedures.ContainsKey id.uniqueName then
-            // TODO: check that the number of arguments is ok during semantic analysis
             let procedure = scope.procedures.Item(id.uniqueName)
             match procedure.closure.formals with
             | SingleArgFormals _ -> pushArgsAsArray ()
@@ -240,8 +239,7 @@ let defineVariables (c : Emit.TypeBuilder) =
     >> Map.ofList
 
 let defineProcedures (c : Emit.TypeBuilder) =
-    List.map (function
-              | ProcedureDefinition (id, clos) ->
+    List.map (fun (ProcedureDefinition (id, clos)) ->
                   let parameterTypes = match clos.formals with
                                        | SingleArgFormals id -> [| typeof<CTObject array> |]
                                        | MultiArgFormals ids -> if ids.Length <= maxArgsToUserDefinedProc then
@@ -253,8 +251,7 @@ let defineProcedures (c : Emit.TypeBuilder) =
                                                  MethodAttributes.Static ||| MethodAttributes.Private,
                                                  typeof<CTObject>,
                                                  parameterTypes)
-                  (id.uniqueName, { methodBuilder = procedure; closure = clos })
-              | e -> failwithf "Expected a function definition but got %A" e)
+                  (id.uniqueName, { methodBuilder = procedure; closure = clos }))
     >> Map.ofList
 
 let generateTopLevelProcedureBodies (scope : Scope) =

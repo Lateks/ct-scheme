@@ -96,7 +96,7 @@ let isProcedureCall =
 module IdentifierHelpers =
     let symbolGen = SymbolGenerator ()
 
-    let makeBuiltInId name = { name = name; uniqueName = name }
+    let makeBuiltInId name = { name = name; uniqueName = name; argIndex = None }
 
     type BuiltInFunctionArgs = SetNumberOfArgs of int
                              | VarArgs
@@ -132,11 +132,11 @@ module IdentifierHelpers =
     let findDefinitionForIdRec scope id =
         getIdentifierName id |> findDefinitionRec scope
 
-    let newIdentifierFor name =
-        { name = name; uniqueName = symbolGen.generateSymbol name }
+    let newIdentifierFor argIndex name =
+        { name = name; uniqueName = symbolGen.generateSymbol name; argIndex = argIndex }
 
-    let newIdentifierForId id =
-        getIdentifierName id |> newIdentifierFor
+    let newIdentifierForId id argIndex =
+        getIdentifierName id |> newIdentifierFor argIndex
     
     let bindingForName scope name =
         match findDefinitionRec scope name with
@@ -156,8 +156,13 @@ module LambdaHelpers =
 
     let convertFormals =
         function
-        | ASTBuilder.SingleArgFormals id -> IdentifierHelpers.newIdentifierForId id |> SingleArgFormals
-        | ASTBuilder.MultiArgFormals ids -> ids |> List.map IdentifierHelpers.newIdentifierForId |> MultiArgFormals
+        | ASTBuilder.SingleArgFormals id -> IdentifierHelpers.newIdentifierForId id (Some 0) |> SingleArgFormals
+        | ASTBuilder.MultiArgFormals ids -> seq{0..ids.Length-1}
+                                            |> Seq.toList
+                                            |> List.zip ids
+                                            |> List.map (fun (id, index) ->
+                                                             IdentifierHelpers.newIdentifierForId id (Some index))
+                                            |> MultiArgFormals
 
     let collectFreeVariables bodyScope body =
         assert bodyScope.parent.IsSome
@@ -301,7 +306,7 @@ let buildScope parentScope exprs =
                 else
                     sprintf "Duplicate definition for identifier %s" name |> AnalysisException |> raise
             | None ->
-                IdentifierHelpers.newIdentifierFor name |> addDefinition scope
+                IdentifierHelpers.newIdentifierFor None name |> addDefinition scope
         | BindingError err -> failWithErrorNode err
 
     let checkAssignment scope =
@@ -663,7 +668,6 @@ and toVariableDeclaration =
 // above) producing a Program value (either ValidProgram or
 // ProgramAnalysisError).
 //
-// TODO: should arguments be numbered during analysis?
 // TODO: how should top level procedures whose value may
 //       be reassigned be handled?
 //       - just use a variable and create closures?

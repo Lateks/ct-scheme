@@ -139,7 +139,7 @@ type ``Transformations made during semantic analysis`` () =
 
         parseAndBuild "(lambda () (+ 1 2))"
         |> getTail
-        |> should equal (TailExpression (ProcedureCall (VariableReference { name = "+"; uniqueName = "+" },
+        |> should equal (TailExpression (ProcedureCall (VariableReference { name = "+"; uniqueName = "+"; argIndex = None },
                                                         [ValueExpression (Number 1.0); ValueExpression (Number 2.0)])))
 
         parseAndBuild "(lambda (v) (display \"started\\n\") (if v (display \"true\") (display \"false\")))"

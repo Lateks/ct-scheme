@@ -1,6 +1,6 @@
 ﻿module CottontailScheme.Scope
 
-type Identifier = { name: string; uniqueName: string; }
+type Identifier = { name: string; uniqueName: string; argIndex: int option }
 
 type Scope = { definitions: Identifier list; parent: Scope option }
 
