@@ -43,3 +43,12 @@
 (display (get-access 1))
 (newline)
 (display (get-access 5))
+
+(define assignment-test
+   (lambda (x y)
+     (set! x y)
+	 x))
+
+(newline)
+(display (assignment-test 1 2)) ; 2
+(newline)

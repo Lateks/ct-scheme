@@ -576,9 +576,14 @@ namespace CottontailSchemeLib
             throw new InvalidNumberOfArgsError(GetName(), arity, 3);
         }
 
-        public CTObject funcallMany(CTObject[] args)
+        public CTObject funcall4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
         {
-            throw new InvalidNumberOfArgsError(GetName(), arity, args.Length);
+            throw new InvalidNumberOfArgsError(GetName(), arity, 4);
+        }
+
+        public CTObject funcall5(CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5)
+        {
+            throw new InvalidNumberOfArgsError(GetName(), arity, 5);
         }
 
         public CTObject funcallVarargs(CTObject[] args)

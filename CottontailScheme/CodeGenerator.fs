@@ -20,8 +20,6 @@ type Scope = { variables : Map<string, Variable>;
 
 let builtIns = ref []
 
-let maxArgsToUserDefinedProc = 3
-
 let setupAssembly name =
     let assemblyName = AssemblyName()
     assemblyName.Name <- name
@@ -131,10 +129,7 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
             let procedure = scope.procedures.Item(id.uniqueName)
             match procedure.closure.formals with
             | SingleArgFormals _ -> pushArgsAsArray ()
-            | MultiArgFormals _ -> if args.Length <= maxArgsToUserDefinedProc then
-                                       pushIndividualArgs ()
-                                   else
-                                       pushArgsAsArray ()
+            | MultiArgFormals _ -> pushIndividualArgs ()
 
             if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
             gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
@@ -197,25 +192,30 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
             gen.MarkLabel(exitLabel)
             loadTempValue ()
     let emitAssignment (id : Identifier) expr =
-        assert scope.variables.ContainsKey(id.uniqueName)
-
         pushExprResultToStack expr
 
-        match scope.variables.Item(id.uniqueName) with
-        | LocalVar v -> gen.Emit(Emit.OpCodes.Stloc, v)
-        | Field v -> gen.Emit(Emit.OpCodes.Stsfld, v)
+        match id.argIndex with
+        | Some n ->
+            gen.Emit(Emit.OpCodes.Starg_S, (byte) n)
+        | None ->
+            assert scope.variables.ContainsKey(id.uniqueName)
+            match scope.variables.Item(id.uniqueName) with
+            | LocalVar v -> gen.Emit(Emit.OpCodes.Stloc, v)
+            | Field v -> gen.Emit(Emit.OpCodes.Stsfld, v)
 
         if pushOnStack then loadUndefined gen
     let emitVariableLoad (id : Identifier) =
         match id.argIndex with
         | Some n ->
-            let opcode = match n with // TODO: limit number of arguments to 5-7?
-                         | 0 -> Emit.OpCodes.Ldarg_0
-                         | 1 -> Emit.OpCodes.Ldarg_1
-                         | 2 -> Emit.OpCodes.Ldarg_2
-                         | 3 -> Emit.OpCodes.Ldarg_3
-                         | _ -> failwith "Not implemented yet: functions with more than 3 arguments"
-            gen.Emit(opcode)
+            if n < 4 then
+                let opcode = match n with
+                             | 0 -> Emit.OpCodes.Ldarg_0
+                             | 1 -> Emit.OpCodes.Ldarg_1
+                             | 2 -> Emit.OpCodes.Ldarg_2
+                             | _ -> Emit.OpCodes.Ldarg_3
+                gen.Emit(opcode)
+            else
+                gen.Emit(Emit.OpCodes.Ldarg_S, (byte) n)
         | None ->
             assert scope.variables.ContainsKey(id.uniqueName)
 
@@ -280,11 +280,8 @@ let defineProcedures (c : Emit.TypeBuilder) =
     List.map (fun (ProcedureDefinition (id, clos)) ->
                   let parameterTypes = match clos.formals with
                                        | SingleArgFormals id -> [| typeof<CTObject array> |]
-                                       | MultiArgFormals ids -> if ids.Length <= maxArgsToUserDefinedProc then
-                                                                    ids |> List.map (fun _ -> typeof<CTObject> )
-                                                                        |> Array.ofList
-                                                                else
-                                                                    [| typeof<CTObject array> |]
+                                       | MultiArgFormals ids -> ids |> List.map (fun _ -> typeof<CTObject> )
+                                                                    |> Array.ofList
                   let procedure = c.DefineMethod(id.uniqueName,
                                                  MethodAttributes.Static ||| MethodAttributes.Private,
                                                  typeof<CTObject>,
