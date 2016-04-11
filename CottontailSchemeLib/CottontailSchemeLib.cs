@@ -694,5 +694,80 @@ namespace CottontailSchemeLib
         {
             throw new InvalidNumberOfArgsError(GetName(), arity, args.Length);
         }
+
+        public virtual CTObject apply0()
+        {
+            return funcall0();
+        }
+
+        public virtual CTObject apply1(CTObject a1)
+        {
+            if (isVarargs)
+            {
+                var args = new CTObject[] { a1 };
+                return funcallVarargs(args);
+            }
+            else
+            {
+                return funcall1(a1);
+            }
+        }
+
+        public virtual CTObject apply2(CTObject a1, CTObject a2)
+        {
+            if (isVarargs)
+            {
+                var args = new CTObject[] { a1, a2 };
+                return funcallVarargs(args);
+            }
+            else
+            {
+                return funcall2(a1, a2);
+            }
+        }
+
+        public virtual CTObject apply3(CTObject a1, CTObject a2, CTObject a3)
+        {
+            if (isVarargs)
+            {
+                var args = new CTObject[] { a1, a2, a3 };
+                return funcallVarargs(args);
+            }
+            else
+            {
+                return funcall3(a1, a2, a3);
+            }
+        }
+
+        public virtual CTObject apply4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
+        {
+            if (isVarargs)
+            {
+                var args = new CTObject[] { a1, a2, a3, a4 };
+                return funcallVarargs(args);
+            }
+            else
+            {
+                return funcall4(a1, a2, a3, a4);
+            }
+        }
+
+        public virtual CTObject apply5(CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5)
+        {
+            if (isVarargs)
+            {
+                var args = new CTObject[] { a1, a2, a3, a4, a5 };
+                return funcallVarargs(args);
+            }
+            else
+            {
+                return funcall5(a1, a2, a3, a4, a5);
+            }
+        }
+
+        public virtual CTObject applyN(CTObject[] args)
+        {
+            return funcallVarargs(args);
+        }
     }
 }

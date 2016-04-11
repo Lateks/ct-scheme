@@ -227,14 +227,17 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
 
             if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
             gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
-        else // TODO: varargs functions ?!
+        else
             emitVariableLoad id
             gen.Emit(Emit.OpCodes.Castclass, typeof<CTProcedure>) // TODO: handle cast failure
-            let methodInfo = if args.Length <= 5 then
-                                typeof<CTProcedure>.GetMethod(sprintf "funcall%i" args.Length)
-                             else // TODO: define exception type for this and catch at the top level of code generation
-                                failwithf "Functions with more than 5 arguments are unsupported in this prototype implementation"
-            pushIndividualArgs ()
+            let methodInfo = match args.Length with
+                             | 0 | 1 | 2 | 3 | 4 | 5 as n
+                                -> pushIndividualArgs ()
+                                   typeof<CTProcedure>.GetMethod(sprintf "apply%i" n)
+                             | _
+                                -> pushArgsAsArray ()
+                                   typeof<CTProcedure>.GetMethod("applyN")
+
             if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
             gen.Emit(Emit.OpCodes.Callvirt, methodInfo)
 
