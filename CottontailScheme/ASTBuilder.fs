@@ -138,12 +138,7 @@ let rec buildFromList pos =
     | []    -> ExpressionError { message = "Empty procedure call expressions are not allowed";
                                  position = pos }
     | x::xs -> let args = lazy buildFromExprList xs
-               let buildProcCall proc = let arguments = args.Value
-                                        if List.length arguments > argumentNumberLimit then
-                                            ExpressionError { message = sprintf "Too many arguments to procedure call: number of arguments is limited to %i" argumentNumberLimit
-                                                              position = pos }
-                                        else
-                                            ProcedureCallExpression (proc, arguments)
+               let buildProcCall proc = ProcedureCallExpression (proc, args.Value)
                let buildCallToIdentifier pos =
                    function
                    | "define" -> buildDefinition pos args.Value

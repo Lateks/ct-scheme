@@ -116,30 +116,6 @@ let emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
 let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let pushExprResultToStack = generateSubExpression gen scope true
 
-    let emitFunctionCall id args isTailCall =
-        let pushArgsAsArray () = emitArray gen args (fun g -> generateSubExpression g scope true)
-        let pushIndividualArgs () = for arg in args do pushExprResultToStack arg
-
-        // Tail annotations are not emitted for built-in procedures because
-        // the built-in procedures currently defined in the library never
-        // result in recursion or other tail call continuations.
-        if List.contains id !builtIns then
-            if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
-                pushArgsAsArray ()
-            else
-                pushIndividualArgs ()
-
-            emitBuiltInFunctionCall gen id
-        elif scope.procedures.ContainsKey id.uniqueName then
-            let procedure = scope.procedures.Item(id.uniqueName)
-            match procedure.closure.formals with
-            | SingleArgFormals _ -> pushArgsAsArray ()
-            | MultiArgFormals _ -> pushIndividualArgs ()
-
-            if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
-            gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
-        else
-            failwithf "Not implemented yet! (generic procedure calls)"
     let emitConditional condition thenExpression elseExpression =
         let elseLabel = gen.DefineLabel()
         let exitLabel = gen.DefineLabel()
@@ -229,6 +205,39 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
             else
                 assert List.contains id !builtIns
                 loadBuiltInProcedure gen id
+    let emitFunctionCall id args isTailCall =
+        let pushArgsAsArray () = emitArray gen args (fun g -> generateSubExpression g scope true)
+        let pushIndividualArgs () = for arg in args do pushExprResultToStack arg
+
+        // Tail annotations are not emitted for built-in procedures because
+        // the built-in procedures currently defined in the library never
+        // result in recursion or other tail call continuations.
+        if List.contains id !builtIns then
+            if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
+                pushArgsAsArray ()
+            else
+                pushIndividualArgs ()
+
+            emitBuiltInFunctionCall gen id
+        elif scope.procedures.ContainsKey id.uniqueName then
+            let procedure = scope.procedures.Item(id.uniqueName)
+            match procedure.closure.formals with
+            | SingleArgFormals _ -> pushArgsAsArray ()
+            | MultiArgFormals _ -> pushIndividualArgs ()
+
+            if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
+            gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
+        else // TODO: varargs functions ?!
+            emitVariableLoad id
+            gen.Emit(Emit.OpCodes.Castclass, typeof<CTProcedure>) // TODO: handle cast failure
+            let methodInfo = if args.Length <= 5 then
+                                typeof<CTProcedure>.GetMethod(sprintf "funcall%i" args.Length)
+                             else // TODO: define exception type for this and catch at the top level of code generation
+                                failwithf "Functions with more than 5 arguments are unsupported in this prototype implementation"
+            pushIndividualArgs ()
+            if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
+            gen.Emit(Emit.OpCodes.Callvirt, methodInfo)
+
     match expr with
     | ProcedureCall (proc, args, isTailCall)
         -> match proc with
