@@ -32,6 +32,8 @@ type ASTBuildStatus = ASTBuildSuccess of Expression list
 
 let specialFunctions = ["define"; "if"; "lambda"; "set!"; "and"; "or"; "quote"; "begin"] //; "cons"; "car"; "cdr"; "list"; "display"]
 
+let argumentNumberLimit = 5
+
 let isSpecialFunction name = List.contains name specialFunctions
 
 let buildFromIdentifier = Identifier >> IdentifierExpression
@@ -130,14 +132,18 @@ let buildBooleanExpression pos exprType exprs =
     else
         BooleanExpression (exprType, exprs)
 
-// TODO: more exact error positions
 // TODO: printing datum objects properly in error messages
 let rec buildFromList pos =
     function
     | []    -> ExpressionError { message = "Empty procedure call expressions are not allowed";
                                  position = pos }
     | x::xs -> let args = lazy buildFromExprList xs
-               let buildProcCall proc = ProcedureCallExpression (proc, args.Value)
+               let buildProcCall proc = let arguments = args.Value
+                                        if List.length arguments > argumentNumberLimit then
+                                            ExpressionError { message = sprintf "Too many arguments to procedure call: number of arguments is limited to %i" argumentNumberLimit
+                                                              position = pos }
+                                        else
+                                            ProcedureCallExpression (proc, arguments)
                let buildCallToIdentifier pos =
                    function
                    | "define" -> buildDefinition pos args.Value
@@ -167,12 +173,16 @@ and buildLambda pos =
         match args with
         | CTIdentifierExpression (_, id) -> id |> Identifier |> SingleArgFormals |> build
         | CTListExpression (formalsPos, lst) ->
-            lst |> List.map (function
-                             | CTIdentifierExpression (_, id) -> Identifier id
-                             | expr -> IdentifierError { message = "Invalid syntax in lambda expression";
-                                                         position = formalsPos })
-                |> MultiArgFormals
-                |> build
+            if List.length lst > argumentNumberLimit then
+                ExpressionError { message = sprintf "Too many arguments in procedure definition: number of arguments is limited to %i" argumentNumberLimit
+                                  position = formalsPos }
+            else
+                lst |> List.map (function
+                                 | CTIdentifierExpression (_, id) -> Identifier id
+                                 | expr -> IdentifierError { message = "Invalid syntax in lambda expression";
+                                                             position = formalsPos })
+                    |> MultiArgFormals
+                    |> build
         | CTLiteralExpression (litPos, _) ->
             ExpressionError { message = "Invalid syntax in lambda expression";
                               position = litPos }

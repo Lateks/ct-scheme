@@ -266,7 +266,6 @@ let generateProcedureBody (gen : Emit.ILGenerator) (c : ClosureDefinition) scope
     for expr in body do
         generateExpression gen expr extendedScope
 
-    // TODO: tailcalls
     generateSubExpression gen extendedScope true tailExpr
     gen.Emit(Emit.OpCodes.Ret)
 
