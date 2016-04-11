@@ -21,123 +21,123 @@ type ``List and pair operations`` () =
 
     [<Test>]
     member x.``implements car`` () =
-        ListOperations.Car(p) |> should equal car
+        BuiltIns.Car(p) |> should equal car
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
     member x.``car checks parameter type`` () =
-        ListOperations.Car(car) |> ignore
+        BuiltIns.Car(car) |> ignore
 
     [<Test>]
     member x.``implements cdr`` () =
-        ListOperations.Cdr(p) |> should equal cdr
+        BuiltIns.Cdr(p) |> should equal cdr
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
     member x.``cdr checks parameter type`` () =
-        ListOperations.Cdr(car) |> ignore
+        BuiltIns.Cdr(car) |> ignore
 
     [<Test>]
     member x.``implements cons`` () =
-        ListOperations.Cons(car, cdr) |> should equal p
+        BuiltIns.Cons(car, cdr) |> should equal p
 
     [<Test>]
     member x.``implements null?`` () =
-        ListOperations.IsNull(p) |> should equal Constants.False
-        ListOperations.IsNull(empty) |> should equal Constants.True
-        ListOperations.IsNull(car) |> should equal Constants.False
+        BuiltIns.IsNull(p) |> should equal Constants.False
+        BuiltIns.IsNull(empty) |> should equal Constants.True
+        BuiltIns.IsNull(car) |> should equal Constants.False
 
     [<Test>]
     member x.``implements list`` () =
         let members : CTObject array = [|car; cdr|]
-        ListOperations.List(members) |> should equal l
-        ListOperations.List([||]) |> should equal (CTEmptyList())
+        BuiltIns.List(members) |> should equal l
+        BuiltIns.List([||]) |> should equal (CTEmptyList())
 
 [<TestFixture>]
 type ``numeric operations`` () =
     [<Test>]
     member x.``addition`` () =
-        NumberOperations.Plus([||]) |> should equal (CTNumber(0.0))
-        NumberOperations.Plus([|CTNumber(5.0); CTNumber(10.0); CTNumber(9.0)|]) |> should equal (CTNumber(24.0))
-        NumberOperations.Plus([|CTNumber(6.0); CTNumber(-1.0)|]) |> should equal (CTNumber(5.0))
-        NumberOperations.Plus([|CTNumber(3.5); CTNumber(2.4)|]) |> should equal (CTNumber(5.9))
+        BuiltIns.Plus([||]) |> should equal (CTNumber(0.0))
+        BuiltIns.Plus([|CTNumber(5.0); CTNumber(10.0); CTNumber(9.0)|]) |> should equal (CTNumber(24.0))
+        BuiltIns.Plus([|CTNumber(6.0); CTNumber(-1.0)|]) |> should equal (CTNumber(5.0))
+        BuiltIns.Plus([|CTNumber(3.5); CTNumber(2.4)|]) |> should equal (CTNumber(5.9))
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
     member x.``addition checks parameter types`` () =
-        NumberOperations.Plus([|CTNumber(3.14159); Constants.False|]) |> ignore
+        BuiltIns.Plus([|CTNumber(3.14159); Constants.False|]) |> ignore
 
     [<Test>]
     member x.``subtraction`` () =
-        NumberOperations.Minus([|CTNumber(5.0); CTNumber(2.0)|]) |> should equal (CTNumber(3.0))
-        NumberOperations.Minus([|CTNumber(10.0); CTNumber(15.0); CTNumber(3.5)|]) |> should equal (CTNumber(-8.5))
-        NumberOperations.Minus([|CTNumber(1.0)|]) |> should equal (CTNumber(-1.0))
+        BuiltIns.Minus([|CTNumber(5.0); CTNumber(2.0)|]) |> should equal (CTNumber(3.0))
+        BuiltIns.Minus([|CTNumber(10.0); CTNumber(15.0); CTNumber(3.5)|]) |> should equal (CTNumber(-8.5))
+        BuiltIns.Minus([|CTNumber(1.0)|]) |> should equal (CTNumber(-1.0))
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
     member x.``subtraction checks parameter types`` () =
-        NumberOperations.Minus([|CTString("foo")|]) |> ignore
+        BuiltIns.Minus([|CTString("foo")|]) |> ignore
 
     [<Test>]
     member x.``division`` () =
-        NumberOperations.Div([|CTNumber(5.0)|]) |> should equal (CTNumber(1.0/5.0))
-        NumberOperations.Div([|CTNumber(5.0); CTNumber(2.0)|]) |> should equal (CTNumber(2.5))
-        NumberOperations.Div([|CTNumber(6.0); CTNumber(2.0); CTNumber(2.0)|]) |> should equal (CTNumber(1.5))
+        BuiltIns.Div([|CTNumber(5.0)|]) |> should equal (CTNumber(1.0/5.0))
+        BuiltIns.Div([|CTNumber(5.0); CTNumber(2.0)|]) |> should equal (CTNumber(2.5))
+        BuiltIns.Div([|CTNumber(6.0); CTNumber(2.0); CTNumber(2.0)|]) |> should equal (CTNumber(1.5))
 
     [<Test>]
     member x.``division by zero`` () =
-        NumberOperations.Div([|CTNumber(5.0); CTNumber(0.0)|]) |> should equal (CTNumber(Double.PositiveInfinity))
+        BuiltIns.Div([|CTNumber(5.0); CTNumber(0.0)|]) |> should equal (CTNumber(Double.PositiveInfinity))
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
     member x.``division checks parameter types`` () =
-        NumberOperations.Div([|CTString("error")|]) |> ignore
+        BuiltIns.Div([|CTString("error")|]) |> ignore
 
     [<Test>]
     member x.``multiplication`` () =
-        NumberOperations.Mult([||]) |> should equal (CTNumber(1.0))
-        NumberOperations.Mult([|CTNumber(5.0)|]) |> should equal (CTNumber(5.0))
-        NumberOperations.Mult([|CTNumber(2.0); CTNumber(3.0); CTNumber(4.0)|]) |> should equal (CTNumber(24.0))
+        BuiltIns.Mult([||]) |> should equal (CTNumber(1.0))
+        BuiltIns.Mult([|CTNumber(5.0)|]) |> should equal (CTNumber(5.0))
+        BuiltIns.Mult([|CTNumber(2.0); CTNumber(3.0); CTNumber(4.0)|]) |> should equal (CTNumber(24.0))
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
     member x.``multiplication checks parameter types`` () =
-        NumberOperations.Mult([|CTString("error")|]) |> ignore
+        BuiltIns.Mult([|CTString("error")|]) |> ignore
 
     [<Test>]
     member x.``zero?`` () =
-        NumberOperations.IsZero(CTNumber(0.0)) |> should equal Constants.True
-        NumberOperations.IsZero(CTNumber(-0.01)) |> should equal Constants.False
-        NumberOperations.IsZero(CTNumber(0.01)) |> should equal Constants.False
+        BuiltIns.IsZero(CTNumber(0.0)) |> should equal Constants.True
+        BuiltIns.IsZero(CTNumber(-0.01)) |> should equal Constants.False
+        BuiltIns.IsZero(CTNumber(0.01)) |> should equal Constants.False
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
     member x.``zero? checks parameter type`` () =
-        NumberOperations.IsZero(CTString("error")) |> ignore
+        BuiltIns.IsZero(CTString("error")) |> ignore
 
     [<Test>]
     member x.``less than (<)`` () =
-        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(0.0)|]) |> should equal Constants.False
-        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(2.0)|]) |> should equal Constants.True
-        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]) |> should equal Constants.True
-        NumberOperations.LessThan([|CTNumber(1.0); CTNumber(2.0); CTNumber(1.5)|]) |> should equal Constants.False
+        BuiltIns.LessThan([|CTNumber(1.0); CTNumber(0.0)|]) |> should equal Constants.False
+        BuiltIns.LessThan([|CTNumber(1.0); CTNumber(2.0)|]) |> should equal Constants.True
+        BuiltIns.LessThan([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]) |> should equal Constants.True
+        BuiltIns.LessThan([|CTNumber(1.0); CTNumber(2.0); CTNumber(1.5)|]) |> should equal Constants.False
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
     member x.``< checks parameter types`` () =
-        NumberOperations.LessThan([|CTNumber(1.0); Constants.True|]) |> ignore
+        BuiltIns.LessThan([|CTNumber(1.0); Constants.True|]) |> ignore
 
     [<Test>]
     member x.``greater than (>)`` () =
-        NumberOperations.GreaterThan([|CTNumber(2.0); CTNumber(1.0)|]) |> should equal Constants.True
-        NumberOperations.GreaterThan([|CTNumber(1.0); CTNumber(2.0)|]) |> should equal Constants.False
-        NumberOperations.GreaterThan([|CTNumber(3.0); CTNumber(2.0); CTNumber(1.0)|]) |> should equal Constants.True
-        NumberOperations.GreaterThan([|CTNumber(3.0); CTNumber(2.0); CTNumber(2.5)|]) |> should equal Constants.False
+        BuiltIns.GreaterThan([|CTNumber(2.0); CTNumber(1.0)|]) |> should equal Constants.True
+        BuiltIns.GreaterThan([|CTNumber(1.0); CTNumber(2.0)|]) |> should equal Constants.False
+        BuiltIns.GreaterThan([|CTNumber(3.0); CTNumber(2.0); CTNumber(1.0)|]) |> should equal Constants.True
+        BuiltIns.GreaterThan([|CTNumber(3.0); CTNumber(2.0); CTNumber(2.5)|]) |> should equal Constants.False
 
     [<Test>]
     [<ExpectedException(typeof<TypeError>)>]
     member x.``> checks parameter types`` () =
-        NumberOperations.GreaterThan([|CTNumber(1.0); Constants.True|]) |> ignore
+        BuiltIns.GreaterThan([|CTNumber(1.0); Constants.True|]) |> ignore
 
 [<TestFixture>]
 type ``boolean operations`` () =
@@ -152,7 +152,7 @@ type ``boolean operations`` () =
         CTString("") |> isTruthy
         CTString("foo") |> isTruthy
         CTEmptyList() |> isTruthy
-        ListOperations.List([|CTNumber(1.0); CTNumber(2.0)|]) |> isTruthy
+        BuiltIns.List([|CTNumber(1.0); CTNumber(2.0)|]) |> isTruthy
         CTSymbol("foo") |> isTruthy
         CTProcedure(0) |> isTruthy
         Constants.Undefined |> isTruthy
@@ -161,27 +161,27 @@ type ``boolean operations`` () =
 
     [<Test>]
     member x.``not inverts the boolean value of any object`` () =
-        CommonOperations.Not(CTNumber(0.0)) |> should equal Constants.False
-        CommonOperations.Not(Constants.True) |> should equal Constants.False
-        CommonOperations.Not(Constants.False) |> should equal Constants.True
+        BuiltIns.Not(CTNumber(0.0)) |> should equal Constants.False
+        BuiltIns.Not(Constants.True) |> should equal Constants.False
+        BuiltIns.Not(Constants.False) |> should equal Constants.True
 
     [<Test>]
     member x.``eq? compares equality`` () =
-        CommonOperations.AreEq(CTNumber(1.0), CTNumber(1.0)) |> isTruthy
-        CommonOperations.AreEq(CTNumber(1.0), CTNumber(2.0)) |> isFalsy
-        CommonOperations.AreEq(Constants.True, Constants.True) |> isTruthy
-        CommonOperations.AreEq(Constants.True, Constants.False) |> isFalsy
-        CommonOperations.AreEq(CTString("test"), CTString("test")) |> isTruthy
-        CommonOperations.AreEq(CTString("test"), CTString("testy")) |> isFalsy
-        CommonOperations.AreEq(CTProcedure(0), CTProcedure(0)) |> isFalsy // procedures are compared for instance equality
-        CommonOperations.AreEq(ListOperations.List([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]),
-                               ListOperations.List([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]))
-                               |> isTruthy
-        CommonOperations.AreEq(CTEmptyList(), CTEmptyList()) |> isTruthy
-        CommonOperations.AreEq(ListOperations.List([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]),
-                               CTPair(CTNumber(1.0), CTPair(CTNumber(2.0), CTNumber(3.0))))
-                               |> isFalsy
-        CommonOperations.AreEq(CTPair(CTNumber(1.0), CTNumber(2.0)),
+        BuiltIns.AreEq(CTNumber(1.0), CTNumber(1.0)) |> isTruthy
+        BuiltIns.AreEq(CTNumber(1.0), CTNumber(2.0)) |> isFalsy
+        BuiltIns.AreEq(Constants.True, Constants.True) |> isTruthy
+        BuiltIns.AreEq(Constants.True, Constants.False) |> isFalsy
+        BuiltIns.AreEq(CTString("test"), CTString("test")) |> isTruthy
+        BuiltIns.AreEq(CTString("test"), CTString("testy")) |> isFalsy
+        BuiltIns.AreEq(CTProcedure(0), CTProcedure(0)) |> isFalsy // procedures are compared for instance equality
+        BuiltIns.AreEq(BuiltIns.List([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]),
+                       BuiltIns.List([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]))
+                       |> isTruthy
+        BuiltIns.AreEq(CTEmptyList(), CTEmptyList()) |> isTruthy
+        BuiltIns.AreEq(BuiltIns.List([|CTNumber(1.0); CTNumber(2.0); CTNumber(3.0)|]),
+                       CTPair(CTNumber(1.0), CTPair(CTNumber(2.0), CTNumber(3.0))))
+                       |> isFalsy
+        BuiltIns.AreEq(CTPair(CTNumber(1.0), CTNumber(2.0)),
                                CTPair(CTNumber(1.0), CTNumber(2.0)))
                                |> isTruthy
 

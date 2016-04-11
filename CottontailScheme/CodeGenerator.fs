@@ -78,37 +78,42 @@ let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     | Number f -> loadNumberObject gen f
     | Symbol s -> loadSymbolObject gen s
     | List lits -> emitArray gen lits emitLiteral
-                   gen.Emit(Emit.OpCodes.Call, typeof<ListOperations>.GetMethod("List", [| typeof<CTObject array> |]))
+                   gen.Emit(Emit.OpCodes.Call, typeof<BuiltIns>.GetMethod("List", [| typeof<CTObject array> |]))
 
 let emitBooleanConversion (gen : Emit.ILGenerator) =
     gen.Emit(Emit.OpCodes.Callvirt, typeof<CTObject>.GetMethod("ToBool", [||]))
 
-let rec emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
-    let listOps = typeof<ListOperations>
-    let numberOps = typeof<NumberOperations>
-    let commonOps = typeof<CommonOperations>
-    let ctObject = typeof<CTObject>
-    let arrayType = typeof<CTObject array>
-
-    match id.uniqueName with
-    | "display" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("Display", [| ctObject |]))
-    | "zero?" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("IsZero", [| ctObject |]))
-    | "list" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("List", [| arrayType |]))
-    | "null?" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("IsNull", [| ctObject |]))
-    | "car" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Car", [| ctObject |]))
-    | "cdr" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Cdr", [| ctObject |]))
-    | "cons" -> gen.Emit(Emit.OpCodes.Call, listOps.GetMethod("Cons", [| ctObject; ctObject |]))
-    | "+" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Plus", [| arrayType |]))
-    | "-" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Minus", [| arrayType |]))
-    | "*" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Mult", [| arrayType |]))
-    | "/" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("Div", [| arrayType |]))
-    | "<" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("LessThan", [| arrayType |]))
-    | ">" -> gen.Emit(Emit.OpCodes.Call, numberOps.GetMethod("GreaterThan", [| arrayType |]))
-    | "eq?" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("AreEq", [| ctObject; ctObject |]))
-    | "not" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("Not", [| ctObject |]))
-    | "newline" -> gen.Emit(Emit.OpCodes.Call, commonOps.GetMethod("Newline", [||]))
+let convertBuiltInName =
+    function
+    | "zero?" -> "IsZero"
+    | "null?" -> "IsNull"
+    | "+" -> "Plus"
+    | "-" -> "Minus"
+    | "*" -> "Mult"
+    | "/" -> "Div"
+    | "<" -> "LessThan"
+    | ">" -> "GreaterThan"
+    | "eq?" -> "AreEq"
+    | "list"
+    | "display"
+    | "car"
+    | "cdr"
+    | "cons"
+    | "not"
+    | "newline" as n
+        -> SymbolGenerator.capitalizeWord n
     | e -> failwithf "Built-in function %s is not implemented!" e
-and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
+
+let loadBuiltInProcedure (gen : Emit.ILGenerator) (id : Identifier) =
+    let builtInName = convertBuiltInName id.uniqueName
+    gen.Emit(Emit.OpCodes.Ldsfld, typeof<BuiltIns>.GetField("Obj" + builtInName));
+
+let emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
+    let builtInName = convertBuiltInName id.uniqueName
+    let methodInfo = typeof<BuiltIns>.GetMethod(builtInName)
+    gen.Emit(Emit.OpCodes.Call, methodInfo)
+
+let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let pushExprResultToStack = generateSubExpression gen scope true
 
     let emitFunctionCall id args isTailCall =
@@ -217,12 +222,13 @@ and generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack :
             else
                 gen.Emit(Emit.OpCodes.Ldarg_S, (byte) n)
         | None ->
-            assert scope.variables.ContainsKey(id.uniqueName)
-
-            match scope.variables.Item(id.uniqueName) with
-            | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
-            | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
-
+            if scope.variables.ContainsKey(id.uniqueName) then
+                match scope.variables.Item(id.uniqueName) with
+                | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
+                | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
+            else
+                assert List.contains id !builtIns
+                loadBuiltInProcedure gen id
     match expr with
     | ProcedureCall (proc, args, isTailCall)
         -> match proc with

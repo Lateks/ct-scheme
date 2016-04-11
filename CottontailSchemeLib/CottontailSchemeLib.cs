@@ -40,8 +40,110 @@ namespace CottontailSchemeLib
         }
     }
 
-    public class CommonOperations
+    public class BuiltIns : CTProcedure
     {
+        private const int IndexNewline = 1;
+        private const int IndexDisplay = 2;
+        private const int IndexNot = 3;
+        private const int IndexAreEq = 4;
+        private const int IndexList = 5;
+        private const int IndexCons = 6;
+        private const int IndexIsNull = 7;
+        private const int IndexCdr = 8;
+        private const int IndexCar = 9;
+        private const int IndexPlus = 10;
+        private const int IndexMinus = 11;
+        private const int IndexDiv = 12;
+        private const int IndexMult = 13;
+        private const int IndexIsZero = 14;
+        private const int IndexLessThan = 15;
+        private const int IndexGreaterThan = 16;
+
+        private static readonly string NewlineFunctionName = "newline";
+        private static readonly string DisplayFunctionName = "display";
+        private static readonly string NotFunctionName = "not";
+        private static readonly string AreEqFunctionName = "eq?";
+        private static readonly string ListFunctionName = "list";
+        private static readonly string ConsFunctionName = "cons";
+        private static readonly string IsNullFunctionName = "null?";
+        private static readonly string CdrFunctionName = "cdr";
+        private static readonly string CarFunctionName = "car";
+        private static readonly string PlusFunctionName = "+";
+        private static readonly string MinusFunctionName = "-";
+        private static readonly string DivFunctionName = "/";
+        private static readonly string MultFunctionName = "*";
+        private static readonly string IsZeroFunctionName = "zero?";
+        private static readonly string LessThanFunctionName = "<";
+        private static readonly string GreaterThanFunctionName = ">";
+
+        internal BuiltIns(string name, int index) : base(name, index) { }
+        internal BuiltIns(int arity, string name, int index) : base(arity, name, index) { }
+
+        public static readonly CTObject ObjNewline = new BuiltIns(0, NewlineFunctionName, IndexNewline);
+        public static readonly CTObject ObjDisplay = new BuiltIns(1, DisplayFunctionName, IndexDisplay);
+        public static readonly CTObject ObjNot = new BuiltIns(1, NotFunctionName, IndexNot);
+        public static readonly CTObject ObjAreEq = new BuiltIns(1, AreEqFunctionName, IndexAreEq);
+        public static readonly CTObject ObjList = new BuiltIns(ListFunctionName, IndexList);
+        public static readonly CTObject ObjCons = new BuiltIns(2, ConsFunctionName, IndexCons);
+        public static readonly CTObject ObjIsNull = new BuiltIns(1, IsNullFunctionName, IndexIsNull);
+        public static readonly CTObject ObjCdr = new BuiltIns(1, CdrFunctionName, IndexCdr);
+        public static readonly CTObject ObjCar = new BuiltIns(1, CarFunctionName, IndexCar);
+        public static readonly CTObject ObjPlus = new BuiltIns(PlusFunctionName, IndexPlus);
+        public static readonly CTObject ObjMinus = new BuiltIns(MinusFunctionName, IndexMinus);
+        public static readonly CTObject ObjDiv = new BuiltIns(DivFunctionName, IndexDiv);
+        public static readonly CTObject ObjMult = new BuiltIns(MultFunctionName, IndexMult);
+        public static readonly CTObject ObjIsZero = new BuiltIns(1, IsZeroFunctionName, IndexIsZero);
+        public static readonly CTObject ObjLessThan = new BuiltIns(LessThanFunctionName, IndexLessThan);
+        public static readonly CTObject ObjGreaterThan = new BuiltIns(GreaterThanFunctionName, IndexGreaterThan);
+
+        public override CTObject funcall0()
+        {
+            switch (index)
+            {
+                case IndexNewline: return Newline();
+                default: return base.funcall0();
+            }
+        }
+
+        public override CTObject funcall1(CTObject a1)
+        {
+            switch (index)
+            {
+                case IndexDisplay: return Display(a1);
+                case IndexNot: return Not(a1);
+                case IndexCar: return Car(a1);
+                case IndexCdr: return Cdr(a1);
+                case IndexIsZero: return IsZero(a1);
+                case IndexIsNull: return IsNull(a1);
+                default: return base.funcall1(a1);
+            }
+        }
+
+        public override CTObject funcall2(CTObject a1, CTObject a2)
+        {
+            switch (index)
+            {
+                case IndexAreEq: return AreEq(a1, a2);
+                case IndexCons: return Cons(a1, a2);
+                default: return base.funcall2(a1, a2);
+            }
+        }
+
+        public override CTObject funcallVarargs(CTObject[] args)
+        {
+            switch (index)
+            {
+                case IndexList: return List(args);
+                case IndexPlus: return Plus(args);
+                case IndexMinus: return Minus(args);
+                case IndexDiv: return Div(args);
+                case IndexMult: return Mult(args);
+                case IndexLessThan: return LessThan(args);
+                case IndexGreaterThan: return GreaterThan(args);
+                default: return base.funcallVarargs(args);
+            }
+        }
+
         public static CTObject AreEq(CTObject a, CTObject b)
         {
             return Constants.ToCTBool(a.Equals(b));
@@ -64,12 +166,6 @@ namespace CottontailSchemeLib
             Console.Write("\n");
             return Constants.Undefined;
         }
-    }
-
-    public class ListOperations
-    {
-        private static readonly string CdrFunctionName = "cdr";
-        private static readonly string CarFunctionName = "car";
 
         private static void AssertPair(string functionName, CTObject arg)
         {
@@ -110,17 +206,6 @@ namespace CottontailSchemeLib
         {
             return Constants.ToCTBool(v.GetType() == typeof(CTEmptyList));
         }
-    }
-
-    public class NumberOperations
-    {
-        private static readonly string PlusFunctionName = "+";
-        private static readonly string MinusFunctionName = "-";
-        private static readonly string DivFunctionName = "/";
-        private static readonly string MultFunctionName = "*";
-        private static readonly string IsZeroFunctionName = "zero?";
-        private static readonly string LessThanFunctionName = "<";
-        private static readonly string GreaterThanFunctionName = ">";
 
         private static void AssertNumber(string functionName, CTObject arg)
         {
@@ -240,16 +325,16 @@ namespace CottontailSchemeLib
     {
         public virtual bool ToBool() { return true; }
         public virtual CTObject ToCTBool() { return Constants.True; }
-        public abstract string Display();
+        public abstract string DisplayObject();
 
         public override string ToString()
         {
-            return Display();
+            return DisplayObject();
         }
 
         public virtual string REPLDisplayValue()
         {
-            return Display();
+            return DisplayObject();
         }
 
         public abstract string DisplayType();
@@ -268,7 +353,7 @@ namespace CottontailSchemeLib
 
         internal CTUndefined() { }
 
-        public override string Display()
+        public override string DisplayObject()
         {
             return "";
         }
@@ -295,7 +380,7 @@ namespace CottontailSchemeLib
             this.value = value;
         }
 
-        public override string Display()
+        public override string DisplayObject()
         {
             if (value)
             {
@@ -338,7 +423,7 @@ namespace CottontailSchemeLib
             this.value = value;
         }
 
-        public override string Display()
+        public override string DisplayObject()
         {
             double fraction = value - (int)value;
             if (fraction > 0)
@@ -375,7 +460,7 @@ namespace CottontailSchemeLib
             cdr = v2;
         }
 
-        public override string Display()
+        public override string DisplayObject()
         {
             StringBuilder repr = new StringBuilder("(");
             repr.Append(DisplayValue());
@@ -391,7 +476,7 @@ namespace CottontailSchemeLib
                 else
                 {
                     if (tail.GetType() != typeof(CTEmptyList))
-                        repr.Append(" . ").Append(tail.Display());
+                        repr.Append(" . ").Append(tail.DisplayObject());
                     break;
                 }
             }
@@ -403,7 +488,7 @@ namespace CottontailSchemeLib
 
         public string DisplayValue()
         {
-            return car.Display();
+            return car.DisplayObject();
         }
 
         public CTObject Car()
@@ -439,7 +524,7 @@ namespace CottontailSchemeLib
     {
         internal static readonly string TypeName = "()";
 
-        public override string Display()
+        public override string DisplayObject()
         {
             return "()";
         }
@@ -466,7 +551,7 @@ namespace CottontailSchemeLib
             this.value = value;
         }
 
-        public override string Display()
+        public override string DisplayObject()
         {
             return value;
         }
@@ -498,7 +583,7 @@ namespace CottontailSchemeLib
             this.name = name;
         }
 
-        public override string Display()
+        public override string DisplayObject()
         {
             return name;
         }
@@ -519,29 +604,48 @@ namespace CottontailSchemeLib
         internal static readonly string TypeName = "procedure";
         private static int counter = 0;
 
+        protected readonly int index;
         private readonly int identifier;
         private readonly string name;
         private readonly int arity;
+        public bool isVarargs { get; private set; }
 
         public CTProcedure(int arity)
         {
             this.arity = arity;
             ++counter;
             identifier = counter;
+            index = -1;
         }
 
         public CTProcedure(int arity, string name)
         {
             this.arity = arity;
             this.name = name;
+            index = -1;
+        }
+
+        // varargs functions
+        public CTProcedure(string name, int index)
+        {
+            this.name = name;
+            this.index = index;
+            isVarargs = true;
+        }
+
+        public CTProcedure(int arity, string name, int index)
+        {
+            this.arity = arity;
+            this.name = name;
+            this.index = index;
         }
 
         private string GetName()
         {
-            return name != null ? name : Display();
+            return name != null ? name : DisplayObject();
         }
 
-        public override string Display()
+        public override string DisplayObject()
         {
             return string.Format("#<procedure:{0}>", name != null ? name : "anonymous" + identifier.ToString());
         }
@@ -556,37 +660,37 @@ namespace CottontailSchemeLib
             return obj == this;
         }
 
-        public CTObject funcall0()
+        public virtual CTObject funcall0()
         {
             throw new InvalidNumberOfArgsError(GetName(), arity, 0);
         }
 
-        public CTObject funcall1(CTObject a1)
+        public virtual CTObject funcall1(CTObject a1)
         {
             throw new InvalidNumberOfArgsError(GetName(), arity, 1);
         }
 
-        public CTObject funcall2(CTObject a1, CTObject a2)
+        public virtual CTObject funcall2(CTObject a1, CTObject a2)
         {
             throw new InvalidNumberOfArgsError(GetName(), arity, 2);
         }
 
-        public CTObject funcall3(CTObject a1, CTObject a2, CTObject a3)
+        public virtual CTObject funcall3(CTObject a1, CTObject a2, CTObject a3)
         {
             throw new InvalidNumberOfArgsError(GetName(), arity, 3);
         }
 
-        public CTObject funcall4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
+        public virtual CTObject funcall4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
         {
             throw new InvalidNumberOfArgsError(GetName(), arity, 4);
         }
 
-        public CTObject funcall5(CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5)
+        public virtual CTObject funcall5(CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5)
         {
             throw new InvalidNumberOfArgsError(GetName(), arity, 5);
         }
 
-        public CTObject funcallVarargs(CTObject[] args)
+        public virtual CTObject funcallVarargs(CTObject[] args)
         {
             throw new InvalidNumberOfArgsError(GetName(), arity, args.Length);
         }
