@@ -228,8 +228,24 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
             if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
             gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
         else
+            let proc = gen.DeclareLocal(typeof<CTProcedure>)
+
+            gen.BeginExceptionBlock() |> ignore
+
             emitVariableLoad id
-            gen.Emit(Emit.OpCodes.Castclass, typeof<CTProcedure>) // TODO: handle cast failure
+            gen.Emit(Emit.OpCodes.Castclass, typeof<CTProcedure>)
+            gen.Emit(Emit.OpCodes.Stloc, proc)
+
+            gen.BeginCatchBlock(typeof<System.InvalidCastException>)
+
+            gen.Emit(Emit.OpCodes.Ldstr, id.name)
+            emitVariableLoad id
+            gen.Emit(Emit.OpCodes.Newobj, typeof<NotAProcedureError>.GetConstructor([| typeof<string>; typeof<CTObject> |]))
+            gen.Emit(Emit.OpCodes.Throw)
+
+            gen.EndExceptionBlock()
+
+            gen.Emit(Emit.OpCodes.Ldloc, proc)
             let methodInfo = match args.Length with
                              | 0 | 1 | 2 | 3 | 4 | 5 as n
                                 -> pushIndividualArgs ()

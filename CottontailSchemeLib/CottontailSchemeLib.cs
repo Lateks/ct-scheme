@@ -24,6 +24,13 @@ namespace CottontailSchemeLib
         { }
     }
 
+    public class NotAProcedureError : CottontailSchemeException
+    {
+        public NotAProcedureError(string functionName, CTObject obj)
+            : base(string.Format("{0} is not a procedure\ngiven: {1} (value = {2})", functionName, obj.DisplayType(), obj))
+        { }
+    }
+
     public class Constants
     {
         public static readonly CTObject Undefined = new CTUndefined();
