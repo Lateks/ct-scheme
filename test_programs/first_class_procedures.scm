@@ -24,7 +24,6 @@
 (display (plus 1 2 3 4 5 6 7))
 (newline)
 
-
 (define my-plus
   (lambda (x y)
     (+ x y)))
@@ -34,5 +33,13 @@
 
 (display my-plus)
 (newline)
+
+(set! my-plus #f)
+(display my-plus)
+(newline)
+
+(display (apply2 my-plus 1 2))
+
+; TODO: set a new closure value for my-plus
 
 (display (apply2 zero? 1 2))

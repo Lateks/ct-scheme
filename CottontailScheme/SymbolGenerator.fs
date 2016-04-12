@@ -2,6 +2,8 @@
 
 open System.Text.RegularExpressions
 
+let toProcedureObjectName = sprintf "Obj$%s"
+
 let capitalizeWord (w: string) = w.[0].ToString().ToUpper() + w.Substring (1)
 
 let kebabCaseToCamelCase (name : string) =

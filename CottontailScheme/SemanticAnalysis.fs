@@ -666,13 +666,48 @@ and toVariableDeclaration =
            | _ -> Some <| VariableDeclaration id
     | _ -> None
 
+// Fifth pass through AST.
+//
+// Finds top level procedures that are also used as first class values or the
+// values of which are changed with set!.
+//
+// For each of these procedures, this phase introduces a new top level variable
+// to hold the closure object. All references to the procedure name are changed
+// to refer to this new variable.
+let rebindTopLevelFirstClassProcedureReferences (procs, vars, exprs) =
+    let isFirstClassProcedure (ProcedureDefinition (_, clos)) = clos.usedAsFirstClassValue
+    let procedureIdPair (ProcedureDefinition (id, _)) =
+        let procedureObjectId = { name = id.name; uniqueName = SymbolGenerator.toProcedureObjectName id.uniqueName; argIndex = None }
+        (id, procedureObjectId)
+
+    let firstClassProcedures = procs |> List.filter isFirstClassProcedure
+    let oldAndNewIds = firstClassProcedures |> List.map procedureIdPair
+    let newVariableDeclarations = oldAndNewIds
+                                  |> List.map (fun (_, newId) -> newId)
+                                  |> List.map VariableDeclaration
+    let newIdFor id = match List.tryFind (fun (oldId, _) -> oldId = id) oldAndNewIds with
+                      | Some (_, newId) -> newId
+                      | None -> id
+    let rec rebind =
+        function
+        | ProcedureCall (proc, args, isTailCall) -> ProcedureCall (rebind proc, List.map rebind args, isTailCall)
+        | Conditional (cond, thenBranch, elseBranch) -> Conditional (rebind cond, rebind thenBranch, rebind elseBranch)
+        | SequenceExpression (seqType, exprs) -> SequenceExpression (seqType, List.map rebind exprs)
+        | Assignment (id, expr) -> Assignment (newIdFor id, rebind expr)
+        | VariableReference id -> VariableReference (newIdFor id)
+        | Closure clos -> let newClos = { clos with body = List.map rebind clos.body
+                                                    environment = List.map newIdFor clos.environment }
+                          Closure newClos
+        | ValueExpression _ | UndefinedValue as e -> e
+
+    let exprsAfterRebinding = List.map rebind exprs
+
+    (procs, List.append vars newVariableDeclarations, exprsAfterRebinding)
+
 // Performs several passes through the AST (passes documented
 // above) producing a Program value (either ValidProgram or
 // ProgramAnalysisError).
 //
-// TODO: how should top level procedures whose value may
-//       be reassigned be handled?
-//       - just use a variable and create closures?
 // TODO: prevent attempts to set constants (for simplicity)
 let analyse exprs =
     try
@@ -687,7 +722,9 @@ let analyse exprs =
 
         checkProcedureCalls moduleBody
 
-        let procs, vars, exprs = convertModuleOrProcedureBody moduleBody
+        let procs, vars, exprs = moduleBody
+                                 |> convertModuleOrProcedureBody
+                                 |> rebindTopLevelFirstClassProcedureReferences
 
         ValidProgram { procedureDefinitions = procs;
                        variableDeclarations = vars;

@@ -113,8 +113,6 @@ let emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     let methodInfo = typeof<BuiltIns>.GetMethod(builtInName)
     gen.Emit(Emit.OpCodes.Call, methodInfo)
 
-let toProcedureObjectName = sprintf "Obj$%s"
-
 let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let pushExprResultToStack = generateSubExpression gen scope true
 
@@ -205,12 +203,9 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
         | None ->
             if scope.variables.ContainsKey(id.uniqueName) then
                 loadVariableOrField id.uniqueName
-            elif List.contains id !builtIns then
-                loadBuiltInProcedure gen id
             else
-                let procObjectName = toProcedureObjectName id.uniqueName
-                assert scope.variables.ContainsKey(procObjectName)
-                loadVariableOrField procObjectName
+                assert List.contains id !builtIns
+                loadBuiltInProcedure gen id
     let emitFunctionCall id args isTailCall =
         let pushArgsAsArray () = emitArray gen args (fun g -> generateSubExpression g scope true)
         let pushIndividualArgs () = for arg in args do pushExprResultToStack arg
@@ -309,16 +304,12 @@ let generateProcedureBody (gen : Emit.ILGenerator) (c : ClosureDefinition) scope
     generateSubExpression gen extendedScope true tailExpr
     gen.Emit(Emit.OpCodes.Ret)
 
-let defineVariables (c : Emit.TypeBuilder) (vars : VariableDeclaration list) (procs : ProcedureDefinition list) =
-    procs
-    |> List.filter (fun (ProcedureDefinition (_, clos)) -> clos.usedAsFirstClassValue)
-    |> List.map (fun (ProcedureDefinition (id, _)) -> toProcedureObjectName id.uniqueName)
-    |> List.append (vars |> List.map (fun (VariableDeclaration id) -> id.uniqueName))
-    |> List.map (fun name ->
-                     (name, Field <| c.DefineField(name,
-                                                   typeof<CTObject>,
-                                                   FieldAttributes.Static ||| FieldAttributes.Private)))
-    |> Map.ofList
+let defineVariables (c : Emit.TypeBuilder)=
+    List.map (fun (VariableDeclaration id) ->
+                  (id.uniqueName, Field <| c.DefineField(id.uniqueName,
+                                                         typeof<CTObject>,
+                                                         FieldAttributes.Static ||| FieldAttributes.Private)))
+    >> Map.ofList
 
 let defineProcedures (c : Emit.TypeBuilder) =
     List.map (fun (ProcedureDefinition (id, clos)) ->
@@ -361,7 +352,7 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
                                                        | 3 -> typeof<CTDelegateProcedure3>
                                                        | 4 -> typeof<CTDelegateProcedure4>
                                                        | _ -> typeof<CTDelegateProcedure5>
-            let (Field var) = scope.variables.Item(toProcedureObjectName id.uniqueName)
+            let (Field var) = scope.variables.Item(SymbolGenerator.toProcedureObjectName id.uniqueName)
             gen.Emit(Emit.OpCodes.Ldstr, id.name)
             gen.Emit(Emit.OpCodes.Ldnull)
             gen.Emit(Emit.OpCodes.Ldftn, procedure.methodBuilder)
@@ -373,7 +364,7 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
     let procedures = defineProcedures mainClass program.procedureDefinitions
-    let variables = defineVariables mainClass program.variableDeclarations program.procedureDefinitions
+    let variables = defineVariables mainClass program.variableDeclarations
 
     let scope = { variables = variables;
                   procedures = procedures }
