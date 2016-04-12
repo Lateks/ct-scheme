@@ -24,8 +24,4 @@
 (display (plus 1 2 3 4 5 6 7))
 (newline)
 
-(define foo 1)
-
-(display (foo 1 2))
-
 (display (apply2 zero? 1 2))

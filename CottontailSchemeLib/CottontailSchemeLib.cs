@@ -47,25 +47,8 @@ namespace CottontailSchemeLib
         }
     }
 
-    public class BuiltIns : CTProcedure
+    public class BuiltIns
     {
-        private const int IndexNewline = 1;
-        private const int IndexDisplay = 2;
-        private const int IndexNot = 3;
-        private const int IndexAreEq = 4;
-        private const int IndexList = 5;
-        private const int IndexCons = 6;
-        private const int IndexIsNull = 7;
-        private const int IndexCdr = 8;
-        private const int IndexCar = 9;
-        private const int IndexPlus = 10;
-        private const int IndexMinus = 11;
-        private const int IndexDiv = 12;
-        private const int IndexMult = 13;
-        private const int IndexIsZero = 14;
-        private const int IndexLessThan = 15;
-        private const int IndexGreaterThan = 16;
-
         private static readonly string NewlineFunctionName = "newline";
         private static readonly string DisplayFunctionName = "display";
         private static readonly string NotFunctionName = "not";
@@ -83,73 +66,22 @@ namespace CottontailSchemeLib
         private static readonly string LessThanFunctionName = "<";
         private static readonly string GreaterThanFunctionName = ">";
 
-        internal BuiltIns(string name, int index) : base(name, index) { }
-        internal BuiltIns(int arity, string name, int index) : base(arity, name, index) { }
-
-        public static readonly CTObject ObjNewline = new BuiltIns(0, NewlineFunctionName, IndexNewline);
-        public static readonly CTObject ObjDisplay = new BuiltIns(1, DisplayFunctionName, IndexDisplay);
-        public static readonly CTObject ObjNot = new BuiltIns(1, NotFunctionName, IndexNot);
-        public static readonly CTObject ObjAreEq = new BuiltIns(1, AreEqFunctionName, IndexAreEq);
-        public static readonly CTObject ObjList = new BuiltIns(ListFunctionName, IndexList);
-        public static readonly CTObject ObjCons = new BuiltIns(2, ConsFunctionName, IndexCons);
-        public static readonly CTObject ObjIsNull = new BuiltIns(1, IsNullFunctionName, IndexIsNull);
-        public static readonly CTObject ObjCdr = new BuiltIns(1, CdrFunctionName, IndexCdr);
-        public static readonly CTObject ObjCar = new BuiltIns(1, CarFunctionName, IndexCar);
-        public static readonly CTObject ObjPlus = new BuiltIns(PlusFunctionName, IndexPlus);
-        public static readonly CTObject ObjMinus = new BuiltIns(MinusFunctionName, IndexMinus);
-        public static readonly CTObject ObjDiv = new BuiltIns(DivFunctionName, IndexDiv);
-        public static readonly CTObject ObjMult = new BuiltIns(MultFunctionName, IndexMult);
-        public static readonly CTObject ObjIsZero = new BuiltIns(1, IsZeroFunctionName, IndexIsZero);
-        public static readonly CTObject ObjLessThan = new BuiltIns(LessThanFunctionName, IndexLessThan);
-        public static readonly CTObject ObjGreaterThan = new BuiltIns(GreaterThanFunctionName, IndexGreaterThan);
-
-        public override CTObject funcall0()
-        {
-            switch (index)
-            {
-                case IndexNewline: return Newline();
-                default: return base.funcall0();
-            }
-        }
-
-        public override CTObject funcall1(CTObject a1)
-        {
-            switch (index)
-            {
-                case IndexDisplay: return Display(a1);
-                case IndexNot: return Not(a1);
-                case IndexCar: return Car(a1);
-                case IndexCdr: return Cdr(a1);
-                case IndexIsZero: return IsZero(a1);
-                case IndexIsNull: return IsNull(a1);
-                default: return base.funcall1(a1);
-            }
-        }
-
-        public override CTObject funcall2(CTObject a1, CTObject a2)
-        {
-            switch (index)
-            {
-                case IndexAreEq: return AreEq(a1, a2);
-                case IndexCons: return Cons(a1, a2);
-                default: return base.funcall2(a1, a2);
-            }
-        }
-
-        public override CTObject funcallVarargs(CTObject[] args)
-        {
-            switch (index)
-            {
-                case IndexList: return List(args);
-                case IndexPlus: return Plus(args);
-                case IndexMinus: return Minus(args);
-                case IndexDiv: return Div(args);
-                case IndexMult: return Mult(args);
-                case IndexLessThan: return LessThan(args);
-                case IndexGreaterThan: return GreaterThan(args);
-                default: return base.funcallVarargs(args);
-            }
-        }
+        public static readonly CTObject ObjNewline = new CTDelegateProcedure0(NewlineFunctionName, Newline);
+        public static readonly CTObject ObjDisplay = new CTDelegateProcedure1(DisplayFunctionName, Display);
+        public static readonly CTObject ObjNot = new CTDelegateProcedure1(NotFunctionName, Not);
+        public static readonly CTObject ObjAreEq = new CTDelegateProcedure2(AreEqFunctionName, AreEq);
+        public static readonly CTObject ObjList = new CTDelegateProcedureVarargs(ListFunctionName, List);
+        public static readonly CTObject ObjCons = new CTDelegateProcedure2(ConsFunctionName, Cons);
+        public static readonly CTObject ObjIsNull = new CTDelegateProcedure1(IsNullFunctionName, IsNull);
+        public static readonly CTObject ObjCdr = new CTDelegateProcedure1(CdrFunctionName, Cdr);
+        public static readonly CTObject ObjCar = new CTDelegateProcedure1(CarFunctionName, Car);
+        public static readonly CTObject ObjPlus = new CTDelegateProcedureVarargs(PlusFunctionName, Plus);
+        public static readonly CTObject ObjMinus = new CTDelegateProcedureVarargs(MinusFunctionName, Minus);
+        public static readonly CTObject ObjDiv = new CTDelegateProcedureVarargs(DivFunctionName, Div);
+        public static readonly CTObject ObjMult = new CTDelegateProcedureVarargs(MultFunctionName, Mult);
+        public static readonly CTObject ObjIsZero = new CTDelegateProcedure1(IsZeroFunctionName, IsZero);
+        public static readonly CTObject ObjLessThan = new CTDelegateProcedureVarargs(LessThanFunctionName, LessThan);
+        public static readonly CTObject ObjGreaterThan = new CTDelegateProcedureVarargs(GreaterThanFunctionName, GreaterThan);
 
         public static CTObject AreEq(CTObject a, CTObject b)
         {
@@ -611,7 +543,6 @@ namespace CottontailSchemeLib
         internal static readonly string TypeName = "procedure";
         private static int counter = 0;
 
-        protected readonly int index;
         private readonly int identifier;
         private readonly string name;
         private readonly int arity;
@@ -622,29 +553,19 @@ namespace CottontailSchemeLib
             this.arity = arity;
             ++counter;
             identifier = counter;
-            index = -1;
         }
 
         public CTProcedure(int arity, string name)
         {
             this.arity = arity;
             this.name = name;
-            index = -1;
         }
 
         // varargs functions
-        public CTProcedure(string name, int index)
+        public CTProcedure(string name)
         {
             this.name = name;
-            this.index = index;
             isVarargs = true;
-        }
-
-        public CTProcedure(int arity, string name, int index)
-        {
-            this.arity = arity;
-            this.name = name;
-            this.index = index;
         }
 
         private string GetName()
@@ -775,6 +696,125 @@ namespace CottontailSchemeLib
         public virtual CTObject applyN(CTObject[] args)
         {
             return funcallVarargs(args);
+        }
+    }
+
+    public class CTDelegateProcedure0 : CTProcedure
+    {
+        private Func<CTObject> fun0;
+
+        public CTDelegateProcedure0(string name, Func<CTObject> f)
+            : base(0, name)
+        {
+            fun0 = f;
+        }
+
+        public override CTObject funcall0()
+        {
+            return fun0();
+        }
+    }
+
+    public class CTDelegateProcedure1 : CTProcedure
+    {
+        private Func<CTObject, CTObject> fun1;
+
+        public CTDelegateProcedure1(string name, Func<CTObject, CTObject> f)
+            : base(1, name)
+        {
+            fun1 = f;
+        }
+
+        public override CTObject funcall1(CTObject a1)
+        {
+            return fun1(a1);
+        }
+    }
+
+    public class CTDelegateProcedure2 : CTProcedure
+    {
+        private Func<CTObject, CTObject, CTObject> fun2;
+
+        public CTDelegateProcedure2(string name, Func<CTObject, CTObject, CTObject> f)
+            : base(2, name)
+        {
+            fun2 = f;
+        }
+
+        public override CTObject funcall2(CTObject a1, CTObject a2)
+        {
+            return fun2(a1, a2);
+        }
+    }
+
+    public class CTDelegateProcedure3 : CTProcedure
+    {
+        private Func<CTObject, CTObject, CTObject, CTObject> fun3;
+
+        public CTDelegateProcedure3(string name, Func<CTObject, CTObject, CTObject, CTObject> f)
+            : base(3, name)
+        {
+            fun3 = f;
+        }
+
+        public override CTObject funcall3(CTObject a1, CTObject a2, CTObject a3)
+        {
+            return fun3(a1, a2, a3);
+        }
+    }
+
+    public class CTDelegateProcedure4 : CTProcedure
+    {
+        private Func<CTObject, CTObject, CTObject, CTObject, CTObject> fun4;
+
+        public CTDelegateProcedure4(string name, Func<CTObject, CTObject, CTObject, CTObject, CTObject> f)
+            : base(4, name)
+        {
+            fun4 = f;
+        }
+
+        public override CTObject funcall4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
+        {
+            return fun4(a1, a2, a3, a4);
+        }
+    }
+
+    public class CTDelegateProcedure5 : CTProcedure
+    {
+        private Func<CTObject, CTObject, CTObject, CTObject, CTObject, CTObject> fun5;
+
+        public CTDelegateProcedure5(string name, Func<CTObject, CTObject, CTObject, CTObject, CTObject, CTObject> f)
+            : base(5, name)
+        {
+            fun5 = f;
+        }
+
+        public override CTObject funcall5(CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5)
+        {
+            return fun5(a1, a2, a3, a4, a5);
+        }
+    }
+
+    public class CTDelegateProcedureVarargs : CTProcedure
+    {
+        private Func<CTObject[], CTObject> funVarargs;
+
+        public CTDelegateProcedureVarargs(string name, Func<CTObject[], CTObject> f)
+            : base(name)
+        {
+            funVarargs = f;
+        }
+
+        public override CTObject funcallVarargs(CTObject[] args)
+        {
+            if (funVarargs != null)
+            {
+                return funVarargs(args);
+            }
+            else
+            {
+                return base.funcallVarargs(args);
+            }
         }
     }
 }
