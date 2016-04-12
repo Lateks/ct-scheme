@@ -24,4 +24,15 @@
 (display (plus 1 2 3 4 5 6 7))
 (newline)
 
+
+(define my-plus
+  (lambda (x y)
+    (+ x y)))
+
+(display (apply2 my-plus 1 2))
+(newline)
+
+(display my-plus)
+(newline)
+
 (display (apply2 zero? 1 2))

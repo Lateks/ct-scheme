@@ -113,6 +113,8 @@ let emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     let methodInfo = typeof<BuiltIns>.GetMethod(builtInName)
     gen.Emit(Emit.OpCodes.Call, methodInfo)
 
+let toProcedureObjectName = sprintf "Obj$%s"
+
 let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let pushExprResultToStack = generateSubExpression gen scope true
 
@@ -186,6 +188,9 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
 
         if pushOnStack then loadUndefined gen
     let emitVariableLoad (id : Identifier) =
+        let loadVariableOrField name = match scope.variables.Item(name) with
+                                       | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
+                                       | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
         match id.argIndex with
         | Some n ->
             if n < 4 then
@@ -199,12 +204,13 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
                 gen.Emit(Emit.OpCodes.Ldarg_S, (byte) n)
         | None ->
             if scope.variables.ContainsKey(id.uniqueName) then
-                match scope.variables.Item(id.uniqueName) with
-                | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
-                | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
-            else
-                assert List.contains id !builtIns
+                loadVariableOrField id.uniqueName
+            elif List.contains id !builtIns then
                 loadBuiltInProcedure gen id
+            else
+                let procObjectName = toProcedureObjectName id.uniqueName
+                assert scope.variables.ContainsKey(procObjectName)
+                loadVariableOrField procObjectName
     let emitFunctionCall id args isTailCall =
         let pushArgsAsArray () = emitArray gen args (fun g -> generateSubExpression g scope true)
         let pushIndividualArgs () = for arg in args do pushExprResultToStack arg
@@ -303,12 +309,16 @@ let generateProcedureBody (gen : Emit.ILGenerator) (c : ClosureDefinition) scope
     generateSubExpression gen extendedScope true tailExpr
     gen.Emit(Emit.OpCodes.Ret)
 
-let defineVariables (c : Emit.TypeBuilder) =
-    List.map (fun (VariableDeclaration id) ->
-                    (id.uniqueName, Field <| c.DefineField(id.uniqueName,
-                                                           typeof<CTObject>,
-                                                           FieldAttributes.Static ||| FieldAttributes.Private)))
-    >> Map.ofList
+let defineVariables (c : Emit.TypeBuilder) (vars : VariableDeclaration list) (procs : ProcedureDefinition list) =
+    procs
+    |> List.filter (fun (ProcedureDefinition (_, clos)) -> clos.usedAsFirstClassValue)
+    |> List.map (fun (ProcedureDefinition (id, _)) -> toProcedureObjectName id.uniqueName)
+    |> List.append (vars |> List.map (fun (VariableDeclaration id) -> id.uniqueName))
+    |> List.map (fun name ->
+                     (name, Field <| c.DefineField(name,
+                                                   typeof<CTObject>,
+                                                   FieldAttributes.Static ||| FieldAttributes.Private)))
+    |> Map.ofList
 
 let defineProcedures (c : Emit.TypeBuilder) =
     List.map (fun (ProcedureDefinition (id, clos)) ->
@@ -327,13 +337,49 @@ let generateTopLevelProcedureBodies (scope : Scope) =
     for (_, proc) in Map.toSeq scope.procedures do
         generateProcedureBody (proc.methodBuilder.GetILGenerator()) proc.closure scope
 
+let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDefinition list) (scope : Scope) =
+    let classInitializer = mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public, CallingConventions.Standard, [||])
+    let gen = classInitializer.GetILGenerator()
+    for (ProcedureDefinition (id, c)) in procs do
+        if c.usedAsFirstClassValue then
+            let procedure = scope.procedures.Item(id.uniqueName)
+            let procType = match c.formals with
+                           | SingleArgFormals id -> typeof<Func<CTObject[], CTObject>>
+                           | MultiArgFormals ids -> match List.length ids with
+                                                    | 0 -> typeof<Func<CTObject>>
+                                                    | 1 -> typeof<Func<CTObject, CTObject>>
+                                                    | 2 -> typeof<Func<CTObject, CTObject, CTObject>>
+                                                    | 3 -> typeof<Func<CTObject, CTObject, CTObject, CTObject>>
+                                                    | 4 -> typeof<Func<CTObject, CTObject, CTObject, CTObject, CTObject>>
+                                                    | _ -> typeof<Func<CTObject, CTObject, CTObject, CTObject, CTObject, CTObject>>
+            let ctObjectType = match c.formals with
+                               | SingleArgFormals id -> typeof<CTDelegateProcedureVarargs>
+                               | MultiArgFormals ids -> match List.length ids with
+                                                       | 0 -> typeof<CTDelegateProcedure0>
+                                                       | 1 -> typeof<CTDelegateProcedure1>
+                                                       | 2 -> typeof<CTDelegateProcedure2>
+                                                       | 3 -> typeof<CTDelegateProcedure3>
+                                                       | 4 -> typeof<CTDelegateProcedure4>
+                                                       | _ -> typeof<CTDelegateProcedure5>
+            let (Field var) = scope.variables.Item(toProcedureObjectName id.uniqueName)
+            gen.Emit(Emit.OpCodes.Ldstr, id.name)
+            gen.Emit(Emit.OpCodes.Ldnull)
+            gen.Emit(Emit.OpCodes.Ldftn, procedure.methodBuilder)
+            gen.Emit(Emit.OpCodes.Newobj, procType.GetConstructor([| typeof<Object>; typeof<nativeint> |]))
+            gen.Emit(Emit.OpCodes.Newobj, ctObjectType.GetConstructor([| typeof<string>; procType |]))
+            gen.Emit(Emit.OpCodes.Stsfld, var)
+    gen.Emit(Emit.OpCodes.Ret)
+
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
+    let procedures = defineProcedures mainClass program.procedureDefinitions
+    let variables = defineVariables mainClass program.variableDeclarations program.procedureDefinitions
 
-    let scope = { variables = defineVariables mainClass program.variableDeclarations;
-                  procedures = defineProcedures mainClass program.procedureDefinitions }
+    let scope = { variables = variables;
+                  procedures = procedures }
 
     generateTopLevelProcedureBodies scope
+    generateClassInitializer mainClass program.procedureDefinitions scope
 
     ilGen.BeginExceptionBlock() |> ignore
 
