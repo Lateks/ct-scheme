@@ -131,6 +131,7 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
         pushExprResultToStack elseExpression
 
         gen.MarkLabel(exitLabel)
+
     let emitBeginSequence =
         function
         | [] -> if pushOnStack then loadUndefined gen
@@ -139,6 +140,7 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
                    for expr in nonTailExprs do
                        generateSubExpression gen scope false expr
                    generateSubExpression gen scope pushOnStack tailExpr
+
     let emitBooleanCombinationExpression breakValue =
         function
         | [] -> if pushOnStack then loadBooleanObject gen (not breakValue)
@@ -172,6 +174,7 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
 
             gen.MarkLabel(exitLabel)
             loadTempValue ()
+
     let emitAssignment (id : Identifier) expr =
         pushExprResultToStack expr
 
@@ -185,6 +188,7 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
             | Field v -> gen.Emit(Emit.OpCodes.Stsfld, v)
 
         if pushOnStack then loadUndefined gen
+
     let emitVariableLoad (id : Identifier) =
         let loadVariableOrField name = match scope.variables.Item(name) with
                                        | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
@@ -206,63 +210,74 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
             else
                 assert List.contains id !builtIns
                 loadBuiltInProcedure gen id
-    let emitFunctionCall id args isTailCall =
-        let pushArgsAsArray () = emitArray gen args (fun g -> generateSubExpression g scope true)
-        let pushIndividualArgs () = for arg in args do pushExprResultToStack arg
 
+    let pushArgsAsArray args = emitArray gen args (fun g -> generateSubExpression g scope true)
+    let pushIndividualArgs args = for arg in args do pushExprResultToStack arg
+    let emitCallToFirstClassProcedureOnStack (name : string option) args isTailCall =
+        let procObject = gen.DeclareLocal(typeof<CTObject>)
+        let proc = gen.DeclareLocal(typeof<CTProcedure>)
+
+        gen.Emit(Emit.OpCodes.Stloc, procObject)
+
+        gen.BeginExceptionBlock() |> ignore
+
+        gen.Emit(Emit.OpCodes.Ldloc, procObject)
+        gen.Emit(Emit.OpCodes.Castclass, typeof<CTProcedure>)
+        gen.Emit(Emit.OpCodes.Stloc, proc)
+
+        gen.BeginCatchBlock(typeof<System.InvalidCastException>)
+
+        match name with
+        | Some n -> gen.Emit(Emit.OpCodes.Ldstr, n)
+                    gen.Emit(Emit.OpCodes.Ldloc, procObject)
+                    gen.Emit(Emit.OpCodes.Newobj, typeof<NotAProcedureError>.GetConstructor([| typeof<string>; typeof<CTObject> |]))
+        | None ->   gen.Emit(Emit.OpCodes.Ldloc, procObject)
+                    gen.Emit(Emit.OpCodes.Newobj, typeof<NotAProcedureError>.GetConstructor([| typeof<CTObject> |]))
+
+        gen.Emit(Emit.OpCodes.Throw)
+
+        gen.EndExceptionBlock()
+
+        gen.Emit(Emit.OpCodes.Ldloc, proc)
+        let methodInfo = match List.length args with
+                         | 0 | 1 | 2 | 3 | 4 | 5 as n
+                             -> pushIndividualArgs args
+                                typeof<CTProcedure>.GetMethod(sprintf "apply%i" n)
+                         | _
+                             -> pushArgsAsArray args
+                                typeof<CTProcedure>.GetMethod("applyN")
+
+        if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
+        gen.Emit(Emit.OpCodes.Callvirt, methodInfo)
+    let emitNamedProcedureCall id args isTailCall =
         // Tail annotations are not emitted for built-in procedures because
         // the built-in procedures currently defined in the library never
         // result in recursion or other tail call continuations.
         if List.contains id !builtIns then
             if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
-                pushArgsAsArray ()
+                pushArgsAsArray args
             else
-                pushIndividualArgs ()
+                pushIndividualArgs args
 
             emitBuiltInFunctionCall gen id
         elif scope.procedures.ContainsKey id.uniqueName then
             let procedure = scope.procedures.Item(id.uniqueName)
             match procedure.closure.formals with
-            | SingleArgFormals _ -> pushArgsAsArray ()
-            | MultiArgFormals _ -> pushIndividualArgs ()
+            | SingleArgFormals _ -> pushArgsAsArray args
+            | MultiArgFormals _ -> pushIndividualArgs args
 
             if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
             gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
         else
-            let proc = gen.DeclareLocal(typeof<CTProcedure>)
-
-            gen.BeginExceptionBlock() |> ignore
-
             emitVariableLoad id
-            gen.Emit(Emit.OpCodes.Castclass, typeof<CTProcedure>)
-            gen.Emit(Emit.OpCodes.Stloc, proc)
-
-            gen.BeginCatchBlock(typeof<System.InvalidCastException>)
-
-            gen.Emit(Emit.OpCodes.Ldstr, id.name)
-            emitVariableLoad id
-            gen.Emit(Emit.OpCodes.Newobj, typeof<NotAProcedureError>.GetConstructor([| typeof<string>; typeof<CTObject> |]))
-            gen.Emit(Emit.OpCodes.Throw)
-
-            gen.EndExceptionBlock()
-
-            gen.Emit(Emit.OpCodes.Ldloc, proc)
-            let methodInfo = match args.Length with
-                             | 0 | 1 | 2 | 3 | 4 | 5 as n
-                                -> pushIndividualArgs ()
-                                   typeof<CTProcedure>.GetMethod(sprintf "apply%i" n)
-                             | _
-                                -> pushArgsAsArray ()
-                                   typeof<CTProcedure>.GetMethod("applyN")
-
-            if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
-            gen.Emit(Emit.OpCodes.Callvirt, methodInfo)
+            emitCallToFirstClassProcedureOnStack (Some id.name) args isTailCall
 
     match expr with
     | ProcedureCall (proc, args, isTailCall)
         -> match proc with
-           | VariableReference id -> emitFunctionCall id args isTailCall
-           | e -> failwithf "Not implemented yet! %A" e
+           | VariableReference id -> emitNamedProcedureCall id args isTailCall
+           | e -> pushExprResultToStack e
+                  emitCallToFirstClassProcedureOnStack None args isTailCall
            if not pushOnStack then popStack gen
     | ValueExpression lit
         -> emitLiteral gen lit
@@ -282,7 +297,7 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
            if not pushOnStack then popStack gen
     | UndefinedValue
         -> if pushOnStack then loadUndefined gen
-    | e -> failwithf "Not implemented yet! %A" e
+    | Closure c as e -> failwithf "Not implemented yet! %A" e
 
 let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
     generateSubExpression gen scope false expr

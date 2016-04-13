@@ -29,6 +29,10 @@ namespace CottontailSchemeLib
         public NotAProcedureError(string functionName, CTObject obj)
             : base(string.Format("{0} is not a procedure\ngiven: {1} (value = {2})", functionName, obj.DisplayType(), obj))
         { }
+
+        public NotAProcedureError(CTObject obj)
+            : base(string.Format("object of type {0} is not a procedure\ngiven: {1})", obj.DisplayType(), obj))
+        { }
     }
 
     public class Constants
