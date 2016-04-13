@@ -607,7 +607,9 @@ let checkProcedureCalls exprs =
                                               recur e3 |> ignore
         | AnalysisSequenceExpression (_, exprs) -> List.map recur exprs |> ignore
         | AnalysisTailExpression expr -> recur expr
-        | AnalysisProcedureCall (proc, args) -> checkProcedureCall functionDefs proc args.Length
+        | AnalysisProcedureCall (proc, args) ->
+            checkProcedureCall functionDefs proc args.Length
+            List.map recur args |> ignore
         | _ -> ()
 
     let functions = findFunctionDefinitions exprs

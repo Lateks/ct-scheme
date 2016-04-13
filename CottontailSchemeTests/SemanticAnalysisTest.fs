@@ -92,6 +92,11 @@ type ``Errors detected by semantic analysis`` () =
                            (define test\
                              (lambda (x) x))\
                                (test 1 2)))" |> shouldProduceError (buildArgumentErrorMsgExactCount "test" 1 2)
+        parseAndBuild "(define apply\
+                         (lambda (f x)\
+                           (f x)))\
+                       (display (apply + 1000 8000))"
+                      |> shouldProduceError (buildArgumentErrorMsgExactCount "apply" 2 3)
 
     [<Test>]
     member x.``detects duplicate definitions for identifiers in inner scopes`` () =
