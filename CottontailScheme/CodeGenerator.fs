@@ -351,7 +351,7 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
     let classInitializer = mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public, CallingConventions.Standard, [||])
     let gen = classInitializer.GetILGenerator()
     for (ProcedureDefinition (id, c)) in procs do
-        if c.usedAsFirstClassValue then
+        if c.isUsedAsFirstClassValue || c.isReassigned then
             let procedure = scope.procedures.Item(id.uniqueName)
             let procType = match c.formals with
                            | SingleArgFormals id -> typeof<Func<CTObject, CTObject>>

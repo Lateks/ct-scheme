@@ -22,7 +22,8 @@ and ClosureDefinition = { formals: ClosureFormals;
                           scope: Scope.Scope
                           isTailRecursive: bool;
                           functionName: Scope.Identifier option;
-                          usedAsFirstClassValue: bool }
+                          isUsedAsFirstClassValue: bool;
+                          isReassigned : bool }
 and ProcedureDefinition = ProcedureDefinition of Scope.Identifier * ClosureDefinition
 and VariableDeclaration = VariableDeclaration of Scope.Identifier
 

@@ -52,7 +52,8 @@ and ClosureDefinition = { formals: ClosureFormals;
                           scope: Scope
                           isTailRecursive: bool;
                           functionName: Identifier option;
-                          usedAsFirstClassValue: bool }
+                          isUsedAsFirstClassValue: bool;
+                          isReassigned : bool }
 and ProcedureDefinition = ProcedureDefinition of Scope.Identifier * ClosureDefinition
 and VariableDeclaration = VariableDeclaration of Scope.Identifier
 
@@ -83,7 +84,8 @@ and AnalysisClosureDefinition = { formals: ClosureFormals;
                                   scope: Scope
                                   isTailRecursive: bool;
                                   functionName: Identifier option;
-                                  usedAsFirstClassValue: bool }
+                                  isUsedAsFirstClassValue: bool;
+                                  isReassigned : bool }
 
 let failWithErrorNode err = failwithf "Error, faulty AST given as input to analysis. Contains error \"%s\"." err.message
 
@@ -264,8 +266,7 @@ module LambdaHelpers =
             | AnalysisClosure c' -> c = c' || usedAsFirstClassValueInList c'.body
             | AnalysisProcedureCall (_, args) -> usedAsFirstClassValueInList args
             | AnalysisValueExpression _ -> false
-            | AnalysisAssignment (id, expr) // treat as if used as first class value if value can be overwritten
-                -> isNameReference id || usedAsFirstClassValueInExpr expr
+            | AnalysisAssignment (_, expr) -> usedAsFirstClassValueInExpr expr
             | AnalysisIdentifierDefinition (id, expr)
                 -> if isNameReference id then
                        match expr with
@@ -284,6 +285,28 @@ module LambdaHelpers =
             |> List.fold (fun usedSoFar e -> usedSoFar || usedAsFirstClassValueInExpr e) false
 
         usedAsFirstClassValueInList parentExprs
+
+    let isReassigned closureId parentExprs =
+        let rec isReassignedInExpr =
+            function
+            | AnalysisClosure c' -> List.contains closureId c'.environment && isReassignedInList c'.body
+            | AnalysisProcedureCall (_, args) -> isReassignedInList args
+            | AnalysisAssignment (id, expr) -> id = closureId || isReassignedInExpr expr
+            | AnalysisIdentifierDefinition (_, expr)
+                -> isReassignedInExpr expr
+            | AnalysisConditional (e1, e2, e3) ->
+                isReassignedInExpr e1 || isReassignedInExpr e2 || isReassignedInExpr e3
+            | AnalysisSequenceExpression (_, exprs) ->
+                isReassignedInList exprs
+            | AnalysisTailExpression e -> isReassignedInExpr e
+            | AnalysisValueExpression _
+            | AnalysisVariableReference _
+            | AnalysisUndefinedValue -> false
+        and isReassignedInList exprs =
+            exprs
+            |> List.fold (fun reassignedSoFar e -> reassignedSoFar || isReassignedInExpr e) false
+
+        isReassignedInList parentExprs
 
 // Builds a new scope that has parentScope as a parent.
 // - finds all definitions in scope
@@ -394,7 +417,8 @@ and handleLambdaExpression scope formals defs exprs =
       scope = bodyScope;
       functionName = None;
       isTailRecursive = false;
-      usedAsFirstClassValue = false }
+      isUsedAsFirstClassValue = false;
+      isReassigned = false }
     |> AnalysisClosure
 and handleBeginExpression scope exprs =
     exprs
@@ -502,10 +526,14 @@ and labelClosure c name parentScopeExprs =
                         | None -> false
                         | Some n -> LambdaHelpers.isTailRecursive labeledBody n
     let usedAsFirstClassValue = LambdaHelpers.isUsedAsFirstClassValue name c parentScopeExprs
+    let reassigned = match name with
+                     | None -> false
+                     | Some n -> LambdaHelpers.isReassigned n parentScopeExprs
     { c with body = labeledBody;
              functionName = name;
              isTailRecursive = tailRecursive;
-             usedAsFirstClassValue = usedAsFirstClassValue }
+             isUsedAsFirstClassValue = usedAsFirstClassValue;
+             isReassigned = reassigned }
 
 // Fourth pass through AST:
 // Verifies that procedure calls are given the correct number
@@ -524,7 +552,7 @@ let checkProcedureCalls exprs =
         |> List.filter (function
                         | AnalysisIdentifierDefinition (_, expr) ->
                             match expr with
-                            | AnalysisClosure c -> c.functionName.IsSome && (not c.usedAsFirstClassValue)
+                            | AnalysisClosure c -> c.functionName.IsSome && (not c.isReassigned)
                             | _ -> false
                         | _ -> false)
         |> List.map (fun e -> match e with
@@ -627,7 +655,8 @@ and convertClosure c =
       scope = c.scope;
       isTailRecursive = c.isTailRecursive;
       functionName = c.functionName;
-      usedAsFirstClassValue = c.usedAsFirstClassValue }
+      isUsedAsFirstClassValue = c.isUsedAsFirstClassValue;
+      isReassigned = c.isReassigned }
 and convertExpression =
     function
     | AnalysisVariableReference id -> VariableReference id
@@ -672,16 +701,21 @@ and toVariableDeclaration =
 // values of which are changed with set!.
 //
 // For each of these procedures, this phase introduces a new top level variable
-// to hold the closure object. All references to the procedure name are changed
-// to refer to this new variable.
+// to hold the closure object. All first class uses of the procedure name are changed
+// to refer to this new variable. If the value is changed with set!, procedure
+// calls are also changed to refer to this closure object.
 let rebindTopLevelFirstClassProcedureReferences (procs, vars, exprs) =
-    let isFirstClassProcedure (ProcedureDefinition (_, clos)) = clos.usedAsFirstClassValue
+    let isFirstClassProcedure (ProcedureDefinition (_, clos)) = clos.isUsedAsFirstClassValue
+    let isReassigned (ProcedureDefinition (_, clos)) = clos.isReassigned
     let procedureIdPair (ProcedureDefinition (id, _)) =
         let procedureObjectId = { name = id.name; uniqueName = SymbolGenerator.toProcedureObjectName id.uniqueName; argIndex = None }
         (id, procedureObjectId)
 
-    let firstClassProcedures = procs |> List.filter isFirstClassProcedure
-    let oldAndNewIds = firstClassProcedures |> List.map procedureIdPair
+    let proceduresRequiringAClosure = procs |> List.filter (fun e -> isFirstClassProcedure e || isReassigned e)
+    let reassignedProcedureIds = procs
+                                 |> List.filter isReassigned
+                                 |> List.map (fun (ProcedureDefinition (id, _)) -> id)
+    let oldAndNewIds = proceduresRequiringAClosure |> List.map procedureIdPair
     let newVariableDeclarations = oldAndNewIds
                                   |> List.map (fun (_, newId) -> newId)
                                   |> List.map VariableDeclaration
@@ -690,7 +724,16 @@ let rebindTopLevelFirstClassProcedureReferences (procs, vars, exprs) =
                       | None -> id
     let rec rebind =
         function
-        | ProcedureCall (proc, args, isTailCall) -> ProcedureCall (rebind proc, List.map rebind args, isTailCall)
+        | ProcedureCall (proc, args, isTailCall) ->
+            let newProc =
+                match proc with
+                | VariableReference id as e
+                    -> if List.contains id reassignedProcedureIds then
+                           rebind proc
+                       else
+                           proc
+                | e -> rebind e
+            ProcedureCall (newProc, List.map rebind args, isTailCall)
         | Conditional (cond, thenBranch, elseBranch) -> Conditional (rebind cond, rebind thenBranch, rebind elseBranch)
         | SequenceExpression (seqType, exprs) -> SequenceExpression (seqType, List.map rebind exprs)
         | Assignment (id, expr) -> Assignment (newIdFor id, rebind expr)

@@ -24,6 +24,18 @@
 (display (plus 1 2 3 4 5 6 7))
 (newline)
 
+(display (apply2 plus 1000 8000))
+(newline)
+
+(define say-hello
+  (lambda (x)
+    (display "Hello, ")
+	(display x)
+	(display "!\n")))
+
+(say-hello "World")
+(apply say-hello "Laura")
+
 (define get-plus
   (lambda ()
     plus))
@@ -37,6 +49,9 @@
 (define my-plus
   (lambda (x y)
     (+ x y)))
+
+(display (my-plus 5 9))
+(newline)
 
 (display (apply2 my-plus 1 2))
 (newline)

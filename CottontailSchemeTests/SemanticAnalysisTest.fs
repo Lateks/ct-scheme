@@ -219,8 +219,8 @@ type ``Lambda labeling`` () =
                     | _ -> fail ()
 
     [<Test>]
-    member x.``lambdas are correctly labeled for first class use`` () =
-        let isFirstClassValue = getFunction >> fun c -> c.usedAsFirstClassValue
+    member x.``lambdas are correctly labeled for first class use and identifier reassignment`` () =
+        let isFirstClassValue = getFunction >> fun c -> c.isUsedAsFirstClassValue
         let shouldBeFirstClass = isFirstClassValue >> should equal true
         let shouldNotBeFirstClass = isFirstClassValue >> should equal false
 
@@ -241,14 +241,18 @@ type ``Lambda labeling`` () =
                        (define get-square (lambda () square))"
         |> shouldBeFirstClass
 
-        // If the function value can be overwritten, it is treated as a first class value here.
         parseAndBuild "(define square (lambda (x) (display \"not implemented!\")))\
                        (set! square (lambda (x) (* x x)))"
-        |> shouldBeFirstClass
+        |> getFunction
+        |> fun c -> c.isReassigned |> should equal true
+                    c.isUsedAsFirstClassValue |> should equal false
 
         parseAndBuild "(define square (lambda (x) (display \"not implemented!\")))\
                        (define square (lambda (x) (* x x)))"
-        |> shouldBeFirstClass
+        |> getFunction
+        |> fun c -> c.isReassigned |> should equal true
+                    c.isUsedAsFirstClassValue |> should equal false
+
 
         parseAndBuild "(define f1 (lambda (x) (+ x 1)))\
                        (define f2 (lambda (x) (* x 2)))\
@@ -267,7 +271,7 @@ type ``Lambda labeling`` () =
         |> getFunction
         |> fun c -> List.last c.body
                     |> function
-                       | Closure c -> c.usedAsFirstClassValue |> should equal true
+                       | Closure c -> c.isUsedAsFirstClassValue |> should equal true
                        | e -> sprintf "Expected Closure but got %A" e
                               |> Assert.Fail
 
@@ -276,7 +280,7 @@ type ``Lambda labeling`` () =
         |> fun p -> p.expressions
         |> List.head
         |> function
-           | Closure c -> c.usedAsFirstClassValue |> should equal true
+           | Closure c -> c.isUsedAsFirstClassValue |> should equal true
            | e -> sprintf "Expected Closure but got %A" e
                   |> Assert.Fail
 
@@ -285,7 +289,7 @@ type ``Lambda labeling`` () =
         |> fun p -> p.expressions
         |> List.head
         |> function
-           | ProcedureCall ((Closure c), _, _) -> c.usedAsFirstClassValue |> should equal false
+           | ProcedureCall ((Closure c), _, _) -> c.isUsedAsFirstClassValue |> should equal false
            | e -> sprintf "Expected ProcedureCall calling the anonymous function but got %A" e
                   |> Assert.Fail
 
