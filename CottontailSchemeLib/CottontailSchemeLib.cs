@@ -572,6 +572,11 @@ namespace CottontailSchemeLib
             isVarargs = true;
         }
 
+        public CTProcedure()
+        {
+            isVarargs = true;
+        }
+
         private string GetName()
         {
             return name != null ? name : DisplayObject();
@@ -713,6 +718,12 @@ namespace CottontailSchemeLib
             fun0 = f;
         }
 
+        public CTDelegateProcedure0(Func<CTObject> f)
+            : base(0)
+        {
+            fun0 = f;
+        }
+
         public override CTObject funcall0()
         {
             return fun0();
@@ -725,6 +736,12 @@ namespace CottontailSchemeLib
 
         public CTDelegateProcedure1(string name, Func<CTObject, CTObject> f)
             : base(1, name)
+        {
+            fun1 = f;
+        }
+
+        public CTDelegateProcedure1(Func<CTObject, CTObject> f)
+            : base(1)
         {
             fun1 = f;
         }
@@ -745,6 +762,12 @@ namespace CottontailSchemeLib
             fun2 = f;
         }
 
+        public CTDelegateProcedure2(Func<CTObject, CTObject, CTObject> f)
+            : base(2)
+        {
+            fun2 = f;
+        }
+
         public override CTObject funcall2(CTObject a1, CTObject a2)
         {
             return fun2(a1, a2);
@@ -757,6 +780,12 @@ namespace CottontailSchemeLib
 
         public CTDelegateProcedure3(string name, Func<CTObject, CTObject, CTObject, CTObject> f)
             : base(3, name)
+        {
+            fun3 = f;
+        }
+
+        public CTDelegateProcedure3(Func<CTObject, CTObject, CTObject, CTObject> f)
+            : base(3)
         {
             fun3 = f;
         }
@@ -777,6 +806,12 @@ namespace CottontailSchemeLib
             fun4 = f;
         }
 
+        public CTDelegateProcedure4(Func<CTObject, CTObject, CTObject, CTObject, CTObject> f)
+            : base(4)
+        {
+            fun4 = f;
+        }
+
         public override CTObject funcall4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
         {
             return fun4(a1, a2, a3, a4);
@@ -789,6 +824,12 @@ namespace CottontailSchemeLib
 
         public CTDelegateProcedure5(string name, Func<CTObject, CTObject, CTObject, CTObject, CTObject, CTObject> f)
             : base(5, name)
+        {
+            fun5 = f;
+        }
+
+        public CTDelegateProcedure5(Func<CTObject, CTObject, CTObject, CTObject, CTObject, CTObject> f)
+            : base(5)
         {
             fun5 = f;
         }
@@ -821,6 +862,11 @@ namespace CottontailSchemeLib
 
         public CTDelegateProcedureVarargsList(string name, Func<CTObject, CTObject> f)
             : base(name)
+        {
+            fun = f;
+        }
+
+        public CTDelegateProcedureVarargsList(Func<CTObject, CTObject> f)
         {
             fun = f;
         }

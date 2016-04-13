@@ -21,7 +21,7 @@ and ClosureDefinition = { formals: ClosureFormals;
                           environment: Scope.Identifier list;
                           scope: Scope.Scope
                           isTailRecursive: bool;
-                          functionName: Scope.Identifier option;
+                          functionName: Scope.Identifier;
                           isUsedAsFirstClassValue: bool;
                           isReassigned : bool }
 and ProcedureDefinition = ProcedureDefinition of Scope.Identifier * ClosureDefinition

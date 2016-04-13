@@ -377,4 +377,4 @@ type ``Name bindings`` () =
         |> getFunction
         |> fun c -> List.head c.body
                     |> getId
-                    |> should equal c.functionName.Value
+                    |> should equal c.functionName

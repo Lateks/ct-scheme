@@ -65,9 +65,15 @@
 
 ; (display (apply2 my-plus 1 2))
 
-; TODO: set a new closure value for my-plus
-;(set! my-plus
-;  (lambda (x y)
-;    (plus x y)))
+(set! my-plus
+  (lambda (x y)
+    (display "my-plus procedure was set!\n")
+	(display "got the following parameters:\n")
+	(display x)
+	(newline)
+	(display y)
+	(newline)))
+
+(my-plus 5 6)
 
 (display (apply2 zero? 1 2))

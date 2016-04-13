@@ -51,7 +51,7 @@ and ClosureDefinition = { formals: ClosureFormals;
                           environment: Identifier list;
                           scope: Scope
                           isTailRecursive: bool;
-                          functionName: Identifier option;
+                          functionName: Identifier;
                           isUsedAsFirstClassValue: bool;
                           isReassigned : bool }
 and ProcedureDefinition = ProcedureDefinition of Scope.Identifier * ClosureDefinition
@@ -147,6 +147,8 @@ module IdentifierHelpers =
     let bindingForVariableReference scope id =
         getIdentifierName id |> bindingForName scope
 
+    let generateAnonymousProcedureName () =
+        symbolGen.generateSymbol "lambda"
 
 module LambdaHelpers =
     let buildLambdaScope parentScope formals =
@@ -506,7 +508,7 @@ let rec labelLambdas exprs =
         function
         | AnalysisClosure c -> AnalysisClosure <| labelClosure c name exprs
         | AnalysisAssignment (id, expr)
-            -> AnalysisAssignment (id, label (Some id) expr)
+            -> AnalysisAssignment (id, label None expr)
         | AnalysisIdentifierDefinition (id, expr)
             -> AnalysisIdentifierDefinition (id, label (Some id) expr)
         | AnalysisConditional (e1, e2, e3)
@@ -649,6 +651,10 @@ let rec convertModuleOrProcedureBody exprs =
     (functionDefinitions, variableDeclarations, otherExpressions)
 and convertClosure c =
     let procs, vars, exprs = convertModuleOrProcedureBody c.body
+    let name = match c.functionName with
+               | Some n -> n
+               | None -> let generatedName = IdentifierHelpers.generateAnonymousProcedureName ()
+                         { name = generatedName; uniqueName = generatedName; argIndex = None }
     { formals = c.formals;
       procedureDefinitions = procs;
       variableDeclarations = vars;
@@ -656,7 +662,7 @@ and convertClosure c =
       environment = c.environment;
       scope = c.scope;
       isTailRecursive = c.isTailRecursive;
-      functionName = c.functionName;
+      functionName = name;
       isUsedAsFirstClassValue = c.isUsedAsFirstClassValue;
       isReassigned = c.isReassigned }
 and convertExpression =

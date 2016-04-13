@@ -62,6 +62,13 @@ let replaceSymbols (name: string) =
 type SymbolGenerator () =
     let counters = new System.Collections.Generic.Dictionary<string, int>()
 
+    let getNumberFor name =
+        if not (counters.ContainsKey name) then
+            counters.Add (name, 1)
+        let counter = counters.[name]
+        counters.[name] <- counter + 1
+        counter
+
     member this.generateSymbol name =
         let convertedName = name
                             |> convertPredicateName
@@ -69,9 +76,5 @@ type SymbolGenerator () =
                             |> replaceSymbols
                             |> kebabCaseToCamelCase
 
-        if not (counters.ContainsKey convertedName) then
-            counters.Add (convertedName, 1)
-        let counter = counters.[convertedName]
-        counters.[convertedName] <- counter + 1
-
+        let counter = getNumberFor convertedName
         sprintf "%s$%d" convertedName counter

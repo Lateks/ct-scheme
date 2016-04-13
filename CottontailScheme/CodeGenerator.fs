@@ -116,8 +116,61 @@ let emitBuiltInFunctionCall (gen : Emit.ILGenerator) (id : Identifier) =
     let methodInfo = typeof<BuiltIns>.GetMethod(builtInName)
     gen.Emit(Emit.OpCodes.Call, methodInfo)
 
-let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
-    let pushExprResultToStack = generateSubExpression gen scope true
+let capturedLocals (clos : ClosureDefinition) (scope : Scope) =
+    let isGlobalVariable id = List.contains id !builtIns ||
+                              scope.procedures.ContainsKey id.uniqueName ||
+                              scope.variables.ContainsKey id.uniqueName &&
+                              match scope.variables.Item(id.uniqueName) with
+                              | Field _ -> true
+                              | LocalVar _ -> false
+    clos.environment
+    |> List.filter (isGlobalVariable >> not)
+
+let defineProcedure (mainClass : Emit.TypeBuilder) (c : ClosureDefinition) =
+    let parameterTypes = match c.formals with
+                         | SingleArgFormals id -> [| typeof<CTObject> |]
+                         | MultiArgFormals ids -> ids |> List.map (fun _ -> typeof<CTObject> )
+                                                      |> Array.ofList   
+    mainClass.DefineMethod(c.functionName.uniqueName,
+                           MethodAttributes.Static ||| MethodAttributes.Private,
+                           typeof<CTObject>,
+                           parameterTypes)
+
+let createProcedureObjectOnStack (gen : Emit.ILGenerator) (c : ClosureDefinition) (methodBuilder : Emit.MethodBuilder) (isAnonymous : bool) =
+    let procType = match c.formals with
+                   | SingleArgFormals id -> typeof<Func<CTObject, CTObject>>
+                   | MultiArgFormals ids -> match List.length ids with
+                                            | 0 -> typeof<Func<CTObject>>
+                                            | 1 -> typeof<Func<CTObject, CTObject>>
+                                            | 2 -> typeof<Func<CTObject, CTObject, CTObject>>
+                                            | 3 -> typeof<Func<CTObject, CTObject, CTObject, CTObject>>
+                                            | 4 -> typeof<Func<CTObject, CTObject, CTObject, CTObject, CTObject>>
+                                            | _ -> typeof<Func<CTObject, CTObject, CTObject, CTObject, CTObject, CTObject>>
+    let ctObjectType = match c.formals with
+                       | SingleArgFormals id -> typeof<CTDelegateProcedureVarargsList>
+                       | MultiArgFormals ids -> match List.length ids with
+                                                | 0 -> typeof<CTDelegateProcedure0>
+                                                | 1 -> typeof<CTDelegateProcedure1>
+                                                | 2 -> typeof<CTDelegateProcedure2>
+                                                | 3 -> typeof<CTDelegateProcedure3>
+                                                | 4 -> typeof<CTDelegateProcedure4>
+                                                | _ -> typeof<CTDelegateProcedure5>
+    let buildDelegate () =
+        gen.Emit(Emit.OpCodes.Ldnull)
+        gen.Emit(Emit.OpCodes.Ldftn, methodBuilder)
+        gen.Emit(Emit.OpCodes.Newobj, procType.GetConstructor([| typeof<Object>; typeof<nativeint> |]))
+
+    if isAnonymous then
+        buildDelegate ()
+        gen.Emit(Emit.OpCodes.Newobj, ctObjectType.GetConstructor([| procType |]))
+    else
+        gen.Emit(Emit.OpCodes.Ldstr, c.functionName.name)
+        buildDelegate ()
+        gen.Emit(Emit.OpCodes.Newobj, ctObjectType.GetConstructor([| typeof<string>; procType |]))
+
+let rec generateSubExpression (mainClass : Emit.TypeBuilder) (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
+    let recur = generateSubExpression mainClass gen scope
+    let pushExprResultToStack = recur true
 
     let emitConditional condition thenExpression elseExpression =
         let elseLabel = gen.DefineLabel()
@@ -141,8 +194,8 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
         | exprs -> let tailExpr = List.last exprs
                    let nonTailExprs = List.take (exprs.Length - 1) exprs
                    for expr in nonTailExprs do
-                       generateSubExpression gen scope false expr
-                   generateSubExpression gen scope pushOnStack tailExpr
+                       recur false expr
+                   recur pushOnStack tailExpr
 
     let emitBooleanCombinationExpression breakValue =
         function
@@ -214,7 +267,7 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
                 assert List.contains id !builtIns
                 loadBuiltInProcedure gen id
 
-    let pushArgsAsArray args = emitArray gen args (fun g -> generateSubExpression g scope true)
+    let pushArgsAsArray args = emitArray gen args (fun g -> generateSubExpression mainClass g scope true)
     let pushIndividualArgs args = for arg in args do pushExprResultToStack arg
     let emitCallToFirstClassProcedureOnStack (name : string option) args isTailCall =
         let procObject = gen.DeclareLocal(typeof<CTObject>)
@@ -301,12 +354,17 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
            if not pushOnStack then popStack gen
     | UndefinedValue
         -> if pushOnStack then loadUndefined gen
-    | Closure c as e -> failwithf "Not implemented yet! %A" e
+    | Closure c
+        -> let captures = capturedLocals c scope
+           if List.length captures > 0 then
+               failwithf "Not implemented yet: environment capture"
+           else
+               let methodBuilder = defineProcedure mainClass c
+               let closureBodyGen = methodBuilder.GetILGenerator()
+               generateProcedureBody mainClass closureBodyGen c scope
+               createProcedureObjectOnStack gen c methodBuilder true
 
-let generateExpression (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
-    generateSubExpression gen scope false expr
-
-let generateProcedureBody (gen : Emit.ILGenerator) (c : ClosureDefinition) scope =
+and generateProcedureBody (mainClass : Emit.TypeBuilder) (gen : Emit.ILGenerator) (c : ClosureDefinition) scope =
     let locals = c.variableDeclarations
                  |> List.map (fun (VariableDeclaration id) ->
                                   (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
@@ -318,10 +376,13 @@ let generateProcedureBody (gen : Emit.ILGenerator) (c : ClosureDefinition) scope
     let tailExpr = List.last c.body
 
     for expr in body do
-        generateExpression gen expr extendedScope
+        generateSubExpression mainClass gen extendedScope false expr
 
-    generateSubExpression gen extendedScope true tailExpr
+    generateSubExpression mainClass gen extendedScope true tailExpr
     gen.Emit(Emit.OpCodes.Ret)
+
+let generateExpression (mainClass : Emit.TypeBuilder) (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
+    generateSubExpression mainClass gen scope false expr
 
 let defineVariables (c : Emit.TypeBuilder)=
     List.map (fun (VariableDeclaration id) ->
@@ -330,53 +391,24 @@ let defineVariables (c : Emit.TypeBuilder)=
                                                          FieldAttributes.Static ||| FieldAttributes.Private)))
     >> Map.ofList
 
-let defineProcedures (c : Emit.TypeBuilder) =
+let defineProcedures (mainClass : Emit.TypeBuilder) =
     List.map (fun (ProcedureDefinition (id, clos)) ->
-                  let parameterTypes = match clos.formals with
-                                       | SingleArgFormals id -> [| typeof<CTObject> |]
-                                       | MultiArgFormals ids -> ids |> List.map (fun _ -> typeof<CTObject> )
-                                                                    |> Array.ofList
-                  let procedure = c.DefineMethod(id.uniqueName,
-                                                 MethodAttributes.Static ||| MethodAttributes.Private,
-                                                 typeof<CTObject>,
-                                                 parameterTypes)
+                  let procedure = defineProcedure mainClass clos
                   (id.uniqueName, { methodBuilder = procedure; closure = clos }))
     >> Map.ofList
 
-let generateTopLevelProcedureBodies (scope : Scope) =
+let generateTopLevelProcedureBodies (mainClass : Emit.TypeBuilder) (scope : Scope) =
     for (_, proc) in Map.toSeq scope.procedures do
-        generateProcedureBody (proc.methodBuilder.GetILGenerator()) proc.closure scope
+        generateProcedureBody mainClass (proc.methodBuilder.GetILGenerator()) proc.closure scope
 
 let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDefinition list) (scope : Scope) =
     let classInitializer = mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public, CallingConventions.Standard, [||])
     let gen = classInitializer.GetILGenerator()
     for (ProcedureDefinition (id, c)) in procs do
         if c.isUsedAsFirstClassValue || c.isReassigned then
-            let procedure = scope.procedures.Item(id.uniqueName)
-            let procType = match c.formals with
-                           | SingleArgFormals id -> typeof<Func<CTObject, CTObject>>
-                           | MultiArgFormals ids -> match List.length ids with
-                                                    | 0 -> typeof<Func<CTObject>>
-                                                    | 1 -> typeof<Func<CTObject, CTObject>>
-                                                    | 2 -> typeof<Func<CTObject, CTObject, CTObject>>
-                                                    | 3 -> typeof<Func<CTObject, CTObject, CTObject, CTObject>>
-                                                    | 4 -> typeof<Func<CTObject, CTObject, CTObject, CTObject, CTObject>>
-                                                    | _ -> typeof<Func<CTObject, CTObject, CTObject, CTObject, CTObject, CTObject>>
-            let ctObjectType = match c.formals with
-                               | SingleArgFormals id -> typeof<CTDelegateProcedureVarargsList>
-                               | MultiArgFormals ids -> match List.length ids with
-                                                       | 0 -> typeof<CTDelegateProcedure0>
-                                                       | 1 -> typeof<CTDelegateProcedure1>
-                                                       | 2 -> typeof<CTDelegateProcedure2>
-                                                       | 3 -> typeof<CTDelegateProcedure3>
-                                                       | 4 -> typeof<CTDelegateProcedure4>
-                                                       | _ -> typeof<CTDelegateProcedure5>
             let (Field var) = scope.variables.Item(SymbolGenerator.toProcedureObjectName id.uniqueName)
-            gen.Emit(Emit.OpCodes.Ldstr, id.name)
-            gen.Emit(Emit.OpCodes.Ldnull)
-            gen.Emit(Emit.OpCodes.Ldftn, procedure.methodBuilder)
-            gen.Emit(Emit.OpCodes.Newobj, procType.GetConstructor([| typeof<Object>; typeof<nativeint> |]))
-            gen.Emit(Emit.OpCodes.Newobj, ctObjectType.GetConstructor([| typeof<string>; procType |]))
+            let procedure = scope.procedures.Item(id.uniqueName)
+            createProcedureObjectOnStack gen c procedure.methodBuilder false
             gen.Emit(Emit.OpCodes.Stsfld, var)
     gen.Emit(Emit.OpCodes.Ret)
 
@@ -388,13 +420,13 @@ let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
     let scope = { variables = variables;
                   procedures = procedures }
 
-    generateTopLevelProcedureBodies scope
+    generateTopLevelProcedureBodies mainClass scope
     generateClassInitializer mainClass program.procedureDefinitions scope
 
     ilGen.BeginExceptionBlock() |> ignore
 
     for expr in program.expressions do
-        generateExpression ilGen expr scope
+        generateExpression mainClass ilGen expr scope
 
     ilGen.BeginCatchBlock(typeof<CottontailSchemeException>)
 
