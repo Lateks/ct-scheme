@@ -74,18 +74,18 @@ namespace CottontailSchemeLib
         public static readonly CTObject ObjDisplay = new CTDelegateProcedure1(DisplayFunctionName, Display);
         public static readonly CTObject ObjNot = new CTDelegateProcedure1(NotFunctionName, Not);
         public static readonly CTObject ObjAreEq = new CTDelegateProcedure2(AreEqFunctionName, AreEq);
-        public static readonly CTObject ObjList = new CTDelegateProcedureVarargs(ListFunctionName, List);
+        public static readonly CTObject ObjList = new CTDelegateProcedureVarargsArray(ListFunctionName, List);
         public static readonly CTObject ObjCons = new CTDelegateProcedure2(ConsFunctionName, Cons);
         public static readonly CTObject ObjIsNull = new CTDelegateProcedure1(IsNullFunctionName, IsNull);
         public static readonly CTObject ObjCdr = new CTDelegateProcedure1(CdrFunctionName, Cdr);
         public static readonly CTObject ObjCar = new CTDelegateProcedure1(CarFunctionName, Car);
-        public static readonly CTObject ObjPlus = new CTDelegateProcedureVarargs(PlusFunctionName, Plus);
-        public static readonly CTObject ObjMinus = new CTDelegateProcedureVarargs(MinusFunctionName, Minus);
-        public static readonly CTObject ObjDiv = new CTDelegateProcedureVarargs(DivFunctionName, Div);
-        public static readonly CTObject ObjMult = new CTDelegateProcedureVarargs(MultFunctionName, Mult);
+        public static readonly CTObject ObjPlus = new CTDelegateProcedureVarargsArray(PlusFunctionName, Plus);
+        public static readonly CTObject ObjMinus = new CTDelegateProcedureVarargsArray(MinusFunctionName, Minus);
+        public static readonly CTObject ObjDiv = new CTDelegateProcedureVarargsArray(DivFunctionName, Div);
+        public static readonly CTObject ObjMult = new CTDelegateProcedureVarargsArray(MultFunctionName, Mult);
         public static readonly CTObject ObjIsZero = new CTDelegateProcedure1(IsZeroFunctionName, IsZero);
-        public static readonly CTObject ObjLessThan = new CTDelegateProcedureVarargs(LessThanFunctionName, LessThan);
-        public static readonly CTObject ObjGreaterThan = new CTDelegateProcedureVarargs(GreaterThanFunctionName, GreaterThan);
+        public static readonly CTObject ObjLessThan = new CTDelegateProcedureVarargsArray(LessThanFunctionName, LessThan);
+        public static readonly CTObject ObjGreaterThan = new CTDelegateProcedureVarargsArray(GreaterThanFunctionName, GreaterThan);
 
         public static CTObject AreEq(CTObject a, CTObject b)
         {
@@ -799,11 +799,11 @@ namespace CottontailSchemeLib
         }
     }
 
-    public class CTDelegateProcedureVarargs : CTProcedure
+    public class CTDelegateProcedureVarargsArray : CTProcedure
     {
         private Func<CTObject[], CTObject> funVarargs;
 
-        public CTDelegateProcedureVarargs(string name, Func<CTObject[], CTObject> f)
+        public CTDelegateProcedureVarargsArray(string name, Func<CTObject[], CTObject> f)
             : base(name)
         {
             funVarargs = f;
@@ -811,14 +811,23 @@ namespace CottontailSchemeLib
 
         public override CTObject funcallVarargs(CTObject[] args)
         {
-            if (funVarargs != null)
-            {
-                return funVarargs(args);
-            }
-            else
-            {
-                return base.funcallVarargs(args);
-            }
+            return funVarargs(args);
+        }
+    }
+
+    public class CTDelegateProcedureVarargsList : CTProcedure
+    {
+        private Func<CTObject, CTObject> fun;
+
+        public CTDelegateProcedureVarargsList(string name, Func<CTObject, CTObject> f)
+            : base(name)
+        {
+            fun = f;
+        }
+
+        public override CTObject funcallVarargs(CTObject[] args)
+        {
+            return fun(BuiltIns.List(args));
         }
     }
 }

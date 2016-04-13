@@ -48,7 +48,7 @@
 (display my-plus)
 (newline)
 
-(display (apply2 my-plus 1 2))
+; (display (apply2 my-plus 1 2))
 
 ; TODO: set a new closure value for my-plus
 ;(set! my-plus

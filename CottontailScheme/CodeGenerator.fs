@@ -71,6 +71,9 @@ let emitArray (gen : Emit.ILGenerator) members emitMember =
         emitMember gen m
         gen.Emit(Emit.OpCodes.Stelem_Ref)
 
+let convertArrayOnStackToList (gen : Emit.ILGenerator) =
+    gen.Emit(Emit.OpCodes.Call, typeof<BuiltIns>.GetMethod("List", [| typeof<CTObject array> |]))
+
 let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     match lit with
     | String s -> loadStringObject gen s
@@ -78,7 +81,7 @@ let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     | Number f -> loadNumberObject gen f
     | Symbol s -> loadSymbolObject gen s
     | List lits -> emitArray gen lits emitLiteral
-                   gen.Emit(Emit.OpCodes.Call, typeof<BuiltIns>.GetMethod("List", [| typeof<CTObject array> |]))
+                   convertArrayOnStackToList gen
 
 let emitBooleanConversion (gen : Emit.ILGenerator) =
     gen.Emit(Emit.OpCodes.Callvirt, typeof<CTObject>.GetMethod("ToBool", [||]))
@@ -264,6 +267,7 @@ let rec generateSubExpression (gen : Emit.ILGenerator) (scope: Scope) (pushOnSta
             let procedure = scope.procedures.Item(id.uniqueName)
             match procedure.closure.formals with
             | SingleArgFormals _ -> pushArgsAsArray args
+                                    convertArrayOnStackToList gen
             | MultiArgFormals _ -> pushIndividualArgs args
 
             if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
@@ -329,7 +333,7 @@ let defineVariables (c : Emit.TypeBuilder)=
 let defineProcedures (c : Emit.TypeBuilder) =
     List.map (fun (ProcedureDefinition (id, clos)) ->
                   let parameterTypes = match clos.formals with
-                                       | SingleArgFormals id -> [| typeof<CTObject array> |]
+                                       | SingleArgFormals id -> [| typeof<CTObject> |]
                                        | MultiArgFormals ids -> ids |> List.map (fun _ -> typeof<CTObject> )
                                                                     |> Array.ofList
                   let procedure = c.DefineMethod(id.uniqueName,
@@ -350,7 +354,7 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
         if c.usedAsFirstClassValue then
             let procedure = scope.procedures.Item(id.uniqueName)
             let procType = match c.formals with
-                           | SingleArgFormals id -> typeof<Func<CTObject[], CTObject>>
+                           | SingleArgFormals id -> typeof<Func<CTObject, CTObject>>
                            | MultiArgFormals ids -> match List.length ids with
                                                     | 0 -> typeof<Func<CTObject>>
                                                     | 1 -> typeof<Func<CTObject, CTObject>>
@@ -359,7 +363,7 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
                                                     | 4 -> typeof<Func<CTObject, CTObject, CTObject, CTObject, CTObject>>
                                                     | _ -> typeof<Func<CTObject, CTObject, CTObject, CTObject, CTObject, CTObject>>
             let ctObjectType = match c.formals with
-                               | SingleArgFormals id -> typeof<CTDelegateProcedureVarargs>
+                               | SingleArgFormals id -> typeof<CTDelegateProcedureVarargsList>
                                | MultiArgFormals ids -> match List.length ids with
                                                        | 0 -> typeof<CTDelegateProcedure0>
                                                        | 1 -> typeof<CTDelegateProcedure1>
