@@ -282,32 +282,7 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Em
 
     let pushArgsAsArray args = emitArray gen args (generateSubExpression mainClass methodBuilder scope true)
     let pushIndividualArgs args = for arg in args do pushExprResultToStack arg
-    let emitCallToFirstClassProcedureOnStack (name : string option) args isTailCall =
-        let procObject = gen.DeclareLocal(typeof<CTObject>)
-        let proc = gen.DeclareLocal(typeof<CTProcedure>)
-
-        gen.Emit(Emit.OpCodes.Stloc, procObject)
-
-        gen.BeginExceptionBlock() |> ignore
-
-        gen.Emit(Emit.OpCodes.Ldloc, procObject)
-        gen.Emit(Emit.OpCodes.Castclass, typeof<CTProcedure>)
-        gen.Emit(Emit.OpCodes.Stloc, proc)
-
-        gen.BeginCatchBlock(typeof<System.InvalidCastException>)
-
-        match name with
-        | Some n -> gen.Emit(Emit.OpCodes.Ldstr, n)
-                    gen.Emit(Emit.OpCodes.Ldloc, procObject)
-                    gen.Emit(Emit.OpCodes.Newobj, typeof<NotAProcedureError>.GetConstructor([| typeof<string>; typeof<CTObject> |]))
-        | None ->   gen.Emit(Emit.OpCodes.Ldloc, procObject)
-                    gen.Emit(Emit.OpCodes.Newobj, typeof<NotAProcedureError>.GetConstructor([| typeof<CTObject> |]))
-
-        gen.Emit(Emit.OpCodes.Throw)
-
-        gen.EndExceptionBlock()
-
-        gen.Emit(Emit.OpCodes.Ldloc, proc)
+    let emitCallToFirstClassProcedureOnStack args isTailCall =
         let methodInfo = match List.length args with
                          | 0 | 1 | 2 | 3 | 4 | 5 as n
                              -> pushIndividualArgs args
@@ -340,14 +315,14 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Em
             gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
         else
             emitVariableLoad id
-            emitCallToFirstClassProcedureOnStack (Some id.name) args isTailCall
+            emitCallToFirstClassProcedureOnStack args isTailCall
 
     match expr with
     | ProcedureCall (proc, args, isTailCall)
         -> match proc with
            | VariableReference id -> emitNamedProcedureCall id args isTailCall
            | e -> pushExprResultToStack e
-                  emitCallToFirstClassProcedureOnStack None args isTailCall
+                  emitCallToFirstClassProcedureOnStack args isTailCall
            if not pushOnStack then popStack gen
     | ValueExpression lit
         -> emitLiteral gen lit

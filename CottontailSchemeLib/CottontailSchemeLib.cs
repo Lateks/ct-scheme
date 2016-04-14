@@ -26,12 +26,8 @@ namespace CottontailSchemeLib
 
     public class NotAProcedureError : CottontailSchemeException
     {
-        public NotAProcedureError(string functionName, CTObject obj)
-            : base(string.Format("{0} is not a procedure\ngiven: {1} (value = {2})", functionName, obj.DisplayType(), obj))
-        { }
-
         public NotAProcedureError(CTObject obj)
-            : base(string.Format("object of type {0} is not a procedure\ngiven: {1})", obj.DisplayType(), obj))
+            : base(string.Format("object of type {0} is not a procedure\ngiven: {1}", obj.DisplayType(), obj))
         { }
     }
 
@@ -288,6 +284,41 @@ namespace CottontailSchemeLib
         }
 
         protected abstract bool IsEqualTo(CTObject obj);
+
+        public virtual CTObject apply0()
+        {
+            throw new NotAProcedureError(this);
+        }
+
+        public virtual CTObject apply1(CTObject a1)
+        {
+            throw new NotAProcedureError(this);
+        }
+
+        public virtual CTObject apply2(CTObject a1, CTObject a2)
+        {
+            throw new NotAProcedureError(this);
+        }
+
+        public virtual CTObject apply3(CTObject a1, CTObject a2, CTObject a3)
+        {
+            throw new NotAProcedureError(this);
+        }
+
+        public virtual CTObject apply4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
+        {
+            throw new NotAProcedureError(this);
+        }
+
+        public virtual CTObject apply5(CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5)
+        {
+            throw new NotAProcedureError(this);
+        }
+
+        public virtual CTObject applyN(CTObject[] args)
+        {
+            throw new NotAProcedureError(this);
+        }
     }
 
     public class CTUndefined : CTObject
@@ -632,12 +663,12 @@ namespace CottontailSchemeLib
             throw new InvalidNumberOfArgsError(GetName(), arity, args.Length);
         }
 
-        public virtual CTObject apply0()
+        public override CTObject apply0()
         {
             return funcall0();
         }
 
-        public virtual CTObject apply1(CTObject a1)
+        public override CTObject apply1(CTObject a1)
         {
             if (isVarargs)
             {
@@ -650,7 +681,7 @@ namespace CottontailSchemeLib
             }
         }
 
-        public virtual CTObject apply2(CTObject a1, CTObject a2)
+        public override CTObject apply2(CTObject a1, CTObject a2)
         {
             if (isVarargs)
             {
@@ -663,7 +694,7 @@ namespace CottontailSchemeLib
             }
         }
 
-        public virtual CTObject apply3(CTObject a1, CTObject a2, CTObject a3)
+        public override CTObject apply3(CTObject a1, CTObject a2, CTObject a3)
         {
             if (isVarargs)
             {
@@ -676,7 +707,7 @@ namespace CottontailSchemeLib
             }
         }
 
-        public virtual CTObject apply4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
+        public override CTObject apply4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
         {
             if (isVarargs)
             {
@@ -689,7 +720,7 @@ namespace CottontailSchemeLib
             }
         }
 
-        public virtual CTObject apply5(CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5)
+        public override CTObject apply5(CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5)
         {
             if (isVarargs)
             {
@@ -702,7 +733,7 @@ namespace CottontailSchemeLib
             }
         }
 
-        public virtual CTObject applyN(CTObject[] args)
+        public override CTObject applyN(CTObject[] args)
         {
             return funcallVarargs(args);
         }
