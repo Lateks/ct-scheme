@@ -311,19 +311,22 @@ type ``Lambda labeling`` () =
         |> fun p -> p.procedureDefinitions
         |> List.head
         |> fun (ProcedureDefinition (id, c))
-              -> c.environment.Length |> should equal 1
-                 c.environment |> List.head |> shouldBeNamed "+"
+              -> c.environment |> should equal List.empty
+                 c.globalVariableReferences.Length |> should equal 1
+                 c.globalVariableReferences |> List.head |> shouldBeNamed "+"
                  match List.head c.body with
                  | Closure c2 ->
-                     c2.environment.Length |> should equal 2
-                     c2.environment |> List.head |> shouldBeNamed "+"
-                     c2.environment |> List.last |> shouldBeNamed "x"
+                     c2.environment.Length |> should equal 1
+                     c2.environment |> List.head |> shouldBeNamed "x"
+                     c2.globalVariableReferences.Length |> should equal 1
+                     c2.globalVariableReferences |> List.head |> shouldBeNamed "+"
                      match List.head c2.body with
                      | Closure c3 ->
-                        c3.environment.Length |> should equal 3
-                        c3.environment |> List.head |> shouldBeNamed "+"
-                        c3.environment |> List.tail |> List.head |> shouldBeNamed "x"
+                        c3.environment.Length |> should equal 2
+                        c3.environment |> List.head |> shouldBeNamed "x"
                         c3.environment |> List.last |> shouldBeNamed "y"
+                        c3.globalVariableReferences.Length |> should equal 1
+                        c3.globalVariableReferences |> List.head |> shouldBeNamed "+"
                      | _ -> Assert.Fail "Lambda body was not as expected"
                  | _ -> Assert.Fail "Lambda body was not as expected"
 
@@ -335,9 +338,10 @@ type ``Lambda labeling`` () =
         |> fun p -> p.procedureDefinitions
         |> List.head
         |> fun (ProcedureDefinition (id, c))
-               -> c.environment.Length |> should equal 2
-                  c.environment |> List.head |> shouldBeNamed "+"
-                  c.environment |> List.last |> shouldBeNamed "y"
+               -> c.environment |> should equal List.empty
+                  c.globalVariableReferences.Length |> should equal 2
+                  c.globalVariableReferences |> List.head |> shouldBeNamed "+"
+                  c.globalVariableReferences |> List.last |> shouldBeNamed "y"
 
 [<TestFixture>]
 type ``Name bindings`` () =

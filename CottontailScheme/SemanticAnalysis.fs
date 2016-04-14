@@ -49,6 +49,7 @@ and ClosureDefinition = { formals: ClosureFormals;
                           variableDeclarations : VariableDeclaration list;
                           body: Expression list;
                           environment: Identifier list;
+                          globalVariableReferences : Identifier list;
                           scope: Scope
                           isTailRecursive: bool;
                           functionName: Identifier;
@@ -81,6 +82,7 @@ type AnalysisExpression =
 and AnalysisClosureDefinition = { formals: ClosureFormals;
                                   body: AnalysisExpression list;
                                   environment: Identifier list;
+                                  globalVariableReferences : Identifier list;
                                   scope: Scope
                                   isTailRecursive: bool;
                                   functionName: Identifier option;
@@ -179,6 +181,9 @@ module LambdaHelpers =
             | None, None -> [id]
             | _, _ -> []
 
+        let isGlobalName id = let definingScope = Scope.findDefiningScope bodyScope id
+                              definingScope = programScope || definingScope = programScope.parent.Value
+
         let rec collectFreeVariables expr =
             match expr with
             | AnalysisVariableReference id -> collect id
@@ -196,13 +201,19 @@ module LambdaHelpers =
             | AnalysisTailExpression e ->
                 collectFreeVariables e
             | AnalysisClosure c ->
-                c.environment |> List.map collect |> List.concat
+                c.environment
+                |> List.append c.globalVariableReferences
+                |> List.map collect
+                |> List.concat
             | _ -> []
         and collectFromExprList =
             List.map collectFreeVariables >> List.concat
 
-        collectFromExprList body
-        |> List.distinct
+        let captures = collectFromExprList body
+                       |> List.distinct
+        let globals = captures |> List.filter isGlobalName
+        let capturedLocals = captures |> List.filter (isGlobalName >> not)
+        (capturedLocals, globals)
 
     let rec toTailExpression expr =
         let isValidArg =
@@ -414,10 +425,11 @@ and handleLambdaExpression scope formals defs exprs =
                     |> fun e -> [e]
                     |> List.append (List.take (body.Length - 1) body
                                     |> List.map (handleExpression bodyScope))
-    let freeVars = LambdaHelpers.collectFreeVariables bodyScope bodyExprs
+    let freeVars, globals = LambdaHelpers.collectFreeVariables bodyScope bodyExprs
     { formals = newFormals;
       body = bodyExprs;
       environment = freeVars;
+      globalVariableReferences = globals;
       scope = bodyScope;
       functionName = None;
       isTailRecursive = false;
@@ -662,6 +674,7 @@ and convertClosure c =
       variableDeclarations = vars;
       body = exprs
       environment = c.environment;
+      globalVariableReferences = c.globalVariableReferences;
       scope = c.scope;
       isTailRecursive = c.isTailRecursive;
       functionName = name;

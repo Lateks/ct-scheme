@@ -19,6 +19,7 @@ and ClosureDefinition = { formals: ClosureFormals;
                           variableDeclarations : VariableDeclaration list;
                           body: Expression list;
                           environment: Scope.Identifier list;
+                          globalVariableReferences : Scope.Identifier list;
                           scope: Scope.Scope
                           isTailRecursive: bool;
                           functionName: Scope.Identifier;

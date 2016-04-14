@@ -31,3 +31,10 @@ and findDefinitionRec scope name =
     | Some _, _ -> definition
     | None, None -> None
     | None, Some parent -> findDefinitionRec parent name
+
+let rec findDefiningScope scope id =
+    let definition = scope.definitions |> List.tryFind (fun id2 -> id = id2)
+    match definition, scope.parent with
+    | Some _, _ -> scope
+    | None, None -> failwithf "No definition found for id %A" id
+    | None, Some parent -> findDefiningScope parent id
