@@ -173,6 +173,25 @@ let createProcedureObjectOnStack (gen : Emit.ILGenerator) (c : ClosureDefinition
         gen.Emit(Emit.OpCodes.Ldstr, c.functionName.name)
         gen.Emit(Emit.OpCodes.Newobj, ctObjectType.GetConstructor([| procType; typeof<string> |]))
 
+let findClosuresInScope exprs =
+    let rec findClosures =
+        function
+        | ProcedureCall (proc, args, isTailCall)
+            -> let procClosures = findClosures proc
+               let closureArgs = args |> List.map findClosures |> List.concat
+               List.append procClosures closureArgs
+        | Conditional (cond, thenBranch, elseBranch)
+            -> findClosures cond
+               |> List.append (findClosures thenBranch)
+               |> List.append (findClosures elseBranch)
+        | SequenceExpression (seqType, exprs)
+            -> exprs |> List.map findClosures |> List.concat
+        | Assignment (id, expr) -> findClosures expr
+        | Closure c -> [c]
+        | ValueExpression _ | VariableReference _ | UndefinedValue -> []
+
+    exprs |> List.map findClosures |> List.concat
+
 let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Emit.MethodBuilder) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
     let recur = generateSubExpression mainClass methodBuilder scope
     let pushExprResultToStack = recur true
@@ -393,6 +412,10 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Em
 
 and generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let gen = mb.GetILGenerator()
+    let closures = findClosuresInScope c.body
+                |> List.append (List.map (fun (ProcedureDefinition (_, def)) -> def) c.procedureDefinitions)
+    printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
+
     let locals = c.variableDeclarations
                  |> List.map (fun (VariableDeclaration id) ->
                                   (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
