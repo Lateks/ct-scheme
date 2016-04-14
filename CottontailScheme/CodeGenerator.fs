@@ -124,7 +124,7 @@ let capturedLocals (clos : ClosureDefinition) (scope : Scope) =
                               match scope.variables.Item(id.uniqueName) with
                               | Field _ -> true
                               | LocalVar _ -> false
-                              | InstanceField _ -> true
+                              | InstanceField _ -> false
     clos.environment
     |> List.filter (isGlobalVariable >> not)
 
@@ -392,7 +392,7 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Em
 
                // Create the lambda method
                let closureMethod = defineProcedure frameClass c true
-               generateProcedureBody frameClass closureMethod c extendedScope
+               generateProcedureBody mainClass closureMethod c extendedScope
 
                // Finalize frame class
                let frameType = frameClass.CreateType()
@@ -402,7 +402,6 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Em
 
                for id in captures do
                    gen.Emit(Emit.OpCodes.Dup)
-                   printfn "Storing variable %A" id
                    emitVariableLoad id
                    let (InstanceField f) = extendedVars.Item(id.uniqueName)
                    gen.Emit(Emit.OpCodes.Stfld, f)
@@ -415,7 +414,7 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Em
 
                gen.Emit(Emit.OpCodes.Ldnull)
                gen.Emit(Emit.OpCodes.Ldftn, closureMethod)
-               createProcedureObjectOnStack gen c true // TODO: store information on whether procedure is anonymous on closure object?
+               createProcedureObjectOnStack gen c true
 
 and generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let gen = mb.GetILGenerator()

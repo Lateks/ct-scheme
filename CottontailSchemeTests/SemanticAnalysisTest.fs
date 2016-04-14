@@ -305,17 +305,26 @@ type ``Lambda labeling`` () =
         parseAndBuild "(define add\
                          (lambda (x)\
                            (lambda (y)\
-                             (+ x y))))"
+                             (lambda (z)\
+                               (+ x y z)))))"
         |> getStructure
         |> fun p -> p.procedureDefinitions
         |> List.head
         |> fun (ProcedureDefinition (id, c))
-              -> List.isEmpty c.environment |> should equal true
+              -> c.environment.Length |> should equal 1
+                 c.environment |> List.head |> shouldBeNamed "+"
                  match List.head c.body with
                  | Closure c2 ->
                      c2.environment.Length |> should equal 2
                      c2.environment |> List.head |> shouldBeNamed "+"
                      c2.environment |> List.last |> shouldBeNamed "x"
+                     match List.head c2.body with
+                     | Closure c3 ->
+                        c3.environment.Length |> should equal 3
+                        c3.environment |> List.head |> shouldBeNamed "+"
+                        c3.environment |> List.tail |> List.head |> shouldBeNamed "x"
+                        c3.environment |> List.last |> shouldBeNamed "y"
+                     | _ -> Assert.Fail "Lambda body was not as expected"
                  | _ -> Assert.Fail "Lambda body was not as expected"
 
         parseAndBuild "(define y 1)\

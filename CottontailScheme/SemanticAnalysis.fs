@@ -195,6 +195,8 @@ module LambdaHelpers =
                 collectFromExprList exprs
             | AnalysisTailExpression e ->
                 collectFreeVariables e
+            | AnalysisClosure c ->
+                c.environment |> List.map collect |> List.concat
             | _ -> []
         and collectFromExprList =
             List.map collectFreeVariables >> List.concat
