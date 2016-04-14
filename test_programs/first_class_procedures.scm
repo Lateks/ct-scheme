@@ -75,5 +75,7 @@
 	(newline)))
 
 (my-plus 5 6)
+(display my-plus) ; displays #<procedure:anonymous1>, should it be something else? (e.g. $<procedure:my-plus> or $<procedure:my-plus2>)
+(newline)
 
 (display (apply2 zero? 1 2))

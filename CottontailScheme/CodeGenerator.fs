@@ -14,6 +14,7 @@ type Procedure = { methodBuilder : Emit.MethodBuilder;
 
 type Variable = Field of Emit.FieldBuilder
               | LocalVar of Emit.LocalBuilder
+              | InstanceField of Emit.FieldBuilder
 
 type Scope = { variables : Map<string, Variable>;
                procedures : Map<string, Procedure> }
@@ -68,7 +69,7 @@ let emitArray (gen : Emit.ILGenerator) members emitMember =
     for (m, i) in indexedMembers do
         gen.Emit(Emit.OpCodes.Dup)
         gen.Emit(Emit.OpCodes.Ldc_I4, i)
-        emitMember gen m
+        emitMember m
         gen.Emit(Emit.OpCodes.Stelem_Ref)
 
 let convertArrayOnStackToList (gen : Emit.ILGenerator) =
@@ -80,7 +81,7 @@ let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     | Boolean b -> loadBooleanObject gen b
     | Number f -> loadNumberObject gen f
     | Symbol s -> loadSymbolObject gen s
-    | List lits -> emitArray gen lits emitLiteral
+    | List lits -> emitArray gen lits (emitLiteral gen)
                    convertArrayOnStackToList gen
 
 let emitBooleanConversion (gen : Emit.ILGenerator) =
@@ -123,20 +124,28 @@ let capturedLocals (clos : ClosureDefinition) (scope : Scope) =
                               match scope.variables.Item(id.uniqueName) with
                               | Field _ -> true
                               | LocalVar _ -> false
+                              | InstanceField _ -> true
     clos.environment
     |> List.filter (isGlobalVariable >> not)
 
-let defineProcedure (mainClass : Emit.TypeBuilder) (c : ClosureDefinition) =
+let defineProcedure (parentClass : Emit.TypeBuilder) (c : ClosureDefinition) (isInClosureFrameClass : bool) =
     let parameterTypes = match c.formals with
                          | SingleArgFormals id -> [| typeof<CTObject> |]
                          | MultiArgFormals ids -> ids |> List.map (fun _ -> typeof<CTObject> )
-                                                      |> Array.ofList   
-    mainClass.DefineMethod(c.functionName.uniqueName,
-                           MethodAttributes.Static ||| MethodAttributes.Private,
-                           typeof<CTObject>,
-                           parameterTypes)
+                                                      |> Array.ofList
 
-let createProcedureObjectOnStack (gen : Emit.ILGenerator) (c : ClosureDefinition) (methodBuilder : Emit.MethodBuilder) (isAnonymous : bool) =
+    let methodAttributes =
+        if isInClosureFrameClass then
+            MethodAttributes.Public
+        else
+            MethodAttributes.Static ||| MethodAttributes.Private
+
+    parentClass.DefineMethod(c.functionName.uniqueName,
+                             methodAttributes,
+                             typeof<CTObject>,
+                             parameterTypes)
+
+let createProcedureObjectOnStack (gen : Emit.ILGenerator) (c : ClosureDefinition) (isAnonymous : bool) =
     let procType = match c.formals with
                    | SingleArgFormals id -> typeof<Func<CTObject, CTObject>>
                    | MultiArgFormals ids -> match List.length ids with
@@ -155,22 +164,19 @@ let createProcedureObjectOnStack (gen : Emit.ILGenerator) (c : ClosureDefinition
                                                 | 3 -> typeof<CTDelegateProcedure3>
                                                 | 4 -> typeof<CTDelegateProcedure4>
                                                 | _ -> typeof<CTDelegateProcedure5>
-    let buildDelegate () =
-        gen.Emit(Emit.OpCodes.Ldnull)
-        gen.Emit(Emit.OpCodes.Ldftn, methodBuilder)
-        gen.Emit(Emit.OpCodes.Newobj, procType.GetConstructor([| typeof<Object>; typeof<nativeint> |]))
+
+    gen.Emit(Emit.OpCodes.Newobj, procType.GetConstructor([| typeof<Object>; typeof<nativeint> |]))
 
     if isAnonymous then
-        buildDelegate ()
         gen.Emit(Emit.OpCodes.Newobj, ctObjectType.GetConstructor([| procType |]))
     else
         gen.Emit(Emit.OpCodes.Ldstr, c.functionName.name)
-        buildDelegate ()
-        gen.Emit(Emit.OpCodes.Newobj, ctObjectType.GetConstructor([| typeof<string>; procType |]))
+        gen.Emit(Emit.OpCodes.Newobj, ctObjectType.GetConstructor([| procType; typeof<string> |]))
 
-let rec generateSubExpression (mainClass : Emit.TypeBuilder) (gen : Emit.ILGenerator) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
-    let recur = generateSubExpression mainClass gen scope
+let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Emit.MethodBuilder) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
+    let recur = generateSubExpression mainClass methodBuilder scope
     let pushExprResultToStack = recur true
+    let gen = methodBuilder.GetILGenerator()
 
     let emitConditional condition thenExpression elseExpression =
         let elseLabel = gen.DefineLabel()
@@ -236,38 +242,45 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (gen : Emit.ILGener
 
         match id.argIndex with
         | Some n ->
-            gen.Emit(Emit.OpCodes.Starg_S, (byte) n)
+            let index = if methodBuilder.IsStatic then n else n + 1
+            gen.Emit(Emit.OpCodes.Starg_S, (byte) index)
         | None ->
             assert scope.variables.ContainsKey(id.uniqueName)
             match scope.variables.Item(id.uniqueName) with
             | LocalVar v -> gen.Emit(Emit.OpCodes.Stloc, v)
             | Field v -> gen.Emit(Emit.OpCodes.Stsfld, v)
+            | InstanceField v -> gen.Emit(Emit.OpCodes.Ldarg_0)
+                                 gen.Emit(Emit.OpCodes.Stfld, v)
 
         if pushOnStack then loadUndefined gen
 
     let emitVariableLoad (id : Identifier) =
-        let loadVariableOrField name = match scope.variables.Item(name) with
-                                       | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
-                                       | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
-        match id.argIndex with
-        | Some n ->
-            if n < 4 then
-                let opcode = match n with
-                             | 0 -> Emit.OpCodes.Ldarg_0
-                             | 1 -> Emit.OpCodes.Ldarg_1
-                             | 2 -> Emit.OpCodes.Ldarg_2
-                             | _ -> Emit.OpCodes.Ldarg_3
+        let loadVariableOrField name =
+            match scope.variables.Item(name) with
+            | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
+            | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
+            | InstanceField v -> gen.Emit(Emit.OpCodes.Ldarg_0)
+                                 gen.Emit(Emit.OpCodes.Ldfld, v)
+
+        if scope.variables.ContainsKey(id.uniqueName) then
+            loadVariableOrField id.uniqueName
+        elif List.contains id !builtIns then
+            loadBuiltInProcedure gen id
+        else
+            assert id.argIndex.IsSome
+            let n = id.argIndex.Value
+            let index = if methodBuilder.IsStatic then n else n + 1
+            if index < 4 then
+                let opcode = match index with
+                                | 0 -> Emit.OpCodes.Ldarg_0
+                                | 1 -> Emit.OpCodes.Ldarg_1
+                                | 2 -> Emit.OpCodes.Ldarg_2
+                                | _ -> Emit.OpCodes.Ldarg_3
                 gen.Emit(opcode)
             else
-                gen.Emit(Emit.OpCodes.Ldarg_S, (byte) n)
-        | None ->
-            if scope.variables.ContainsKey(id.uniqueName) then
-                loadVariableOrField id.uniqueName
-            else
-                assert List.contains id !builtIns
-                loadBuiltInProcedure gen id
+                gen.Emit(Emit.OpCodes.Ldarg_S, (byte) index)
 
-    let pushArgsAsArray args = emitArray gen args (fun g -> generateSubExpression mainClass g scope true)
+    let pushArgsAsArray args = emitArray gen args (generateSubExpression mainClass methodBuilder scope true)
     let pushIndividualArgs args = for arg in args do pushExprResultToStack arg
     let emitCallToFirstClassProcedureOnStack (name : string option) args isTailCall =
         let procObject = gen.DeclareLocal(typeof<CTObject>)
@@ -357,14 +370,55 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (gen : Emit.ILGener
     | Closure c
         -> let captures = capturedLocals c scope
            if List.length captures > 0 then
-               failwithf "Not implemented yet: environment capture"
-           else
-               let methodBuilder = defineProcedure mainClass c
-               let closureBodyGen = methodBuilder.GetILGenerator()
-               generateProcedureBody mainClass closureBodyGen c scope
-               createProcedureObjectOnStack gen c methodBuilder true
+               let frameClassName = sprintf "%s$frame" c.functionName.uniqueName
+               let frameClass = mainClass.DefineNestedType(frameClassName, TypeAttributes.NestedAssembly)
+               // Define fields for captured variables
+               let fields = captures
+                            |> List.map (fun id ->
+                                             let field = frameClass.DefineField(id.uniqueName,
+                                                                                typeof<CTObject>,
+                                                                                FieldAttributes.Assembly)
+                                             (id.uniqueName, field))
+               let defaultConstructor = frameClass.DefineDefaultConstructor(MethodAttributes.Public)
 
-and generateProcedureBody (mainClass : Emit.TypeBuilder) (gen : Emit.ILGenerator) (c : ClosureDefinition) scope =
+               // Create scope for the lambda method
+               let extendedVars =
+                   fields
+                   |> List.fold (fun map (fieldName, fieldBuilder) ->
+                                     map |> Map.remove fieldName
+                                         |> Map.add fieldName (InstanceField fieldBuilder))
+                                scope.variables
+               let extendedScope = { scope with variables = extendedVars }
+
+               // Create the lambda method
+               let closureMethod = defineProcedure frameClass c true
+               generateProcedureBody frameClass closureMethod c extendedScope
+
+               // Finalize frame class
+               let frameType = frameClass.CreateType()
+
+               // Create the closure object
+               gen.Emit(Emit.OpCodes.Newobj, defaultConstructor)
+
+               for id in captures do
+                   gen.Emit(Emit.OpCodes.Dup)
+                   printfn "Storing variable %A" id
+                   emitVariableLoad id
+                   let (InstanceField f) = extendedVars.Item(id.uniqueName)
+                   gen.Emit(Emit.OpCodes.Stfld, f)
+
+               gen.Emit(Emit.OpCodes.Ldftn, closureMethod)
+               createProcedureObjectOnStack gen c true
+           else
+               let closureMethod = defineProcedure mainClass c false
+               generateProcedureBody mainClass closureMethod c scope
+
+               gen.Emit(Emit.OpCodes.Ldnull)
+               gen.Emit(Emit.OpCodes.Ldftn, closureMethod)
+               createProcedureObjectOnStack gen c true // TODO: store information on whether procedure is anonymous on closure object?
+
+and generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
+    let gen = mb.GetILGenerator()
     let locals = c.variableDeclarations
                  |> List.map (fun (VariableDeclaration id) ->
                                   (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
@@ -376,13 +430,13 @@ and generateProcedureBody (mainClass : Emit.TypeBuilder) (gen : Emit.ILGenerator
     let tailExpr = List.last c.body
 
     for expr in body do
-        generateSubExpression mainClass gen extendedScope false expr
+        generateSubExpression parentClass mb extendedScope false expr
 
-    generateSubExpression mainClass gen extendedScope true tailExpr
+    generateSubExpression parentClass mb extendedScope true tailExpr
     gen.Emit(Emit.OpCodes.Ret)
 
-let generateExpression (mainClass : Emit.TypeBuilder) (gen : Emit.ILGenerator) (expr : Expression) (scope : Scope) =
-    generateSubExpression mainClass gen scope false expr
+let generateExpression (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) =
+    generateSubExpression mainClass mb scope false expr
 
 let defineVariables (c : Emit.TypeBuilder)=
     List.map (fun (VariableDeclaration id) ->
@@ -393,13 +447,13 @@ let defineVariables (c : Emit.TypeBuilder)=
 
 let defineProcedures (mainClass : Emit.TypeBuilder) =
     List.map (fun (ProcedureDefinition (id, clos)) ->
-                  let procedure = defineProcedure mainClass clos
+                  let procedure = defineProcedure mainClass clos false
                   (id.uniqueName, { methodBuilder = procedure; closure = clos }))
     >> Map.ofList
 
 let generateTopLevelProcedureBodies (mainClass : Emit.TypeBuilder) (scope : Scope) =
     for (_, proc) in Map.toSeq scope.procedures do
-        generateProcedureBody mainClass (proc.methodBuilder.GetILGenerator()) proc.closure scope
+        generateProcedureBody mainClass proc.methodBuilder proc.closure scope
 
 let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDefinition list) (scope : Scope) =
     let classInitializer = mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public, CallingConventions.Standard, [||])
@@ -408,7 +462,9 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
         if c.isUsedAsFirstClassValue || c.isReassigned then
             let (Field var) = scope.variables.Item(SymbolGenerator.toProcedureObjectName id.uniqueName)
             let procedure = scope.procedures.Item(id.uniqueName)
-            createProcedureObjectOnStack gen c procedure.methodBuilder false
+            gen.Emit(Emit.OpCodes.Ldnull)
+            gen.Emit(Emit.OpCodes.Ldftn, procedure.methodBuilder)
+            createProcedureObjectOnStack gen c false
             gen.Emit(Emit.OpCodes.Stsfld, var)
     gen.Emit(Emit.OpCodes.Ret)
 
@@ -426,7 +482,7 @@ let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
     ilGen.BeginExceptionBlock() |> ignore
 
     for expr in program.expressions do
-        generateExpression mainClass ilGen expr scope
+        generateExpression mainClass mainMethod expr scope
 
     ilGen.BeginCatchBlock(typeof<CottontailSchemeException>)
 
