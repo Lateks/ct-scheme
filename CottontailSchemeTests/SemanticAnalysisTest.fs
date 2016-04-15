@@ -237,6 +237,14 @@ type ``Lambda labeling`` () =
                        (sum '(1 2 3 4 5) 0)"
         |> shouldNotBeFirstClass
 
+        parseAndBuild "(define test (lambda () (display \"hello\")))\
+                       (display (car test))"
+        |> shouldBeFirstClass
+
+        parseAndBuild "(define test (lambda () (display \"hello\")))\
+                       (display ((car test)))"
+        |> shouldBeFirstClass
+
         parseAndBuild "(define square (lambda (x) (* x x)))\
                        (define apply (lambda (f x) (f x)))\
                        (apply square 4)"

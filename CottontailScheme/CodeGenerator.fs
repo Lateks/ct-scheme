@@ -211,7 +211,8 @@ let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticCo
         loadBuiltInProcedure gen id
     else
         if id.argIndex.IsNone then
-            failwithf "Attempting to load unknown variable %A" id
+            failwithf "Attempting to load unknown variable %A, current scope contains the following variables %A"
+                      id.uniqueName (List.map (fun (name, _) -> name) (Map.toList scope.variables))
 
         let n = id.argIndex.Value
         let index = if isStaticContext then n else n + 1

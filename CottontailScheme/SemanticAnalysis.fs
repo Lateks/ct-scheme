@@ -279,7 +279,14 @@ module LambdaHelpers =
             function
             | AnalysisVariableReference id -> isNameReference id
             | AnalysisClosure c' -> c = c' || usedAsFirstClassValueInList c'.body
-            | AnalysisProcedureCall (_, args) -> usedAsFirstClassValueInList args
+            | AnalysisProcedureCall (proc, args)
+                -> let usedAsFirstClassValueInProc =
+                       match proc with
+                       | AnalysisVariableReference _ -> false
+                       | AnalysisClosure c' -> usedAsFirstClassValueInList c'.body // TODO: Should this be a first class use too when c = c'?
+                                                                                   // (It does not need to be, but would it be useful for this implementation?)
+                       | _ -> usedAsFirstClassValueInExpr proc
+                   usedAsFirstClassValueInProc || usedAsFirstClassValueInList args
             | AnalysisValueExpression _ -> false
             | AnalysisAssignment (_, expr) -> usedAsFirstClassValueInExpr expr
             | AnalysisIdentifierDefinition (id, expr)
