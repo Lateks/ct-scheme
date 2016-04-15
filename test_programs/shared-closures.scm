@@ -12,6 +12,24 @@
 (display ((car (cdr (cdr test-fns))) 5)) ; 5
 (newline)
 
+;(define increment #f)
+;(define get #f)
+;(define inc-and-get #f)
+;(define setup
+;  (lambda ()
+;    (define c 0)
+;    (set! increment (lambda () (set! c (+ c 1))))
+;	(set! get (lambda () c))
+;	;(set! inc-and-get (lambda () (increment) (get))))
+;	#t)
+
+;(setup)
+;(display (get))
+;(newline)
+;(increment)
+;(display (get))
+;(newline)
+
 ; (define counter
 ;   (lambda ()
 ;     (define c 0)

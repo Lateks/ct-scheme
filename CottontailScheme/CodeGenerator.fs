@@ -15,6 +15,7 @@ type Procedure = { methodBuilder : Emit.MethodBuilder;
 type Variable = Field of Emit.FieldBuilder
               | LocalVar of Emit.LocalBuilder
               | InstanceField of Emit.FieldBuilder
+              | ObjectField of Emit.FieldBuilder * Variable
 
 type ClosureLoadInfo = { lambdaBuilder : Emit.MethodBuilder;
                          localFrameField : Emit.LocalBuilder option }
@@ -129,6 +130,7 @@ let capturedLocals (clos : ClosureDefinition) (scope : Scope) =
                               | Field _ -> true
                               | LocalVar _ -> false
                               | InstanceField _ -> false
+                              | ObjectField _ -> false
     clos.environment
     |> List.filter (isGlobalVariable >> not)
 
@@ -198,16 +200,21 @@ let findClosuresInScope exprs =
 
 let mapKeys map = Map.toList map |> List.map (fun (name, _) -> name)
 
-let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticContext =
-    let loadVariableOrField name =
-        match scope.variables.Item(name) with
-        | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
-        | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
-        | InstanceField v -> gen.Emit(Emit.OpCodes.Ldarg_0)
-                             gen.Emit(Emit.OpCodes.Ldfld, v)
+let rec loadVariableOrField (gen : Emit.ILGenerator) var =
+    match var with
+    | LocalVar v -> gen.Emit(Emit.OpCodes.Ldloc, v)
+    | Field v -> gen.Emit(Emit.OpCodes.Ldsfld, v)
+    | InstanceField v -> gen.Emit(Emit.OpCodes.Ldarg_0)
+                         gen.Emit(Emit.OpCodes.Ldfld, v)
+    | ObjectField (v, obj) -> loadVariableOrField gen obj
+                              gen.Emit(Emit.OpCodes.Ldfld, v)
 
+let loadVariableOrFieldWithName (gen : Emit.ILGenerator) scope name =
+    scope.variables.Item(name) |> loadVariableOrField gen
+
+let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticContext =
     if scope.variables.ContainsKey(id.uniqueName) then
-        loadVariableOrField id.uniqueName
+        loadVariableOrFieldWithName gen scope id.uniqueName
     elif List.contains id !builtIns then
         loadBuiltInProcedure gen id
     else
@@ -291,24 +298,35 @@ let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope
             gen.MarkLabel(exitLabel)
             loadTempValue ()
 
-    let emitAssignment (id : Identifier) expr =
-        pushExprResultToStack expr
-
-        match id.argIndex with
-        | Some n ->
-            let index = if methodBuilder.IsStatic then n else n + 1
-            gen.Emit(Emit.OpCodes.Starg_S, (byte) index)
-        | None ->
-            assert scope.variables.ContainsKey(id.uniqueName)
-            match scope.variables.Item(id.uniqueName) with
-            | LocalVar v -> gen.Emit(Emit.OpCodes.Stloc, v)
-            | Field v -> gen.Emit(Emit.OpCodes.Stsfld, v)
-            | InstanceField v -> gen.Emit(Emit.OpCodes.Ldarg_0)
-                                 gen.Emit(Emit.OpCodes.Stfld, v)
-
-        if pushOnStack then loadUndefined gen
     let emitVariableLoad id =
         emitVariableLoad gen scope id methodBuilder.IsStatic
+
+    let emitAssignment (id : Identifier) expr =
+        let push () = pushExprResultToStack expr
+
+        printfn "Assigning to %A, scope contains variables %A" id scope.variables
+        if scope.variables.ContainsKey(id.uniqueName) then
+            match scope.variables.Item(id.uniqueName) with
+            | LocalVar v -> push ()
+                            gen.Emit(Emit.OpCodes.Stloc, v)
+            | Field v -> push ()
+                         gen.Emit(Emit.OpCodes.Stsfld, v)
+            | InstanceField v -> gen.Emit(Emit.OpCodes.Ldarg_0)
+                                 push ()
+                                 gen.Emit(Emit.OpCodes.Stfld, v)
+            | ObjectField (v, obj) -> loadVariableOrField gen obj
+                                      push ()
+                                      gen.Emit(Emit.OpCodes.Stfld, v)
+        else
+            printfn "Falling back to argIndex"
+            match id.argIndex with
+            | Some n ->
+                push ()
+                let index = if methodBuilder.IsStatic then n else n + 1
+                gen.Emit(Emit.OpCodes.Starg_S, (byte) index)
+            | None -> failwith "Attempting to set! unknown variable %A" id
+
+        if pushOnStack then loadUndefined gen
 
     let pushArgsAsArray args = emitArray gen args (generateSubExpression methodBuilder scope true)
     let pushIndividualArgs args = for arg in args do pushExprResultToStack arg
@@ -420,10 +438,37 @@ let instantiateClosureFrameOnStack (gen : Emit.ILGenerator) (constructorHandle :
         gen.Emit(Emit.OpCodes.Stfld, f)
 
 let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
+    let rebindFrameFields frameVar scope captures =
+        let frameVariable = LocalVar frameVar
+
+        let rec rebind newScope =
+            function
+            | [] -> newScope
+            | (id, (InstanceField f)) :: xs
+                -> if newScope.variables.ContainsKey id.uniqueName then
+                      failwith "Not handling local variable capture yet!"
+                      // TODO: need to replace variable in scope with an ObjectField
+                   else
+                      let newVariable = ObjectField (f, frameVariable)
+                      let newVars = Map.add id.uniqueName newVariable newScope.variables
+                      let scope' = { newScope with variables = newVars }
+                      rebind scope' xs
+            | (_, f)::_ -> failwithf "Error, expected an instance field but got %A" f
+
+        rebind scope captures
+
     let gen = mb.GetILGenerator()
     let closures = findClosuresInScope c.body
                    |> List.append (List.map (fun (ProcedureDefinition (_, def)) -> def) c.procedureDefinitions)
     printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
+
+    // TODO: frame variable should be added to locals and references to captured variables should be bound
+    //       to pass through the frame object
+    let closureInfo, frameVar, captures = generateClosures mainClass parentClass mb scope c.functionName.uniqueName closures
+    let newScope = match frameVar with
+                   | Some var -> rebindFrameFields var scope captures
+                   | None -> scope
+    printfn "New scope for %s contains variables %A" c.functionName.uniqueName newScope.variables
 
     let vars = c.variableDeclarations
                |> List.map (fun (VariableDeclaration id) ->
@@ -433,16 +478,14 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit
                                  (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
     let locals = List.append vars procs
 
-    let extendedScope = { scope with variables = Map.toSeq scope.variables
-                                                 |> Seq.append locals
-                                                 |> Map.ofSeq }
-
-    // TODO: frame variable should be added to locals and references to captured variables should be bound
-    //       to pass through the frame object
-    // TODO: actually the scope can only be extended with locals after lambdas and frames have been created
-    let closureInfo = generateClosures mainClass parentClass mb extendedScope c.functionName.uniqueName closures
+    // TODO: variables no longer visible need to be removed at some point
+    let extendedScope = { newScope with variables = Map.toSeq newScope.variables
+                                                    |> Seq.append locals
+                                                    |> Map.ofSeq }
 
     let extendedScopeWithClosures = { extendedScope with closureInfo = closureInfo }
+
+    printfn "Extended scope for %s with closures contains variables %A" c.functionName.uniqueName extendedScopeWithClosures.variables
 
     for ProcedureDefinition (id, proc) in c.procedureDefinitions do
         generateSubExpression mb extendedScopeWithClosures false (Assignment (id, Closure proc))
@@ -474,7 +517,7 @@ and generateClosures (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuil
 
     let gen = mb.GetILGenerator()
     if List.isEmpty closures then
-        Map.empty
+        Map.empty, None, []
     else
         let captures = closures
                        |> List.map (fun clos -> clos.environment)
@@ -489,7 +532,7 @@ and generateClosures (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuil
             // TODO: scope passed in should be the "lambda scope" of the previous level
             generateBodies builders scope
 
-            buildClosureInfoMap None builders
+            buildClosureInfoMap None builders, None, []
         else
             let frameClass, cons, fields = defineFrame mainClass captures parentProcedureName
             let lambdaScope = createLambdaFrameScope fields scope
@@ -502,11 +545,12 @@ and generateClosures (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuil
             let builders = makeBuilders frameClass true closures
 
             // TODO: add locally visible procedures to lambda scope before generating bodies
+            // TODO: what about the current frame instance?
             generateBodies builders lambdaScope
 
             frameClass.CreateType() |> ignore
 
-            buildClosureInfoMap (Some frameVar) builders
+            buildClosureInfoMap (Some frameVar) builders, Some frameVar, matchedCaptures
 
 let generateExpression (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) =
     generateSubExpression mb scope false expr
@@ -543,7 +587,7 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
 
 let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
     let closures = findClosuresInScope program.expressions
-    let closureInfo = generateClosures mainClass mainClass mainMethod scope "Main" closures
+    let closureInfo, _, _ = generateClosures mainClass mainClass mainMethod scope "Main" closures
     let extendedScope = { scope with closureInfo = closureInfo }
 
     for expr in program.expressions do
