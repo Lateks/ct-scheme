@@ -406,15 +406,18 @@ let createLambdaFrameScope fields scope =
                      scope.variables
     { scope with variables = extendedVars }
 
-let instantiateClosureFrame (gen : Emit.ILGenerator) (constructorHandle : Emit.ConstructorBuilder) (frameVar : Emit.LocalBuilder) captures scope captureFields isStaticContext =
+let matchCaptures capturedVars captureFields =
+    let fields = Map.ofList captureFields
+    capturedVars
+    |> List.map (fun id -> (id, fields.Item(id.uniqueName)))
+
+let instantiateClosureFrame (gen : Emit.ILGenerator) (constructorHandle : Emit.ConstructorBuilder) (frameVar : Emit.LocalBuilder) captures scope isStaticContext =
     gen.Emit(Emit.OpCodes.Newobj, constructorHandle)
 
-    for id in captures do
+    for (id, InstanceField f) in captures do
         gen.Emit(Emit.OpCodes.Dup)
         emitVariableLoad gen scope id isStaticContext
-        match List.find (fun (name, _) -> name = id.uniqueName) captureFields with
-        | _, InstanceField f -> gen.Emit(Emit.OpCodes.Stfld, f)
-        | _, f -> failwithf "Expexted to store capture in an instance field but received %A" f
+        gen.Emit(Emit.OpCodes.Stfld, f)
 
     gen.Emit(Emit.OpCodes.Stloc, frameVar)
 
@@ -439,6 +442,10 @@ let rec generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.Method
             if closures.IsEmpty then
                info
             else
+                //let captures = closures
+                //    |> List.map (fun clos -> clos.environment)
+                //    |> List.concat
+                //    |> List.distinct
                 let nestedClosure = List.head closures
                 let captures = nestedClosure.environment
                 let lb, frameVar, lambdaScope, frameClass =
@@ -450,8 +457,8 @@ let rec generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.Method
                         let lambdaScope = createLambdaFrameScope fields extendedScope
                         let frameVar = gen.DeclareLocal(frameClass)
 
-                        // TODO: pre-match captures and pass captures and captureFields in a single list of pairs
-                        instantiateClosureFrame gen cons frameVar captures extendedScope fields mb.IsStatic
+                        let matchedCaptures = matchCaptures captures fields
+                        instantiateClosureFrame gen cons frameVar matchedCaptures extendedScope mb.IsStatic
                         let lambdaBuilder = defineProcedure frameClass nestedClosure true
                         lambdaBuilder, Some frameVar, lambdaScope, Some frameClass
 
