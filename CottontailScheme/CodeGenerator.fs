@@ -425,9 +425,14 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit
                    |> List.append (List.map (fun (ProcedureDefinition (_, def)) -> def) c.procedureDefinitions)
     printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
 
-    let locals = c.variableDeclarations
-                 |> List.map (fun (VariableDeclaration id) ->
-                                  (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
+    let vars = c.variableDeclarations
+               |> List.map (fun (VariableDeclaration id) ->
+                                (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
+    let procs = c.procedureDefinitions
+                |> List.map (fun (ProcedureDefinition (id, proc)) ->
+                                 (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
+    let locals = List.append vars procs
+
     let extendedScope = { scope with variables = Map.toSeq scope.variables
                                                  |> Seq.append locals
                                                  |> Map.ofSeq }
@@ -437,9 +442,11 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit
     // TODO: actually the scope can only be extended with locals after lambdas and frames have been created
     let closureInfo = generateClosures mainClass parentClass mb extendedScope c.functionName.uniqueName closures
 
-    // TODO: handle procedure definitions!
-
     let extendedScopeWithClosures = { extendedScope with closureInfo = closureInfo }
+
+    for ProcedureDefinition (id, proc) in c.procedureDefinitions do
+        generateSubExpression mb extendedScopeWithClosures false (Assignment (id, Closure proc))
+
     let body = List.take (c.body.Length - 1) c.body
     let tailExpr = List.last c.body
 
