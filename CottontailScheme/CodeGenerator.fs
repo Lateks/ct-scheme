@@ -196,6 +196,7 @@ let findClosuresInScope exprs =
 
     exprs |> List.map findClosures |> List.concat
 
+let mapKeys map = Map.toList map |> List.map (fun (name, _) -> name)
 
 let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticContext =
     let loadVariableOrField name =
@@ -212,7 +213,7 @@ let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticCo
     else
         if id.argIndex.IsNone then
             failwithf "Attempting to load unknown variable %A, current scope contains the following variables %A"
-                      id.uniqueName (List.map (fun (name, _) -> name) (Map.toList scope.variables))
+                      id.uniqueName (mapKeys scope.variables)
 
         let n = id.argIndex.Value
         let index = if isStaticContext then n else n + 1
@@ -226,8 +227,8 @@ let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticCo
         else
             gen.Emit(Emit.OpCodes.Ldarg_S, (byte) index)
 
-let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Emit.MethodBuilder) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
-    let recur = generateSubExpression mainClass methodBuilder scope
+let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope) (pushOnStack : bool) (expr : Expression) =
+    let recur = generateSubExpression methodBuilder scope
     let pushExprResultToStack = recur true
     let gen = methodBuilder.GetILGenerator()
 
@@ -309,7 +310,7 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Em
     let emitVariableLoad id =
         emitVariableLoad gen scope id methodBuilder.IsStatic
 
-    let pushArgsAsArray args = emitArray gen args (generateSubExpression mainClass methodBuilder scope true)
+    let pushArgsAsArray args = emitArray gen args (generateSubExpression methodBuilder scope true)
     let pushIndividualArgs args = for arg in args do pushExprResultToStack arg
     let emitCallToFirstClassProcedureOnStack args isTailCall =
         let methodInfo = match List.length args with
@@ -372,7 +373,8 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Em
     | UndefinedValue
         -> if pushOnStack then loadUndefined gen
     | Closure c
-        -> let closureInfo = scope.closureInfo.Item(c.functionName.uniqueName)
+        -> printfn "Looking for closure info for %s, scope contains %A" c.functionName.uniqueName (mapKeys scope.closureInfo)
+           let closureInfo = scope.closureInfo.Item(c.functionName.uniqueName)
            match closureInfo.localFrameField with
            | Some f -> gen.Emit(Emit.OpCodes.Ldloc, f)
            | None -> gen.Emit(Emit.OpCodes.Ldnull)
@@ -489,13 +491,13 @@ let rec generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.Method
     let tailExpr = List.last c.body
 
     for expr in body do
-        generateSubExpression parentClass mb extendedScopeWithClosures false expr
+        generateSubExpression mb extendedScopeWithClosures false expr
 
-    generateSubExpression parentClass mb extendedScopeWithClosures true tailExpr
+    generateSubExpression mb extendedScopeWithClosures true tailExpr
     gen.Emit(Emit.OpCodes.Ret)
 
-let generateExpression (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) =
-    generateSubExpression mainClass mb scope false expr
+let generateExpression (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) =
+    generateSubExpression mb scope false expr
 
 let defineVariables (c : Emit.TypeBuilder)=
     List.map (fun (VariableDeclaration id) ->
@@ -542,7 +544,7 @@ let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
     ilGen.BeginExceptionBlock() |> ignore
 
     for expr in program.expressions do
-        generateExpression mainClass mainMethod expr scope
+        generateExpression mainMethod expr scope
 
     ilGen.BeginCatchBlock(typeof<CottontailSchemeException>)
 
