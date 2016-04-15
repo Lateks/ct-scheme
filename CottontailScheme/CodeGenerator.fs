@@ -210,7 +210,9 @@ let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticCo
     elif List.contains id !builtIns then
         loadBuiltInProcedure gen id
     else
-        assert id.argIndex.IsSome
+        if id.argIndex.IsNone then
+            failwithf "Attempting to load unknown variable %A" id
+
         let n = id.argIndex.Value
         let index = if isStaticContext then n else n + 1
         if index < 4 then
@@ -377,13 +379,8 @@ let rec generateSubExpression (mainClass : Emit.TypeBuilder) (methodBuilder : Em
            gen.Emit(Emit.OpCodes.Ldftn, closureInfo.lambdaBuilder)
            createProcedureObjectOnStack gen c true
 
-let defineNonCapturingLambda (parentClass : Emit.TypeBuilder) c = // TODO: static method on the top level, instance method in frame?
-    let closureMethod = defineProcedure parentClass c false
-    (closureMethod, c)
-
-let defineFrame (parentClass : Emit.TypeBuilder) (captures : Identifier list) c =
-    // TODO: name for shared frame type
-    let frameClassName = sprintf "%s$frame" c.functionName.uniqueName
+let defineFrame (parentClass : Emit.TypeBuilder) (captures : Identifier list) parentProcedureName =
+    let frameClassName = sprintf "%s$frame" parentProcedureName
     let frameClass = parentClass.DefineNestedType(frameClassName, TypeAttributes.NestedAssembly)
     // Define fields for captured variables
     let fields = captures
@@ -411,15 +408,13 @@ let matchCaptures capturedVars captureFields =
     capturedVars
     |> List.map (fun id -> (id, fields.Item(id.uniqueName)))
 
-let instantiateClosureFrame (gen : Emit.ILGenerator) (constructorHandle : Emit.ConstructorBuilder) (frameVar : Emit.LocalBuilder) captures scope isStaticContext =
+let instantiateClosureFrameOnStack (gen : Emit.ILGenerator) (constructorHandle : Emit.ConstructorBuilder) captures scope isStaticContext =
     gen.Emit(Emit.OpCodes.Newobj, constructorHandle)
 
     for (id, InstanceField f) in captures do
         gen.Emit(Emit.OpCodes.Dup)
         emitVariableLoad gen scope id isStaticContext
         gen.Emit(Emit.OpCodes.Stfld, f)
-
-    gen.Emit(Emit.OpCodes.Stloc, frameVar)
 
 let rec generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let gen = mb.GetILGenerator()
@@ -435,41 +430,56 @@ let rec generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.Method
                                                  |> Map.ofSeq }
 
     let closureInfo =
-        if closures.Length > 1 then
-            failwith "Multiple closures in scope not yet implemented, TODO!"
+        if closures.IsEmpty then
+            Map.empty
         else
-            let info = Map.empty
-            if closures.IsEmpty then
-               info
+            let captures = closures
+                            |> List.map (fun clos -> clos.environment)
+                            |> List.concat
+                            |> List.distinct
+            if captures.IsEmpty then
+                let builders = closures
+                               |> List.map (fun nestedClosure ->
+                                                (nestedClosure.functionName.uniqueName,
+                                                 defineProcedure parentClass nestedClosure false,
+                                                 nestedClosure))
+
+                // TODO: add locally visible procedures to lambda scope before generating bodies
+                //       to allow procedures to call each other
+                for (name, lb, nestedClosure) in builders do
+                    generateProcedureBody parentClass lb nestedClosure scope
+
+                builders
+                |> List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = None }))
+                |> Map.ofList
             else
-                //let captures = closures
-                //    |> List.map (fun clos -> clos.environment)
-                //    |> List.concat
-                //    |> List.distinct
-                let nestedClosure = List.head closures
-                let captures = nestedClosure.environment
-                let lb, frameVar, lambdaScope, frameClass =
-                    if captures.IsEmpty then // Non capturing lambda
-                        let lambdaBuilder = defineProcedure parentClass nestedClosure false
-                        lambdaBuilder, None, scope, None
-                    else // Capturing lambda
-                        let frameClass, cons, fields = defineFrame parentClass captures nestedClosure
-                        let lambdaScope = createLambdaFrameScope fields extendedScope
-                        let frameVar = gen.DeclareLocal(frameClass)
+                let frameClass, cons, fields = defineFrame parentClass captures c.functionName.uniqueName
+                let lambdaScope = createLambdaFrameScope fields extendedScope
 
-                        let matchedCaptures = matchCaptures captures fields
-                        instantiateClosureFrame gen cons frameVar matchedCaptures extendedScope mb.IsStatic
-                        let lambdaBuilder = defineProcedure frameClass nestedClosure true
-                        lambdaBuilder, Some frameVar, lambdaScope, Some frameClass
+                let frameVar = gen.DeclareLocal(frameClass)
+                let matchedCaptures = matchCaptures captures fields
+                instantiateClosureFrameOnStack gen cons matchedCaptures extendedScope mb.IsStatic
+                gen.Emit(Emit.OpCodes.Stloc, frameVar)
 
-                generateProcedureBody parentClass lb nestedClosure lambdaScope
+                let builders = closures
+                                |> List.map (fun nestedClosure ->
+                                                 (nestedClosure.functionName.uniqueName,
+                                                  defineProcedure frameClass nestedClosure true,
+                                                  nestedClosure))
 
-                match frameClass with
-                | Some klass -> klass.CreateType() |> ignore
-                | None -> ()
+                // TODO: add locally visible procedures to lambda scope before generating bodies
+                // TODO: need to pass both main class ("parent class") and frame class?
+                //       * frame class used for defining nested non-capturing closures (ensure the correct scope is passed for this)
+                //       * main class used for defining new types (frame classes)
 
-                let closureLoadInfo = { lambdaBuilder = lb; localFrameField = frameVar }
-                Map.add nestedClosure.functionName.uniqueName closureLoadInfo info
+                for (name, lb, nestedClosure) in builders do
+                    generateProcedureBody parentClass lb nestedClosure lambdaScope
+
+                frameClass.CreateType() |> ignore
+
+                builders
+                |> List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = Some frameVar }))
+                |> Map.ofList
 
     // TODO: handle procedure definitions!
 
