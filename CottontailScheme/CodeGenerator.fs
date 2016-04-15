@@ -419,7 +419,7 @@ let instantiateClosureFrameOnStack (gen : Emit.ILGenerator) (constructorHandle :
         emitVariableLoad gen scope id isStaticContext
         gen.Emit(Emit.OpCodes.Stfld, f)
 
-let rec generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
+let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let gen = mb.GetILGenerator()
     let closures = findClosuresInScope c.body
                    |> List.append (List.map (fun (ProcedureDefinition (_, def)) -> def) c.procedureDefinitions)
@@ -432,57 +432,10 @@ let rec generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.Method
                                                  |> Seq.append locals
                                                  |> Map.ofSeq }
 
-    let closureInfo =
-        if closures.IsEmpty then
-            Map.empty
-        else
-            let captures = closures
-                            |> List.map (fun clos -> clos.environment)
-                            |> List.concat
-                            |> List.distinct
-            if captures.IsEmpty then
-                let builders = closures
-                               |> List.map (fun nestedClosure ->
-                                                (nestedClosure.functionName.uniqueName,
-                                                 defineProcedure parentClass nestedClosure false,
-                                                 nestedClosure))
-
-                // TODO: add locally visible procedures to lambda scope before generating bodies
-                //       to allow procedures to call each other
-                for (name, lb, nestedClosure) in builders do
-                    generateProcedureBody parentClass lb nestedClosure scope
-
-                builders
-                |> List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = None }))
-                |> Map.ofList
-            else
-                let frameClass, cons, fields = defineFrame parentClass captures c.functionName.uniqueName
-                let lambdaScope = createLambdaFrameScope fields extendedScope
-
-                let frameVar = gen.DeclareLocal(frameClass)
-                let matchedCaptures = matchCaptures captures fields
-                instantiateClosureFrameOnStack gen cons matchedCaptures extendedScope mb.IsStatic
-                gen.Emit(Emit.OpCodes.Stloc, frameVar)
-
-                let builders = closures
-                                |> List.map (fun nestedClosure ->
-                                                 (nestedClosure.functionName.uniqueName,
-                                                  defineProcedure frameClass nestedClosure true,
-                                                  nestedClosure))
-
-                // TODO: add locally visible procedures to lambda scope before generating bodies
-                // TODO: need to pass both main class ("parent class") and frame class?
-                //       * frame class used for defining nested non-capturing closures (ensure the correct scope is passed for this)
-                //       * main class used for defining new types (frame classes)
-
-                for (name, lb, nestedClosure) in builders do
-                    generateProcedureBody parentClass lb nestedClosure lambdaScope
-
-                frameClass.CreateType() |> ignore
-
-                builders
-                |> List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = Some frameVar }))
-                |> Map.ofList
+    // TODO: frame variable should be added to locals and references to captured variables should be bound
+    //       to pass through the frame object
+    // TODO: actually the scope can only be extended with locals after lambdas and frames have been created
+    let closureInfo = generateClosures mainClass parentClass mb extendedScope c.functionName.uniqueName closures
 
     // TODO: handle procedure definitions!
 
@@ -495,6 +448,62 @@ let rec generateProcedureBody (parentClass : Emit.TypeBuilder) (mb : Emit.Method
 
     generateSubExpression mb extendedScopeWithClosures true tailExpr
     gen.Emit(Emit.OpCodes.Ret)
+
+// mainClass: Top level class in module, containing the main method.
+//            Used for defined nested frame classes.
+// parentClass: Parent class of current method (mb).
+//              Used to house non-capturing lambda bodies as methods.
+and generateClosures (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (scope : Scope) parentProcedureName closures =
+    let gen = mb.GetILGenerator()
+    if List.isEmpty closures then
+        Map.empty
+    else
+        let captures = closures
+                       |> List.map (fun clos -> clos.environment)
+                       |> List.concat
+                       |> List.distinct
+        if captures.IsEmpty then
+            let isInsideFrameClass = mainClass <> parentClass
+            let builders = closures
+                            |> List.map (fun nestedClosure ->
+                                             (nestedClosure.functionName.uniqueName,
+                                              defineProcedure parentClass nestedClosure isInsideFrameClass,
+                                              nestedClosure))
+
+            // TODO: add locally visible procedures to lambda scope before generating bodies
+            //       to allow procedures to call each other
+            // TODO: scope passed in should be the "lambda scope" of the previous level
+            for (name, lb, nestedClosure) in builders do
+                generateProcedureBody mainClass parentClass lb nestedClosure scope
+
+            builders
+            |> List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = None }))
+            |> Map.ofList
+        else
+            let frameClass, cons, fields = defineFrame mainClass captures parentProcedureName
+            let lambdaScope = createLambdaFrameScope fields scope
+
+            let frameVar = gen.DeclareLocal(frameClass)
+            let matchedCaptures = matchCaptures captures fields
+            instantiateClosureFrameOnStack gen cons matchedCaptures scope mb.IsStatic
+            gen.Emit(Emit.OpCodes.Stloc, frameVar)
+
+            let builders = closures
+                           |> List.map (fun nestedClosure ->
+                                               (nestedClosure.functionName.uniqueName,
+                                                defineProcedure frameClass nestedClosure true,
+                                                nestedClosure))
+
+            // TODO: add locally visible procedures to lambda scope before generating bodies
+
+            for (name, lb, nestedClosure) in builders do
+                generateProcedureBody mainClass parentClass lb nestedClosure lambdaScope
+
+            frameClass.CreateType() |> ignore
+
+            builders
+            |> List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = Some frameVar }))
+            |> Map.ofList
 
 let generateExpression (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) =
     generateSubExpression mb scope false expr
@@ -514,7 +523,7 @@ let defineProcedures (mainClass : Emit.TypeBuilder) =
 
 let generateTopLevelProcedureBodies (mainClass : Emit.TypeBuilder) (scope : Scope) =
     for (_, proc) in Map.toSeq scope.procedures do
-        generateProcedureBody mainClass proc.methodBuilder proc.closure scope
+        generateProcedureBody mainClass mainClass proc.methodBuilder proc.closure scope
 
 let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDefinition list) (scope : Scope) =
     let classInitializer = mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public, CallingConventions.Standard, [||])
@@ -528,6 +537,14 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
             createProcedureObjectOnStack gen c false
             gen.Emit(Emit.OpCodes.Stsfld, var)
     gen.Emit(Emit.OpCodes.Ret)
+
+let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
+    let closures = findClosuresInScope program.expressions
+    let closureInfo = generateClosures mainClass mainClass mainMethod scope "Main" closures
+    let extendedScope = { scope with closureInfo = closureInfo }
+
+    for expr in program.expressions do
+        generateExpression mainMethod expr extendedScope
 
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
@@ -543,8 +560,7 @@ let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
 
     ilGen.BeginExceptionBlock() |> ignore
 
-    for expr in program.expressions do
-        generateExpression mainMethod expr scope
+    generateMainMethod mainClass mainMethod program scope
 
     ilGen.BeginCatchBlock(typeof<CottontailSchemeException>)
 
