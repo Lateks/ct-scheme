@@ -23,7 +23,6 @@
 (display (add5 10))
 (newline)
 
-; TODO: x needs to be marked as captured in the (lambda (y) ...) body
 (define add3
   (lambda (x)
     (lambda (y)
