@@ -440,19 +440,26 @@ let instantiateClosureFrameOnStack (gen : Emit.ILGenerator) (constructorHandle :
 let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let rebindFrameFields frameVar scope captures =
         let frameVariable = LocalVar frameVar
+        let makeFrameField f = ObjectField (f, frameVariable)
 
         let rec rebind newScope =
             function
             | [] -> newScope
             | (id, (InstanceField f)) :: xs
-                -> if newScope.variables.ContainsKey id.uniqueName then
-                      failwith "Not handling local variable capture yet!"
-                      // TODO: need to replace variable in scope with an ObjectField
-                   else
-                      let newVariable = ObjectField (f, frameVariable)
-                      let newVars = Map.add id.uniqueName newVariable newScope.variables
-                      let scope' = { newScope with variables = newVars }
-                      rebind scope' xs
+                -> let newVars = if newScope.variables.ContainsKey id.uniqueName then
+                                    let var = newScope.variables.Item(id.uniqueName)
+                                    let varRemoved = Map.remove id.uniqueName newScope.variables
+                                    let newVar = match var with
+                                                 | LocalVar _ -> makeFrameField f
+                                                 | InstanceField _
+                                                 | ObjectField _ -> failwith "Not implemented yet: nested capture!"
+                                                 | f -> failwithf "Unexpected field type found in captures, %A" f
+                                    Map.add id.uniqueName newVar varRemoved
+                                 else
+                                    let newVariable = makeFrameField f
+                                    Map.add id.uniqueName newVariable newScope.variables
+                   let scope' = { newScope with variables = newVars }
+                   rebind scope' xs
             | (_, f)::_ -> failwithf "Error, expected an instance field but got %A" f
 
         rebind scope captures
@@ -464,19 +471,18 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit
 
     // TODO: frame variable should be added to locals and references to captured variables should be bound
     //       to pass through the frame object
-    let closureInfo, frameVar, captures = generateClosures mainClass parentClass mb scope c.functionName.uniqueName closures
+    let localVarIds = List.append (c.variableDeclarations |> List.map (fun (VariableDeclaration id) -> id))
+                                  (c.procedureDefinitions |> List.map (fun (ProcedureDefinition (id, _)) -> id))
+    let closureInfo, frameVar, captures = generateClosures mainClass parentClass mb scope c.functionName.uniqueName localVarIds closures
     let newScope = match frameVar with
                    | Some var -> rebindFrameFields var scope captures
                    | None -> scope
     printfn "New scope for %s contains variables %A" c.functionName.uniqueName newScope.variables
 
-    let vars = c.variableDeclarations
-               |> List.map (fun (VariableDeclaration id) ->
-                                (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
-    let procs = c.procedureDefinitions
-                |> List.map (fun (ProcedureDefinition (id, proc)) ->
-                                 (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
-    let locals = List.append vars procs
+    let capturedVars = captures |> List.map (fun (id, _) -> id)
+    let locals = localVarIds
+                 |> List.filter (fun id -> not <| List.contains id capturedVars)
+                 |> List.map (fun id -> (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
 
     // TODO: variables no longer visible need to be removed at some point
     let extendedScope = { newScope with variables = Map.toSeq newScope.variables
@@ -503,7 +509,7 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit
 //            Used for defined nested frame classes.
 // parentClass: Parent class of current method (mb).
 //              Used to house non-capturing lambda bodies as methods.
-and generateClosures (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (scope : Scope) parentProcedureName closures =
+and generateClosures (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (scope : Scope) parentProcedureName localVars closures =
     let makeBuilders lambdaParentClass isFrameClass =
         List.map (fun nestedClosure -> (nestedClosure.functionName.uniqueName,
                                         defineProcedure lambdaParentClass nestedClosure isFrameClass,
@@ -538,8 +544,14 @@ and generateClosures (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuil
             let lambdaScope = createLambdaFrameScope fields scope
 
             let frameVar = gen.DeclareLocal(frameClass)
-            let matchedCaptures = matchCaptures captures fields
-            instantiateClosureFrameOnStack gen cons matchedCaptures scope mb.IsStatic
+
+            let matchedCaptures = captures
+                                  |> fun nonLocalCaps -> matchCaptures nonLocalCaps fields
+
+            // Local variables are not instantiated until the parent method body assigns them
+            let nonLocalCaptures = matchedCaptures
+                                   |> List.filter (fun (id, f) -> not <| List.contains id localVars)
+            instantiateClosureFrameOnStack gen cons nonLocalCaptures scope mb.IsStatic
             gen.Emit(Emit.OpCodes.Stloc, frameVar)
 
             let builders = makeBuilders frameClass true closures
@@ -587,7 +599,7 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
 
 let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
     let closures = findClosuresInScope program.expressions
-    let closureInfo, _, _ = generateClosures mainClass mainClass mainMethod scope "Main" closures
+    let closureInfo, _, _ = generateClosures mainClass mainClass mainMethod scope "Main" [] closures
     let extendedScope = { scope with closureInfo = closureInfo }
 
     for expr in program.expressions do

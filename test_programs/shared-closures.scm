@@ -12,23 +12,40 @@
 (display ((car (cdr (cdr test-fns))) 5)) ; 5
 (newline)
 
-;(define increment #f)
-;(define get #f)
-;(define inc-and-get #f)
-;(define setup
-;  (lambda ()
-;    (define c 0)
-;    (set! increment (lambda () (set! c (+ c 1))))
-;	(set! get (lambda () c))
-;	;(set! inc-and-get (lambda () (increment) (get))))
-;	#t)
+(define get-counter
+  (lambda ()
+    (define c 0)
+	(define inc
+	  (lambda ()
+		(set! c (+ c 1))
+		c))
+	inc))
 
-;(setup)
-;(display (get))
-;(newline)
-;(increment)
-;(display (get))
-;(newline)
+(define ctr (get-counter))
+(display (ctr))
+(newline)
+(display (ctr))
+(newline)
+
+(define increment #f)
+(define get #f)
+(define inc-and-get #f)
+(define setup
+  (lambda ()
+    (define c 0)
+    (set! increment (lambda () (set! c (+ c 1))))
+    (set! get (lambda () c))
+	;(set! inc-and-get (lambda () (increment) (get)))
+	#t))
+
+(setup)
+(display (get)) ; 0
+(newline)
+(increment)
+(increment)
+(increment)
+(display (get)) ; 3
+(newline)
 
 ; (define counter
 ;   (lambda ()
