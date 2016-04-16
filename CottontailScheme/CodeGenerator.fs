@@ -619,12 +619,11 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
             let builders = makeBuilders frameClass true closures
 
             // TODO: add locally visible procedures to lambda scope before generating bodies
-            // TODO: what about the current frame instance?
             let newFrame = { parent = currentFrame;
                              frameFields = fields |> List.map (fun (n, InstanceField f) -> (n, f));
                              staticLink = capturedFrameField;
                              frameClass = frameClass; }
-            let lambdaScope = scope |> extendScopeWithFrameFields fields // TODO: add fields accessible through static link to scope
+            let lambdaScope = scope |> extendScopeWithFrameFields fields
                                     |> extendScopeWithIndirectlyAccessibleFields nonLocalCaptures capturedFrameField
             generateBodies builders (Some newFrame) lambdaScope
 
