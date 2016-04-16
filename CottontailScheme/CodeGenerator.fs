@@ -24,6 +24,12 @@ type Scope = { variables : Map<string, Variable>;
                procedures : Map<string, Procedure>;
                closureInfo : Map<string, ClosureLoadInfo> }
 
+// TODO: procedures?
+type Frame = { frameClass : Emit.TypeBuilder;
+               frameFields: (string * Emit.FieldBuilder) list;
+               staticLink: Emit.FieldBuilder option;
+               parent: Frame option }
+
 let builtIns = ref []
 
 let setupAssembly name =
@@ -400,29 +406,23 @@ let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope
            gen.Emit(Emit.OpCodes.Ldftn, closureInfo.lambdaBuilder)
            createProcedureObjectOnStack gen c true
 
-let defineFrame (parentClass : Emit.TypeBuilder) (captures : Identifier list) parentProcedureName =
+let defineFrame (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (capturesFromCurrentScope : Identifier list) (captureParentFrame : bool) parentProcedureName =
     let frameClassName = sprintf "%s$frame" parentProcedureName
-    let frameClass = parentClass.DefineNestedType(frameClassName, TypeAttributes.NestedAssembly)
-    // Define fields for captured variables
-    let fields = captures
+    let frameClass = mainClass.DefineNestedType(frameClassName, TypeAttributes.NestedAssembly)
+
+    let fields = capturesFromCurrentScope
                  |> List.map (fun id ->
-                                     let field = frameClass.DefineField(id.uniqueName,
-                                                                        typeof<CTObject>,
-                                                                        FieldAttributes.Assembly)
-                                     (id.uniqueName, InstanceField field))
+                                  let field = frameClass.DefineField(id.uniqueName, typeof<CTObject>, FieldAttributes.Assembly)
+                                  (id.uniqueName, InstanceField field))
+
+    let frameField = if captureParentFrame then
+                        let field = frameClass.DefineField("staticLink", parentClass, FieldAttributes.Assembly)
+                        Some field
+                     else
+                        None
 
     let defaultConstructor = frameClass.DefineDefaultConstructor(MethodAttributes.Public)
-    (frameClass, defaultConstructor, fields)
-
-let createLambdaFrameScope fields scope =
-    // TODO: add local procedures to scope?
-    let extendedVars =
-        fields
-        |> List.fold (fun map (fieldName, f) ->
-                            map |> Map.remove fieldName
-                                |> Map.add fieldName f)
-                     scope.variables
-    { scope with variables = extendedVars }
+    (frameClass, defaultConstructor, fields, frameField)
 
 let matchCaptures capturedVars captureFields =
     let fields = Map.ofList captureFields
@@ -437,7 +437,7 @@ let instantiateClosureFrameOnStack (gen : Emit.ILGenerator) (constructorHandle :
         emitVariableLoad gen scope id isStaticContext
         gen.Emit(Emit.OpCodes.Stfld, f)
 
-let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
+let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Frame option) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let rebindFrameFields frameVar scope captures =
         let frameVariable = LocalVar frameVar
         let makeFrameField f = ObjectField (f, frameVariable)
@@ -448,13 +448,14 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit
             | (id, (InstanceField f)) :: xs
                 -> let newVars = if newScope.variables.ContainsKey id.uniqueName then
                                     let var = newScope.variables.Item(id.uniqueName)
-                                    let varRemoved = Map.remove id.uniqueName newScope.variables
-                                    let newVar = match var with
-                                                 | LocalVar _ -> makeFrameField f
-                                                 | InstanceField _
-                                                 | ObjectField _ -> failwith "Not implemented yet: nested capture!"
-                                                 | f -> failwithf "Unexpected field type found in captures, %A" f
-                                    Map.add id.uniqueName newVar varRemoved
+                                    match var with
+                                    | LocalVar _ -> let newVar = makeFrameField f
+                                                    newScope.variables
+                                                    |> Map.remove id.uniqueName
+                                                    |> Map.add id.uniqueName newVar
+                                    | InstanceField _
+                                    | ObjectField _ -> newScope.variables
+                                    | Field _ -> failwithf "Unexpected static field found in captures (%s)" id.uniqueName
                                  else
                                     let newVariable = makeFrameField f
                                     Map.add id.uniqueName newVariable newScope.variables
@@ -469,11 +470,12 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit
                    |> List.append (List.map (fun (ProcedureDefinition (_, def)) -> def) c.procedureDefinitions)
     printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
 
-    // TODO: frame variable should be added to locals and references to captured variables should be bound
-    //       to pass through the frame object
+    let args = match c.formals with
+               | SingleArgFormals id -> [id]
+               | MultiArgFormals ids -> ids
     let localVarIds = List.append (c.variableDeclarations |> List.map (fun (VariableDeclaration id) -> id))
                                   (c.procedureDefinitions |> List.map (fun (ProcedureDefinition (id, _)) -> id))
-    let closureInfo, frameVar, captures = generateClosures mainClass parentClass mb scope c.functionName.uniqueName localVarIds closures
+    let closureInfo, frameVar, captures = generateClosures mainClass mb scope c.functionName.uniqueName parentFrame localVarIds args closures
     let newScope = match frameVar with
                    | Some var -> rebindFrameFields var scope captures
                    | None -> scope
@@ -509,17 +511,69 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentClass : Emit
 //            Used for defined nested frame classes.
 // parentClass: Parent class of current method (mb).
 //              Used to house non-capturing lambda bodies as methods.
-and generateClosures (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (scope : Scope) parentProcedureName localVars closures =
+and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (scope : Scope) parentProcedureName (currentFrame : Frame option) localVars args closures =
+    let parentClass = match currentFrame with
+                      | None -> mainClass
+                      | Some f -> f.frameClass
     let makeBuilders lambdaParentClass isFrameClass =
         List.map (fun nestedClosure -> (nestedClosure.functionName.uniqueName,
                                         defineProcedure lambdaParentClass nestedClosure isFrameClass,
                                         nestedClosure))
-    let generateBodies builders scope =
+    let generateBodies builders frame scope =
         for (name, lb, nestedClosure) in builders do
-            generateProcedureBody mainClass parentClass lb nestedClosure scope
+            generateProcedureBody mainClass frame lb nestedClosure scope
     let buildClosureInfoMap localFrameVar =
         List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = localFrameVar }))
         >> Map.ofList
+    let isArgument id = List.contains id args
+    let capturesFromCurrentScope captures =
+        let isLocal id = List.contains id localVars
+        captures |> List.filter (fun id -> isArgument id || isLocal id)    
+    let extendScopeWithFrameFields fields scope =
+        // TODO: add local procedures to scope?
+        let extendedVars =
+            fields
+            |> List.fold (fun map (fieldName, f) ->
+                              map |> Map.remove fieldName
+                                  |> Map.add fieldName f)
+                         scope.variables
+        { scope with variables = extendedVars }
+
+    let createIndirectReferenceTo staticLink name =
+        let fail () = failwithf "Cannot build an indirect reference to field %s" name
+        let rec buildIndirectReferenceChain frameOpt =
+            if Option.isNone frameOpt then fail ()
+
+            let frame = Option.get frameOpt
+            let fieldMap = Map.ofList frame.frameFields
+            if fieldMap.ContainsKey name then
+                [fieldMap.Item(name)]
+            else
+               if Option.isNone frame.staticLink then fail ()
+               let link = Option.get frame.staticLink
+               link :: (buildIndirectReferenceChain frame.parent)
+        let rec buildVarChain fbs =
+            match fbs with
+            | []    -> fail ()
+            | x::[] -> InstanceField x
+            | x::xs -> ObjectField (x, buildVarChain xs)
+
+        let referenceChain = staticLink :: (buildIndirectReferenceChain currentFrame)
+                             |> List.rev
+        buildVarChain referenceChain
+
+    let extendScopeWithIndirectlyAccessibleFields nonLocalCaptures staticLinkField scope =
+        match staticLinkField with
+        | None -> scope
+        | Some f ->
+            let newVars =
+                nonLocalCaptures
+                |> List.fold (fun map id ->
+                                  let variable = createIndirectReferenceTo f id.uniqueName
+                                  map |> Map.remove id.uniqueName
+                                      |> Map.add id.uniqueName variable)
+                             scope.variables
+            { scope with variables = newVars }
 
     let gen = mb.GetILGenerator()
     if List.isEmpty closures then
@@ -530,39 +584,50 @@ and generateClosures (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuil
                        |> List.concat
                        |> List.distinct
         if captures.IsEmpty then
-            let isInsideFrameClass = mainClass <> parentClass
+            let isInsideFrameClass = currentFrame.IsSome
             let builders = makeBuilders parentClass isInsideFrameClass closures
 
             // TODO: add locally visible procedures to lambda scope before generating bodies
             //       to allow procedures to call each other
             // TODO: scope passed in should be the "lambda scope" of the previous level
-            generateBodies builders scope
+            generateBodies builders currentFrame scope
 
             buildClosureInfoMap None builders, None, []
         else
-            let frameClass, cons, fields = defineFrame mainClass captures parentProcedureName
-            let lambdaScope = createLambdaFrameScope fields scope
+            let currentScopeCaptures = capturesFromCurrentScope captures
+            let nonLocalCaptures = captures |> List.filter (fun id -> not <| List.contains id currentScopeCaptures)
+            let captureParentFrame = captures.Length <> currentScopeCaptures.Length
+            let frameClass, cons, fields, capturedFrameField = defineFrame mainClass parentClass currentScopeCaptures captureParentFrame parentProcedureName
 
             let frameVar = gen.DeclareLocal(frameClass)
 
-            let matchedCaptures = captures
-                                  |> fun nonLocalCaps -> matchCaptures nonLocalCaps fields
+            let matchedCapturesInCurrentScope = matchCaptures currentScopeCaptures fields
+            let lambdaScope = scope |> extendScopeWithFrameFields fields // TODO: add fields accessible through static link to scope
+                                    |> extendScopeWithIndirectlyAccessibleFields nonLocalCaptures capturedFrameField
 
             // Local variables are not instantiated until the parent method body assigns them
-            let nonLocalCaptures = matchedCaptures
-                                   |> List.filter (fun (id, f) -> not <| List.contains id localVars)
-            instantiateClosureFrameOnStack gen cons nonLocalCaptures scope mb.IsStatic
+            let argCaptures = matchedCapturesInCurrentScope |> List.filter (fun (id, _) -> isArgument id)
+            instantiateClosureFrameOnStack gen cons argCaptures scope mb.IsStatic
+            match capturedFrameField with
+            | None -> ()
+            | Some f -> gen.Emit(Emit.OpCodes.Dup)
+                        gen.Emit(Emit.OpCodes.Ldarg_0)
+                        gen.Emit(Emit.OpCodes.Stfld, f)
             gen.Emit(Emit.OpCodes.Stloc, frameVar)
 
             let builders = makeBuilders frameClass true closures
 
             // TODO: add locally visible procedures to lambda scope before generating bodies
             // TODO: what about the current frame instance?
-            generateBodies builders lambdaScope
+            let newFrame = { parent = currentFrame;
+                             frameFields = fields |> List.map (fun (n, InstanceField f) -> (n, f));
+                             staticLink = capturedFrameField;
+                             frameClass = frameClass; }
+            generateBodies builders (Some newFrame) lambdaScope
 
             frameClass.CreateType() |> ignore
 
-            buildClosureInfoMap (Some frameVar) builders, Some frameVar, matchedCaptures
+            buildClosureInfoMap (Some frameVar) builders, Some frameVar, matchedCapturesInCurrentScope
 
 let generateExpression (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) =
     generateSubExpression mb scope false expr
@@ -582,7 +647,7 @@ let defineProcedures (mainClass : Emit.TypeBuilder) =
 
 let generateTopLevelProcedureBodies (mainClass : Emit.TypeBuilder) (scope : Scope) =
     for (_, proc) in Map.toSeq scope.procedures do
-        generateProcedureBody mainClass mainClass proc.methodBuilder proc.closure scope
+        generateProcedureBody mainClass None proc.methodBuilder proc.closure scope
 
 let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDefinition list) (scope : Scope) =
     let classInitializer = mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public, CallingConventions.Standard, [||])
@@ -599,7 +664,7 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
 
 let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
     let closures = findClosuresInScope program.expressions
-    let closureInfo, _, _ = generateClosures mainClass mainClass mainMethod scope "Main" [] closures
+    let closureInfo, _, _ = generateClosures mainClass mainMethod scope "Main" None [] [] closures
     let extendedScope = { scope with closureInfo = closureInfo }
 
     for expr in program.expressions do
