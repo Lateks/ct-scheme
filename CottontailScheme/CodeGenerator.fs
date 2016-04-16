@@ -495,6 +495,8 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Fram
 
     printfn "Extended scope for %s with closures contains variables %A" c.functionName.uniqueName extendedScopeWithClosures.variables
 
+    printfn "Generating body for closure %A" c
+
     for ProcedureDefinition (id, proc) in c.procedureDefinitions do
         generateSubExpression mb extendedScopeWithClosures false (Assignment (id, Closure proc))
 
@@ -594,6 +596,7 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
 
             buildClosureInfoMap None builders, None, []
         else
+            printfn "Generating closures inside %s, capture list is %A" parentProcedureName (List.map (fun id -> id.uniqueName) captures)
             let currentScopeCaptures = capturesFromCurrentScope captures
             let nonLocalCaptures = captures |> List.filter (fun id -> not <| List.contains id currentScopeCaptures)
             let captureParentFrame = captures.Length <> currentScopeCaptures.Length
@@ -602,8 +605,6 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
             let frameVar = gen.DeclareLocal(frameClass)
 
             let matchedCapturesInCurrentScope = matchCaptures currentScopeCaptures fields
-            let lambdaScope = scope |> extendScopeWithFrameFields fields // TODO: add fields accessible through static link to scope
-                                    |> extendScopeWithIndirectlyAccessibleFields nonLocalCaptures capturedFrameField
 
             // Local variables are not instantiated until the parent method body assigns them
             let argCaptures = matchedCapturesInCurrentScope |> List.filter (fun (id, _) -> isArgument id)
@@ -623,6 +624,8 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
                              frameFields = fields |> List.map (fun (n, InstanceField f) -> (n, f));
                              staticLink = capturedFrameField;
                              frameClass = frameClass; }
+            let lambdaScope = scope |> extendScopeWithFrameFields fields // TODO: add fields accessible through static link to scope
+                                    |> extendScopeWithIndirectlyAccessibleFields nonLocalCaptures capturedFrameField
             generateBodies builders (Some newFrame) lambdaScope
 
             frameClass.CreateType() |> ignore

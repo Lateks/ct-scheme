@@ -351,6 +351,29 @@ type ``Lambda labeling`` () =
                   c.globalVariableReferences |> List.head |> shouldBeNamed "+"
                   c.globalVariableReferences |> List.last |> shouldBeNamed "y"
 
+        parseAndBuild "(define mult4\
+                         (lambda (x)\
+                           (lambda (y)\
+	                         (define xy (* x y))\
+	                         (lambda (z)\
+	                           (define xyz (* xy z))\
+	                           (lambda (t)\
+		                        (* xyz t))))))"
+        |> getStructure
+        |> fun p -> p.procedureDefinitions
+        |> List.head
+        |> fun (ProcedureDefinition (id, c))
+            -> c.environment |> should equal List.empty
+               let (Closure c2) = List.head c.body
+               c2.environment.Length |> should equal 1
+               c2.environment |> List.head |> shouldBeNamed "x"
+               let (Closure c3) = List.last c2.body
+               c3.environment.Length |> should equal 1
+               c3.environment |> List.head |> shouldBeNamed "xy"
+               let (Closure c4) = List.last c3.body
+               c4.environment.Length |> should equal 1
+               c4.environment |> List.head |> shouldBeNamed "xyz"
+
 [<TestFixture>]
 type ``Name bindings`` () =
     let getDeclaredId (VariableDeclaration id) = id

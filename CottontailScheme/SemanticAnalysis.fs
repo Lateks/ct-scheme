@@ -193,6 +193,8 @@ module LambdaHelpers =
                 |> List.append (collectFreeVariables proc)
             | AnalysisAssignment (id, expr) ->
                 List.append (collect id) (collectFreeVariables expr)
+            | AnalysisIdentifierDefinition (_, expr) ->
+                collectFreeVariables expr
             | AnalysisConditional (cond, thenExpr, elseExpr) ->
                 [cond; thenExpr; elseExpr]
                 |> collectFromExprList
@@ -205,7 +207,8 @@ module LambdaHelpers =
                 |> List.append c.globalVariableReferences
                 |> List.map collect
                 |> List.concat
-            | _ -> []
+            | AnalysisValueExpression _
+            | AnalysisUndefinedValue -> []
         and collectFromExprList =
             List.map collectFreeVariables >> List.concat
 
