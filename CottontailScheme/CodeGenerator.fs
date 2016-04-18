@@ -287,7 +287,7 @@ let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope
         | [] -> if pushOnStack then loadBooleanObject gen (not breakValue)
         | exprs ->
             let exitLabel = gen.DefineLabel()
-            let tempVar = if pushOnStack then
+            let tempVar = if pushOnStack || emitReturn then
                              Some <| gen.DeclareLocal(typeof<CTObject>)
                           else
                              None
@@ -351,8 +351,6 @@ let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope
                 gen.Emit(Emit.OpCodes.Starg_S, (byte) index)
             | None -> failwith "Attempting to set! unknown variable %A" id
 
-        if pushOnStack then loadUndefined gen
-
     let pushArgsAsArray args = emitArray gen args (generateSubExpression methodBuilder scope true false)
     let pushIndividualArgs args = for arg in args do pushExprResultToStack arg
     let emitCallToFirstClassProcedureOnStack args isTailCall =
@@ -396,10 +394,8 @@ let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope
            | VariableReference id -> emitNamedProcedureCall id args isTailCall
            | e -> pushExprResultToStack e
                   emitCallToFirstClassProcedureOnStack args isTailCall
-           if not pushOnStack then popStack gen
     | ValueExpression lit
         -> emitLiteral gen lit
-           if not pushOnStack then popStack gen
     | Conditional (cond, thenBranch, elseBranch)
         -> emitConditional cond thenBranch elseBranch
     | SequenceExpression (seqType, exprs)
@@ -411,9 +407,6 @@ let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope
         -> emitAssignment id expr
     | VariableReference id
         -> emitVariableLoad id
-           if not pushOnStack then popStack gen
-    | UndefinedValue
-        -> if pushOnStack then loadUndefined gen
     | Closure c
         -> printfn "Looking for closure info for %s, scope contains %A" c.functionName.uniqueName (mapKeys scope.closureInfo)
            let closureInfo = scope.closureInfo.Item(c.functionName.uniqueName)
@@ -423,12 +416,24 @@ let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope
 
            gen.Emit(Emit.OpCodes.Ldftn, closureInfo.lambdaBuilder)
            createProcedureObjectOnStack gen c true
-           if not pushOnStack then popStack gen
+    | UndefinedValue -> ()
 
-    if emitReturn then
-        match expr with
-        | Conditional _ | SequenceExpression _ -> ()
-        | _ -> gen.Emit(Emit.OpCodes.Ret)
+    match expr with
+    | Conditional _ | SequenceExpression _ -> ()
+    | Assignment _
+    | UndefinedValue _
+        -> if emitReturn then
+              loadUndefined gen
+              gen.Emit(Emit.OpCodes.Ret)
+           elif pushOnStack then
+              loadUndefined gen
+    | _ -> if emitReturn then
+              gen.Emit(Emit.OpCodes.Ret)
+           elif not pushOnStack then
+              popStack gen
+
+let generateExpression (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) emitReturn =
+    generateSubExpression mb scope false emitReturn expr
 
 let defineFrame (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (capturesFromCurrentScope : Identifier list) (captureParentFrame : bool) parentProcedureName =
     let frameClassName = sprintf "%s$frame" parentProcedureName
@@ -537,16 +542,16 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Fram
 
     // Populate (assign) the local variables that hold closures.
     for ProcedureDefinition (id, proc) in c.procedureDefinitions do
-        generateSubExpression mb scopeWithLocalFieldsAndClosures false false (Assignment (id, Closure proc))
+        generateExpression mb (Assignment (id, Closure proc)) scopeWithLocalFieldsAndClosures false
 
     // Generate procedure body.
     let body = List.take (c.body.Length - 1) c.body
     let tailExpr = List.last c.body
 
     for expr in body do
-        generateSubExpression mb scopeWithLocalFieldsAndClosures false false expr
+        generateExpression mb expr scopeWithLocalFieldsAndClosures false
 
-    generateSubExpression mb scopeWithLocalFieldsAndClosures true true tailExpr
+    generateExpression mb tailExpr scopeWithLocalFieldsAndClosures true
 
 // mainClass: Top level class in module, containing the main method.
 //            Used for defining nested frame classes.
@@ -692,9 +697,6 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
               frameVariable = Some frameVar;
               matchedCapturesFromCurrentScope = matchedCapturesInCurrentScope }
 
-let generateExpression (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) =
-    generateSubExpression mb scope false false expr
-
 let defineVariables (c : Emit.TypeBuilder)=
     List.map (fun (VariableDeclaration id) ->
                   (id.uniqueName, Field <| c.DefineField(id.uniqueName,
@@ -731,7 +733,7 @@ let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
     let scopeWithClosures = { scope with closureInfo = frameInfo.closureInfo }
 
     for expr in program.expressions do
-        generateExpression mainMethod expr scopeWithClosures
+        generateExpression mainMethod expr scopeWithClosures false
 
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
