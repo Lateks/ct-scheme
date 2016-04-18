@@ -437,34 +437,38 @@ let instantiateClosureFrameOnStack (gen : Emit.ILGenerator) (constructorHandle :
         emitVariableLoad gen scope id isStaticContext
         gen.Emit(Emit.OpCodes.Stfld, f)
 
+let rebindFrameFields frameVar scope captures =
+    let frameVariable = LocalVar frameVar
+    let makeFrameField f = ObjectField (f, frameVariable)
+
+    // Binds captured local variable names and argument names
+    // to fields on the frame variable
+    let rec rebindName name scope fb =
+        let newVariable = makeFrameField fb
+        if scope.variables.ContainsKey name then
+            let var = scope.variables.Item(name)
+            match var with
+            | LocalVar _
+                -> scope.variables
+                    |> Map.remove name
+                    |> Map.add name newVariable
+            | InstanceField _
+            | ObjectField _ -> scope.variables
+            | Field _ -> failwithf "Unexpected static field found in captures (%s)" name
+        else
+            Map.add name newVariable scope.variables
+    let rec rebind newScope =
+        function
+        | [] -> newScope
+        | (id, (InstanceField f)) :: xs
+            -> let newVars = rebindName id.uniqueName newScope f
+               let scope' = { newScope with variables = newVars }
+               rebind scope' xs
+        | (_, f)::_ -> failwithf "Error, expected an instance field but got %A" f
+
+    rebind scope captures
+
 let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Frame option) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
-    let rebindFrameFields frameVar scope captures =
-        let frameVariable = LocalVar frameVar
-        let makeFrameField f = ObjectField (f, frameVariable)
-
-        let rec rebind newScope =
-            function
-            | [] -> newScope
-            | (id, (InstanceField f)) :: xs
-                -> let newVars = if newScope.variables.ContainsKey id.uniqueName then
-                                    let var = newScope.variables.Item(id.uniqueName)
-                                    match var with
-                                    | LocalVar _ -> let newVar = makeFrameField f
-                                                    newScope.variables
-                                                    |> Map.remove id.uniqueName
-                                                    |> Map.add id.uniqueName newVar
-                                    | InstanceField _
-                                    | ObjectField _ -> newScope.variables
-                                    | Field _ -> failwithf "Unexpected static field found in captures (%s)" id.uniqueName
-                                 else
-                                    let newVariable = makeFrameField f
-                                    Map.add id.uniqueName newVariable newScope.variables
-                   let scope' = { newScope with variables = newVars }
-                   rebind scope' xs
-            | (_, f)::_ -> failwithf "Error, expected an instance field but got %A" f
-
-        rebind scope captures
-
     let gen = mb.GetILGenerator()
     let closures = findClosuresInScope c.body
                    |> List.append (List.map (fun (ProcedureDefinition (_, def)) -> def) c.procedureDefinitions)
