@@ -268,3 +268,4 @@
 (test "local functional loop"
       (multiply '(1 2 3 4 5) 3)
 	  '(3 6 9 12 15))
+

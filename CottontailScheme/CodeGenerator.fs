@@ -287,10 +287,13 @@ let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope
         | [] -> if pushOnStack then loadBooleanObject gen (not breakValue)
         | exprs ->
             let exitLabel = gen.DefineLabel()
-            let tempVar = if pushOnStack then Some <| gen.DeclareLocal(typeof<CTObject>) else None
-            let storeTempValue () = tempVar |> Option.map (fun (v : Emit.LocalBuilder) -> gen.Emit(Emit.OpCodes.Stloc, v.LocalIndex))
+            let tempVar = if pushOnStack then
+                             Some <| gen.DeclareLocal(typeof<CTObject>)
+                          else
+                             None
+            let storeTempValue () = tempVar |> Option.map (fun (v : Emit.LocalBuilder) -> gen.Emit(Emit.OpCodes.Stloc, v))
                                             |> ignore
-            let loadTempValue () = tempVar |> Option.map (fun (v : Emit.LocalBuilder) -> gen.Emit(Emit.OpCodes.Ldloc, v.LocalIndex))
+            let loadTempValue () = tempVar |> Option.map (fun (v : Emit.LocalBuilder) -> gen.Emit(Emit.OpCodes.Ldloc, v))
                                            |> ignore
             let comparison = if breakValue then
                                 Emit.OpCodes.Brtrue
@@ -307,14 +310,18 @@ let rec generateSubExpression (methodBuilder : Emit.MethodBuilder) (scope: Scope
                 emitBooleanConversion gen
                 gen.Emit(comparison, exitLabel)
 
-            pushExprResultToStack tailExpr // TODO: if this is a procedure call, it should become a tail call
-            if pushOnStack then
+            pushExprResultToStack tailExpr
+            if emitReturn then // return with tail expression value
+                gen.Emit(Emit.OpCodes.Ret)
+            elif pushOnStack then
                 storeTempValue ()
             else
                 popStack gen
 
             gen.MarkLabel(exitLabel)
             loadTempValue ()
+            if emitReturn then // return with stored value
+                gen.Emit(Emit.OpCodes.Ret)
 
     let emitVariableLoad id =
         emitVariableLoad gen scope id methodBuilder.IsStatic
