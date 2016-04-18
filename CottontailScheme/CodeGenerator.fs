@@ -438,83 +438,96 @@ let instantiateClosureFrameOnStack (gen : Emit.ILGenerator) (constructorHandle :
         gen.Emit(Emit.OpCodes.Stfld, f)
 
 let rebindFrameFields frameVar scope captures =
-    let frameVariable = LocalVar frameVar
-    let makeFrameField f = ObjectField (f, frameVariable)
+    match frameVar with
+    | None -> scope
+    | Some v ->
+        let frameVariable = LocalVar v
 
-    // Binds captured local variable names and argument names
-    // to fields on the frame variable
-    let rec rebindName name scope fb =
-        let newVariable = makeFrameField fb
-        if scope.variables.ContainsKey name then
-            let var = scope.variables.Item(name)
-            match var with
-            | LocalVar _
-                -> scope.variables
-                    |> Map.remove name
-                    |> Map.add name newVariable
-            | InstanceField _
-            | ObjectField _ -> scope.variables
-            | Field _ -> failwithf "Unexpected static field found in captures (%s)" name
-        else
-            Map.add name newVariable scope.variables
-    let rec rebind newScope =
-        function
-        | [] -> newScope
-        | (id, (InstanceField f)) :: xs
-            -> let newVars = rebindName id.uniqueName newScope f
-               let scope' = { newScope with variables = newVars }
-               rebind scope' xs
-        | (_, f)::_ -> failwithf "Error, expected an instance field but got %A" f
+        // Binds captured local variable names and argument names
+        // to fields on the frame variable
+        let rec rebindName name scope fb =
+            if scope.variables.ContainsKey name then
+                match scope.variables.Item(name) with
+                | InstanceField _ | ObjectField _ -> scope.variables
+                | Field _ | LocalVar _ as f -> failwithf "Unexpected field found in captures (%s): %A" name f
+            else
+                let frameFieldReference = ObjectField (fb, frameVariable)
+                Map.add name frameFieldReference scope.variables
+        let rec rebind newScope =
+            function
+            | [] -> newScope
+            | (id, (InstanceField f)) :: xs
+                -> let newVars = rebindName id.uniqueName newScope f
+                   let scope' = { newScope with variables = newVars }
+                   rebind scope' xs
+            | (_, f)::_ -> failwithf "Error, expected an instance field but got %A" f
 
-    rebind scope captures
+        rebind scope captures
+
+// Helper functions for handling closure definitions.
+let getFormals (c : ClosureDefinition) =
+    match c.formals with
+    | SingleArgFormals id -> [id]
+    | MultiArgFormals ids -> ids
+
+let getLocalVariableIds (c : ClosureDefinition) =
+    c.variableDeclarations |> List.map (fun (VariableDeclaration id) -> id)
+
+let getLocalProcedureIds (c : ClosureDefinition) =
+    c.procedureDefinitions |> List.map (fun (ProcedureDefinition (id, _)) -> id)
 
 let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Frame option) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let gen = mb.GetILGenerator()
-    let closures = findClosuresInScope c.body
-                   |> List.append (List.map (fun (ProcedureDefinition (_, def)) -> def) c.procedureDefinitions)
+    let closures = let namedProcedures = c.procedureDefinitions
+                                         |> List.map (fun (ProcedureDefinition (_, def)) -> def)
+                   let anonymousProcedures = findClosuresInScope c.body
+                   List.append namedProcedures anonymousProcedures
+
+    // Debug printing, TODO: remove
     printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
 
-    let args = match c.formals with
-               | SingleArgFormals id -> [id]
-               | MultiArgFormals ids -> ids
-    let localVarIds = List.append (c.variableDeclarations |> List.map (fun (VariableDeclaration id) -> id))
-                                  (c.procedureDefinitions |> List.map (fun (ProcedureDefinition (id, _)) -> id))
-    let closureInfo, frameVar, captures = generateClosures mainClass mb scope c.functionName.uniqueName parentFrame localVarIds args closures
-    let newScope = match frameVar with
-                   | Some var -> rebindFrameFields var scope captures
-                   | None -> scope
-    printfn "New scope for %s contains variables %A" c.functionName.uniqueName newScope.variables
+    // Create frame classes and closure body methods.
+    // 
+    let procedureArguments = getFormals c
+    let localVarIds = List.append (getLocalVariableIds c) (getLocalProcedureIds c)
+    let closureInfo, frameVar, captures = generateClosures mainClass mb scope c.functionName.uniqueName parentFrame localVarIds procedureArguments closures
+    let scopeWithFrameReferences = rebindFrameFields frameVar scope captures
 
-    let capturedVars = captures |> List.map (fun (id, _) -> id)
-    let locals = localVarIds
-                 |> List.filter (fun id -> not <| List.contains id capturedVars)
-                 |> List.map (fun id -> (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
+    // Find local variables that were not captured in the frame and
+    // add them to the local scope.
+    let capturedVarIds = captures |> List.map (fun (id, _) -> id)
+    let newLocals = localVarIds
+                    |> List.filter (fun id -> not <| List.contains id capturedVarIds)
+                    |> List.map (fun id -> (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
 
-    // TODO: variables no longer visible need to be removed at some point
-    let extendedScope = { newScope with variables = Map.toSeq newScope.variables
-                                                    |> Seq.append locals
-                                                    |> Map.ofSeq }
+    // TODO: do some local names need to be removed from scope later?
+    let scopeWithLocalFieldsAndClosures =
+        { scopeWithFrameReferences with
+            variables = Map.toSeq scopeWithFrameReferences.variables
+                        |> Seq.append newLocals
+                        |> Map.ofSeq
+            closureInfo = closureInfo }
 
-    let extendedScopeWithClosures = { extendedScope with closureInfo = closureInfo }
-
-    printfn "Extended scope for %s with closures contains variables %A" c.functionName.uniqueName extendedScopeWithClosures.variables
-
+    // Debug printing, TODO: remove
+    printfn "Extended scope for %s with closures contains variables %A" c.functionName.uniqueName scopeWithLocalFieldsAndClosures.variables
     printfn "Generating body for closure %A" c
 
+    // Populate (assign) the local variables that hold closures.
     for ProcedureDefinition (id, proc) in c.procedureDefinitions do
-        generateSubExpression mb extendedScopeWithClosures false (Assignment (id, Closure proc))
+        generateSubExpression mb scopeWithLocalFieldsAndClosures false (Assignment (id, Closure proc))
 
+    // Generate procedure body.
     let body = List.take (c.body.Length - 1) c.body
     let tailExpr = List.last c.body
 
     for expr in body do
-        generateSubExpression mb extendedScopeWithClosures false expr
+        generateSubExpression mb scopeWithLocalFieldsAndClosures false expr
 
-    generateSubExpression mb extendedScopeWithClosures true tailExpr
+    generateSubExpression mb scopeWithLocalFieldsAndClosures true tailExpr
     gen.Emit(Emit.OpCodes.Ret)
 
 // mainClass: Top level class in module, containing the main method.
-//            Used for defined nested frame classes.
+//            Used for defining nested frame classes.
 // parentClass: Parent class of current method (mb).
 //              Used to house non-capturing lambda bodies as methods.
 and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (scope : Scope) parentProcedureName (currentFrame : Frame option) localVars args closures =
