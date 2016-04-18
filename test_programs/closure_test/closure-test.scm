@@ -48,6 +48,19 @@
       ((((mult4 2) 3) 4) 5)
 	  120)
 
+(define global-var 0)
+(define global-variable-visibility
+  (lambda (x)
+    (lambda (y)
+	  (lambda (z)
+	    (lambda (t)
+		  (set! global-var (* x y z t)))))))
+
+((((global-variable-visibility 2) 3) 4) 5)
+(test "deep nesting #3: global-variable-visibility"
+	  global-var
+	  120)
+
 (define increment-counter #f)
 (define get-counter #f)
 (define inc-and-get-counter #f)
@@ -88,23 +101,78 @@
       (my-plus 5 6)
 	  30)
 
-(define c 0)
+(define counter 0)
 (define create-counter-incrementer
   (lambda (step)
     (lambda ()
-	  (set! c (+ c step)))))
+	  (set! counter (+ counter step)))))
 
 (define increment5 (create-counter-incrementer 5))
 (test "referencing top level names from nested context #1: starting value"
-      c
+      counter
       0)
 
 (increment5)
 (test "referencing top level names from nested context #2: after incrementing once"
-	  c
+	  counter
 	  5)
 
 (increment5)
 (test "referencing top level names from nested context #3: after incrementing twice"
-	  c
+	  counter
 	  10)
+
+(define square (lambda (x) (* x x)))
+(define pi 3.14159)
+(define create-circle
+  (lambda (r)
+    (define radius r)
+	(define get-radius (lambda () radius))
+	(define get-area (lambda () (* pi (square radius))))
+	(cons get-radius get-area)))
+
+(define circle (create-circle 2))
+(test "referencing top level names from nested context #4: circle radius"
+      ((car circle))
+	  2)
+
+(test "referencing top level names from nested context #5: circle area"
+      ((cdr circle))
+	  (* pi 4))
+
+(define capture-and-mutate-arg
+  (lambda (x)
+    (define get (lambda () x))
+	(define set (lambda (y) (set! x y)))
+	(set! x (* x 10))
+	(cons get set)))
+
+(define cpt-and-mutate (capture-and-mutate-arg 5))
+(test "argument capture #1: starting value"
+	  ((car cpt-and-mutate))
+	  50)
+
+((cdr cpt-and-mutate) 42)
+(test "argument capture #2: after setting"
+      ((car cpt-and-mutate))
+	  42)
+
+(define non-capturing-closure-1
+  (lambda ()
+    (lambda (x) (+ x 1))))
+
+(test "non-capturing closures #1: at first nesting level (no other capturing lambdas in the same scope)"
+      ((non-capturing-closure-1) 5)
+	  6)
+
+(define non-capturing-closure-2
+  (lambda (capt)
+    (define capturing (lambda () capt))
+	(define non-capturing (lambda () 42))
+	(cons capturing non-capturing)))
+
+(define ncc2 (non-capturing-closure-2 99))
+(test "non-capturing closures #2: at first nesting level, capturing lambda in the same scope"
+      (+ ((cdr ncc2)) ((car ncc2)))
+	  (+ 42 99))
+
