@@ -269,3 +269,25 @@
       (multiply '(1 2 3 4 5) 3)
 	  '(3 6 9 12 15))
 
+(define make-list
+  (lambda l
+    (define get-first (lambda () (car l)))
+	(define get-last
+	  (lambda ()
+	    (define last
+		  (lambda (l)
+		    (if (null? (cdr l))
+		        (car l)
+			    (last (cdr l)))))
+		(last l)))
+	(cons get-first get-last)))
+
+(define lista (make-list 1 2 3 4 5 6 7 8 9 10))
+(define head (car lista))
+(define last (cdr lista))
+(test "varargs argument capture #1"
+      (head)
+	  1)
+(test "varargs argument capture #2"
+      (last)
+	  10)
