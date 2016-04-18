@@ -30,6 +30,10 @@ type Frame = { frameClass : Emit.TypeBuilder;
                staticLink: Emit.FieldBuilder option;
                parent: Frame option }
 
+type FrameInfo = { closureInfo : Map<string, ClosureLoadInfo>;
+                   frameVariable : Emit.LocalBuilder option;
+                   matchedCapturesFromCurrentScope : (Identifier * Variable) list }
+
 let builtIns = ref []
 
 let setupAssembly name =
@@ -487,15 +491,14 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Fram
     printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
 
     // Create frame classes and closure body methods.
-    // 
     let procedureArguments = getFormals c
     let localVarIds = List.append (getLocalVariableIds c) (getLocalProcedureIds c)
-    let closureInfo, frameVar, captures = generateClosures mainClass mb scope c.functionName.uniqueName parentFrame localVarIds procedureArguments closures
-    let scopeWithFrameReferences = rebindFrameFields frameVar scope captures
+    let frameInfo = generateClosures mainClass mb scope c.functionName.uniqueName parentFrame localVarIds procedureArguments closures
+    let scopeWithFrameReferences = rebindFrameFields frameInfo.frameVariable scope frameInfo.matchedCapturesFromCurrentScope
 
     // Find local variables that were not captured in the frame and
     // add them to the local scope.
-    let capturedVarIds = captures |> List.map (fun (id, _) -> id)
+    let capturedVarIds = frameInfo.matchedCapturesFromCurrentScope |> List.map (fun (id, _) -> id)
     let newLocals = localVarIds
                     |> List.filter (fun id -> not <| List.contains id capturedVarIds)
                     |> List.map (fun id -> (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
@@ -506,7 +509,7 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Fram
             variables = Map.toSeq scopeWithFrameReferences.variables
                         |> Seq.append newLocals
                         |> Map.ofSeq
-            closureInfo = closureInfo }
+            closureInfo = frameInfo.closureInfo }
 
     // Debug printing, TODO: remove
     printfn "Extended scope for %s with closures contains variables %A" c.functionName.uniqueName scopeWithLocalFieldsAndClosures.variables
@@ -596,7 +599,9 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
 
     let gen = mb.GetILGenerator()
     if List.isEmpty closures then
-        Map.empty, None, []
+        { closureInfo = Map.empty;
+          frameVariable = None;
+          matchedCapturesFromCurrentScope = [] }
     else
         let captures = closures
                        |> List.map (fun clos -> clos.environment)
@@ -611,7 +616,9 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
             // TODO: scope passed in should be the "lambda scope" of the previous level
             generateBodies builders currentFrame scope
 
-            buildClosureInfoMap None builders, None, []
+            { closureInfo = buildClosureInfoMap None builders;
+              frameVariable = None;
+              matchedCapturesFromCurrentScope = [] }
         else
             printfn "Generating closures inside %s, capture list is %A" parentProcedureName (List.map (fun id -> id.uniqueName) captures)
             let currentScopeCaptures = capturesFromCurrentScope captures
@@ -646,7 +653,9 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
 
             frameClass.CreateType() |> ignore
 
-            buildClosureInfoMap (Some frameVar) builders, Some frameVar, matchedCapturesInCurrentScope
+            { closureInfo = buildClosureInfoMap (Some frameVar) builders;
+              frameVariable = Some frameVar;
+              matchedCapturesFromCurrentScope = matchedCapturesInCurrentScope }
 
 let generateExpression (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) =
     generateSubExpression mb scope false expr
@@ -683,11 +692,11 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
 
 let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
     let closures = findClosuresInScope program.expressions
-    let closureInfo, _, _ = generateClosures mainClass mainMethod scope "Main" None [] [] closures
-    let extendedScope = { scope with closureInfo = closureInfo }
+    let frameInfo = generateClosures mainClass mainMethod scope "Main" None [] [] closures
+    let scopeWithClosures = { scope with closureInfo = frameInfo.closureInfo }
 
     for expr in program.expressions do
-        generateExpression mainMethod expr extendedScope
+        generateExpression mainMethod expr scopeWithClosures
 
 let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let ilGen = mainMethod.GetILGenerator()
