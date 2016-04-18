@@ -69,7 +69,10 @@
     (define c -10)
     (set! increment-counter (lambda () (set! c (+ c 1))))
     (set! get-counter (lambda () c))
-	;(set! inc-and-get-counter (lambda () (increment) (get)))
+	(set! inc-and-get-counter
+		(lambda ()
+		  (increment-counter)
+		  (get-counter)))
 	(set! c 0)))
 
 (setup-counter)
@@ -84,6 +87,10 @@
 (test "counter #2: after three increments"
       (get-counter)
 	  3)
+
+(test "counter #3: increment and get"
+      (inc-and-get-counter)
+	  4)
 
 (define my-plus
   (lambda (x y)
@@ -176,3 +183,88 @@
       (+ ((cdr ncc2)) ((car ncc2)))
 	  (+ 42 99))
 
+(define local-non-capturing-procedures
+  (lambda ()
+    (define get-answer (lambda () 42))
+    (define check
+	  (lambda ()
+	    (if (get-answer)
+		    1
+			-1)))
+	check))
+
+
+(define local-proc-call (local-non-capturing-procedures))
+(test "calling a local procedure #1: named otherwise non-capturing procedures defined at the same nesting level"
+      (local-proc-call)
+	  1)
+	  
+(define create-counter
+  (lambda ()
+    (define c 0)
+    (define increment-counter (lambda () (set! c (+ c 1))))
+    (define get-counter (lambda () c))
+	(define increment-and-get-counter ; makes calls through procedure objects, but could be using direct calls
+	  (lambda ()
+		(increment-counter)
+		(get-counter)))
+	increment-and-get-counter))
+
+(define counter2 (create-counter))
+(counter2)
+(counter2)
+(test "calling a local procedure #2: named capturing procedures defined at the same nesting level"
+      (counter2)
+	  3)
+
+(define really-complex-way-of-computing-circle-area
+  (lambda ()
+	(define get-pi (lambda () 3.14159))
+	(define get-circle-area-calculator
+	  (lambda ()
+	    (define area
+		  (lambda (r)
+		    (* (get-pi) r r)))
+		  area))
+	(get-circle-area-calculator)))
+
+(define circle-area (really-complex-way-of-computing-circle-area))
+(test "calling a local procedure #3: named non-capturing procedures defined at a higher nesting level"
+      (circle-area 5)
+	  (* (* 5 5) 3.14159))
+
+(define some-kind-of-multiplier-thing
+  (lambda (mult)
+	(define get-multiplier (lambda () (* 2 mult)))
+	(define multiplier-calculator
+	  (lambda ()
+	    (lambda (r)
+		  (* (get-multiplier) r))))
+	(multiplier-calculator)))
+
+(define mult-fun (some-kind-of-multiplier-thing 5))
+(test "calling a local procedure #4: named capturing procedures defined at a higher nesting level"
+      (mult-fun 4)
+	  40)
+
+(define reverse
+  (lambda (l)
+    (define rev
+	  (lambda (l acc)
+	    (if (null? l)
+		    acc
+			(rev (cdr l) (cons (car l) acc)))))
+	(rev l '())))
+
+(define multiply
+  (lambda (l n)
+    (define multiply-list
+	  (lambda (l acc)
+	    (if (null? l)
+		    acc
+			(multiply-list (cdr l) (cons (* n (car l)) acc)))))
+	(reverse (multiply-list l '()))))
+
+(test "local functional loop"
+      (multiply '(1 2 3 4 5) 3)
+	  '(3 6 9 12 15))
