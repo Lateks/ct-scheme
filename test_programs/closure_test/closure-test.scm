@@ -87,3 +87,24 @@
 (test "top level closure #2: my-plus after set!"
       (my-plus 5 6)
 	  30)
+
+(define c 0)
+(define create-counter-incrementer
+  (lambda (step)
+    (lambda ()
+	  (set! c (+ c step)))))
+
+(define increment5 (create-counter-incrementer 5))
+(test "referencing top level names from nested context #1: starting value"
+      c
+      0)
+
+(increment5)
+(test "referencing top level names from nested context #2: after incrementing once"
+	  c
+	  5)
+
+(increment5)
+(test "referencing top level names from nested context #3: after incrementing twice"
+	  c
+	  10)
