@@ -770,11 +770,123 @@ let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
 
     mainClass.CreateType()
 
+let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
+    let parentType = typeof<CTProcedure>
+
+    // Type
+    let tcProcType = moduleBuilder.DefineType("CTTailCallProcedure", TypeAttributes.Public ||| TypeAttributes.Class, parentType)
+
+    // Fields
+    let indexField = tcProcType.DefineField("index", typeof<int>, FieldAttributes.Assembly)
+
+    // Constructors
+    let namedConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<int>; typeof<string> |])
+    let namedVarargsConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<string>|])
+    let anonymousConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<int>; |])
+    let anonymousVarargsConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; |])
+
+    // Methods
+    let apply0 = tcProcType.DefineMethod("apply0", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [||])
+    let apply1 = tcProcType.DefineMethod("apply1", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [| typeof<CTObject> |])
+    let apply2 = tcProcType.DefineMethod("apply2", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [| typeof<CTObject>; typeof<CTObject> |])
+    let apply3 = tcProcType.DefineMethod("apply3", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [| typeof<CTObject>; typeof<CTObject>; typeof<CTObject> |])
+    let apply4 = tcProcType.DefineMethod("apply4", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [| typeof<CTObject>; typeof<CTObject>; typeof<CTObject>; typeof<CTObject> |])
+    let apply5 = tcProcType.DefineMethod("apply5", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [| typeof<CTObject>; typeof<CTObject>; typeof<CTObject>; typeof<CTObject>; typeof<CTObject> |])
+    let applyN = tcProcType.DefineMethod("applyN", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [| typeof<CTObject array> |])
+
+    tcProcType.DefineMethodOverride(apply0, parentType.GetMethod("apply0"))
+    tcProcType.DefineMethodOverride(apply1, parentType.GetMethod("apply1"))
+    tcProcType.DefineMethodOverride(apply2, parentType.GetMethod("apply2"))
+    tcProcType.DefineMethodOverride(apply3, parentType.GetMethod("apply3"))
+    tcProcType.DefineMethodOverride(apply4, parentType.GetMethod("apply4"))
+    tcProcType.DefineMethodOverride(apply5, parentType.GetMethod("apply5"))
+    tcProcType.DefineMethodOverride(applyN, parentType.GetMethod("applyN"))
+
+    let storeIndexAndReturn (gen : Emit.ILGenerator) =
+        gen.Emit(Emit.OpCodes.Ldarg_0)
+        gen.Emit(Emit.OpCodes.Ldarg_1)
+        gen.Emit(Emit.OpCodes.Stfld, indexField)
+        gen.Emit(Emit.OpCodes.Ret)
+
+    let overrideApplyMethod (mb : Emit.MethodBuilder) numArgs =
+        let gen = mb.GetILGenerator()
+        let procName = sprintf "funcall%i" numArgs
+        let elseLabel = gen.DefineLabel()
+        gen.Emit(Emit.OpCodes.Ldarg_0)
+        gen.Emit(Emit.OpCodes.Callvirt, parentType.GetProperty("isVarargs").GetGetMethod())
+        gen.Emit(Emit.OpCodes.Brtrue, elseLabel)
+        gen.Emit(Emit.OpCodes.Ldarg_0)
+
+        for i in seq{1..numArgs} do
+            gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
+
+        gen.Emit(Emit.OpCodes.Tailcall)
+        gen.Emit(Emit.OpCodes.Callvirt, parentType.GetMethod(procName))
+        gen.Emit(Emit.OpCodes.Ret)
+
+        gen.MarkLabel(elseLabel)
+        gen.Emit(Emit.OpCodes.Ldarg_0)
+        gen.Emit(Emit.OpCodes.Ldc_I4, numArgs)
+        gen.Emit(Emit.OpCodes.Newarr, typeof<CTObject>)
+
+        for i in seq{1..numArgs} do
+            gen.Emit(Emit.OpCodes.Dup)
+            gen.Emit(Emit.OpCodes.Ldc_I4, (i - 1))
+            gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
+            gen.Emit(Emit.OpCodes.Stelem_Ref)
+
+        gen.Emit(Emit.OpCodes.Tailcall)
+        gen.Emit(Emit.OpCodes.Callvirt, parentType.GetMethod("funcallVarargs"))
+        gen.Emit(Emit.OpCodes.Ret)
+
+    let namedConstructorGen = namedConstructor.GetILGenerator()
+    namedConstructorGen.Emit(Emit.OpCodes.Ldarg_0)
+    namedConstructorGen.Emit(Emit.OpCodes.Ldarg_2)
+    namedConstructorGen.Emit(Emit.OpCodes.Ldarg_3)
+    namedConstructorGen.Emit(Emit.OpCodes.Call, parentType.GetConstructor([| typeof<int>; typeof<string> |]))
+    storeIndexAndReturn namedConstructorGen
+
+    let namedVarargsConstructorGen = namedVarargsConstructor.GetILGenerator()
+    namedVarargsConstructorGen.Emit(Emit.OpCodes.Ldarg_0)
+    namedVarargsConstructorGen.Emit(Emit.OpCodes.Ldarg_2)
+    namedVarargsConstructorGen.Emit(Emit.OpCodes.Call, parentType.GetConstructor([| typeof<string> |]))
+    storeIndexAndReturn namedVarargsConstructorGen
+
+    let anonymousConstructorGen = anonymousConstructor.GetILGenerator()
+    anonymousConstructorGen.Emit(Emit.OpCodes.Ldarg_0)
+    anonymousConstructorGen.Emit(Emit.OpCodes.Ldarg_2)
+    anonymousConstructorGen.Emit(Emit.OpCodes.Call, parentType.GetConstructor([| typeof<int> |]))
+    storeIndexAndReturn anonymousConstructorGen
+
+    let anonymousVarargsConstructorGen = anonymousVarargsConstructor.GetILGenerator()
+    anonymousVarargsConstructorGen.Emit(Emit.OpCodes.Ldarg_0)
+    anonymousVarargsConstructorGen.Emit(Emit.OpCodes.Call, parentType.GetConstructor([||]))
+    storeIndexAndReturn anonymousVarargsConstructorGen
+
+    overrideApplyMethod apply0 0
+    overrideApplyMethod apply1 1
+    overrideApplyMethod apply2 2
+    overrideApplyMethod apply3 3
+    overrideApplyMethod apply4 4
+    overrideApplyMethod apply5 5
+
+    let applyNGen = applyN.GetILGenerator()
+    applyNGen.Emit(Emit.OpCodes.Ldarg_0)
+    applyNGen.Emit(Emit.OpCodes.Ldarg_1)
+    applyNGen.Emit(Emit.OpCodes.Tailcall)
+    applyNGen.Emit(Emit.OpCodes.Callvirt, parentType.GetMethod("funcallVarargs"))
+    applyNGen.Emit(Emit.OpCodes.Ret)
+
+    tcProcType
+
 let generateCodeFor (program : ProgramStructure) (name : string) =
     let capitalizedName = SymbolGenerator.capitalizeWord name
     let outputFileName = sprintf "%s.exe" capitalizedName
     let assemblyBuilder = setupAssembly capitalizedName
     let moduleBuilder = assemblyBuilder.DefineDynamicModule(capitalizedName, outputFileName);
+
+    let procParentClass = generateProcedureParentClass moduleBuilder
+    procParentClass.CreateType() |> ignore
 
     // Create class for the "module body"
     let mainClass = moduleBuilder.DefineType(capitalizedName, TypeAttributes.Public ||| TypeAttributes.Class)

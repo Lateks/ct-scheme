@@ -665,7 +665,15 @@ namespace CottontailSchemeLib
 
         public override CTObject apply0()
         {
-            return funcall0();
+            if (isVarargs)
+            {
+                var args = new CTObject[0];
+                return funcallVarargs(args);
+            }
+            else
+            {
+                return funcall0();
+            }
         }
 
         public override CTObject apply1(CTObject a1)
