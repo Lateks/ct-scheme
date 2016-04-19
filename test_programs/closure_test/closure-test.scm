@@ -291,3 +291,64 @@
 (test "varargs argument capture #2"
       (last)
 	  10)
+
+(define add-fc
+  (lambda (x)
+    (define addx
+	  (lambda (y)
+	    (+ x y)))
+	addx))
+
+(test "first class use of local procedure name #1"
+      ((add-fc 4) 6)
+	  10)
+
+(define transform-and-double
+  (lambda (f v)
+    (* (f v) 2)))
+
+(define transform
+  (lambda (v1 v2)
+    (define f
+	  (lambda (v)
+	    (/ v v2)))
+	(transform-and-double f v1)))
+
+(test "first class use of local procedure name #2"
+	  (transform 6 3)
+	  4)
+
+(define odd?
+  (lambda (n)
+    (if (zero? n)
+	     #f
+		 (even? (- n 1)))))
+
+(define even?
+  (lambda (n)
+    (if (zero? n)
+	    #t
+		(odd? (- n 1)))))
+
+(test "mutual recursion between top level procedures"
+      (odd? 9999999)
+	  #true)
+
+(define odd-fun? #f)
+(define even-fun? #f)	  
+
+(set! odd-fun?
+  (lambda (n)
+    (if (zero? n)
+	     #f
+		 (even-fun? (- n 1)))))
+
+(set! even-fun?
+  (lambda (n)
+    (if (zero? n)
+	    #t
+		(odd-fun? (- n 1)))))
+
+(test "mutual recursion between closures"
+      (odd-fun? 9999999)
+	  #true)
