@@ -505,6 +505,9 @@ let getLocalVariableIds (c : ClosureDefinition) =
 let getLocalProcedureIds (c : ClosureDefinition) =
     c.procedureDefinitions |> List.map (fun (ProcedureDefinition (id, _)) -> id)
 
+let getVariableIdsInScope (c : ClosureDefinition) =
+    List.append (getLocalVariableIds c) (getLocalProcedureIds c)
+
 let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Frame option) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let gen = mb.GetILGenerator()
     let closures = let namedProcedures = c.procedureDefinitions
@@ -516,15 +519,13 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Fram
     printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
 
     // Create frame classes and closure body methods.
-    let procedureArguments = getFormals c
-    let localVarIds = List.append (getLocalVariableIds c) (getLocalProcedureIds c)
-    let frameInfo = generateClosures mainClass mb scope c.functionName.uniqueName parentFrame localVarIds procedureArguments closures
+    let frameInfo = generateClosures mainClass mb scope (Some c) parentFrame closures
     let scopeWithFrameReferences = rebindFrameFields frameInfo.frameVariable scope frameInfo.matchedCapturesFromCurrentScope
 
     // Find local variables that were not captured in the frame and
     // add them to the local scope.
     let capturedVarIds = frameInfo.matchedCapturesFromCurrentScope |> List.map (fun (id, _) -> id)
-    let newLocals = localVarIds
+    let newLocals = getVariableIdsInScope c
                     |> List.filter (fun id -> not <| List.contains id capturedVarIds)
                     |> List.map (fun id -> (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
 
@@ -557,8 +558,12 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Fram
 //            Used for defining nested frame classes.
 // parentClass: Parent class of current method (mb).
 //              Used to house non-capturing lambda bodies as methods.
-and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (scope : Scope) parentProcedureName (currentFrame : Frame option) localVars args closures =
+and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (scope : Scope) (parentProcedure : ClosureDefinition option) (currentFrame : Frame option) closures =
     let gen = mb.GetILGenerator()
+    let localVars, args, parentProcedureName =
+        match parentProcedure with
+        | Some p -> getVariableIdsInScope p, getFormals p, p.functionName.uniqueName
+        | None -> [], [], "Main"
     let parentClass = match currentFrame with
                       | None -> mainClass
                       | Some f -> f.frameClass
@@ -729,7 +734,7 @@ let generateClassInitializer (mainClass : Emit.TypeBuilder) (procs : ProcedureDe
 
 let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
     let closures = findClosuresInScope program.expressions
-    let frameInfo = generateClosures mainClass mainMethod scope "Main" None [] [] closures
+    let frameInfo = generateClosures mainClass mainMethod scope None None closures
     let scopeWithClosures = { scope with closureInfo = frameInfo.closureInfo }
 
     for expr in program.expressions do
