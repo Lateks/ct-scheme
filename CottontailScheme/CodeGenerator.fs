@@ -45,6 +45,7 @@ type ClosureTypeInformation = { tb : Emit.TypeBuilder
 type TopLevelTypes = { mainClass : ClosureTypeInformation
                        frameClass : ClosureTypeInformation }
 
+let mainMethodName = "Main"
 let builtIns = ref []
 
 let setupAssembly name =
@@ -751,7 +752,9 @@ let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
     for expr in program.expressions do
         generateExpression mainMethod expr scopeWithClosures false
 
-let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
+let generateMainModule (topLevelTypes : TopLevelTypes) (program : ProgramStructure) =
+    let mainMethod = topLevelTypes.mainClass.methods.Item(mainMethodName)
+    let mainClass = topLevelTypes.mainClass.tb
     let ilGen = mainMethod.GetILGenerator()
     let procedures = defineProcedures mainClass program.procedureDefinitions
     let variables = defineVariables mainClass program.variableDeclarations
@@ -778,8 +781,6 @@ let generateMainModule (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
 
     ilGen.Emit(Emit.OpCodes.Ldc_I4_0)
     ilGen.Emit(Emit.OpCodes.Ret)
-
-    mainClass.CreateType()
 
 let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
     let parentType = typeof<CTProcedure>
@@ -888,8 +889,6 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
     applyNGen.Emit(Emit.OpCodes.Callvirt, parentType.GetMethod("funcallVarargs"))
     applyNGen.Emit(Emit.OpCodes.Ret)
 
-    tcProcType.CreateType() |> ignore
-
     let fieldMap = Map.empty |> Map.add indexField.Name indexField
     let methodMap = [apply0; apply1; apply2; apply3; apply4; apply5; applyN]
                     |> List.map (fun f -> (f.Name, f))
@@ -903,24 +902,62 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
       fields = fieldMap
       methods = methodMap }
 
+let generateMainClass (moduleBuilder : Emit.ModuleBuilder) (frameClass : ClosureTypeInformation) mainClassName =
+    let mainClass = moduleBuilder.DefineType(mainClassName, TypeAttributes.Public ||| TypeAttributes.Class, frameClass.tb)
+    let mainMethod = mainClass.DefineMethod(mainMethodName,
+                                            MethodAttributes.Public ||| MethodAttributes.Static,
+                                            typeof<int>,
+                                            [| typeof<string array> |])
+
+    let emitConstructorBody (cons : Emit.ConstructorBuilder) argCount (parentConstructor : Emit.ConstructorBuilder) =
+        let gen = cons.GetILGenerator()
+
+        gen.Emit(Emit.OpCodes.Ldarg_0)
+
+        for i in seq{1..argCount} do
+            gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
+
+        gen.Emit(Emit.OpCodes.Call, parentConstructor)
+        gen.Emit(Emit.OpCodes.Ret)
+
+    let namedConstructor = mainClass.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<int>; typeof<string> |])
+    let namedVarargsConstructor = mainClass.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<string>|])
+    let anonymousConstructor = mainClass.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<int>; |])
+    let anonymousVarargsConstructor = mainClass.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; |])
+
+    emitConstructorBody namedConstructor 3 frameClass.namedClosureConstructor
+    emitConstructorBody namedVarargsConstructor 2 frameClass.namedVarargsClosureConstructor
+    emitConstructorBody anonymousConstructor 2 frameClass.anonymousClosureConstructor
+    emitConstructorBody anonymousVarargsConstructor 1 frameClass.anonymousVarargsClosureConstructor
+
+    { tb = mainClass
+      anonymousClosureConstructor = anonymousConstructor
+      namedClosureConstructor = namedConstructor
+      anonymousVarargsClosureConstructor = anonymousVarargsConstructor
+      namedVarargsClosureConstructor = namedVarargsConstructor
+      fields = Map.empty
+      methods = Map.empty |> Map.add mainMethod.Name mainMethod }
+
 let generateCodeFor (program : ProgramStructure) (name : string) =
     let capitalizedName = SymbolGenerator.capitalizeWord name
     let outputFileName = sprintf "%s.exe" capitalizedName
     let assemblyBuilder = setupAssembly capitalizedName
     let moduleBuilder = assemblyBuilder.DefineDynamicModule(capitalizedName, outputFileName);
 
-    let procParentType = generateProcedureParentClass moduleBuilder
+    let frameClassType = generateProcedureParentClass moduleBuilder
+    frameClassType.tb.CreateType() |> ignore
 
-    // Create class for the "module body"
-    let mainClass = moduleBuilder.DefineType(capitalizedName, TypeAttributes.Public ||| TypeAttributes.Class)
-    let mainMethod = mainClass.DefineMethod("Main", MethodAttributes.Public ||| MethodAttributes.Static,
-                                            typeof<int>, [| typeof<string array> |])
+    let mainClassType = generateMainClass moduleBuilder frameClassType capitalizedName
+    let topLevelTypes = { mainClass = mainClassType
+                          frameClass = frameClassType }
 
     builtIns := getBuiltIns program.scope
-    generateMainModule mainClass mainMethod program |> ignore
+    generateMainModule topLevelTypes program
+
+    mainClassType.tb.CreateType() |> ignore
 
     // Save assembly and mark it as a console application
-    assemblyBuilder.SetEntryPoint(mainMethod, Emit.PEFileKinds.ConsoleApplication)
+    assemblyBuilder.SetEntryPoint(mainClassType.methods.Item(mainMethodName), Emit.PEFileKinds.ConsoleApplication)
     assemblyBuilder.Save(outputFileName)
 
     copyLibs()
