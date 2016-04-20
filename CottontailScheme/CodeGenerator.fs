@@ -734,46 +734,58 @@ let generateTopLevelProcedureBodies (mainClass : Emit.TypeBuilder) (scope : Scop
 type ArgCount = NumArgs of int
               | VarArgs
 
-let generateClassInitializer (topLevelTypes : TopLevelTypes) (procs : ProcedureDefinition list) (scope : Scope) =
+let createTopLevelClosureMapping (procs : ProcedureDefinition list) (scope : Scope) =
+    let usedAsFirstClassValueOrReassigned (ProcedureDefinition (_, c)) = c.isUsedAsFirstClassValue || c.isReassigned
+    let argCount (ProcedureDefinition (_, c)) =
+        match c.formals with
+        | MultiArgFormals ids -> List.length ids |> NumArgs
+        | SingleArgFormals _ -> VarArgs
+    let numberProcedureDefinitions (argc, procDefs) =
+        let count = List.length procDefs
+        let numberedDefinitions = List.zip (Seq.toList <| seq{0..count-1}) procDefs
+        (argc, numberedDefinitions)
+    let resolveProcedures (argc, numberedDefinitions) =
+        let closureInfo = numberedDefinitions
+                          |> List.map (fun (i, proc) -> let (ProcedureDefinition (id, _)) = proc
+                                                        let p = scope.procedures.Item(id.uniqueName)
+                                                        (i, p))
+        (argc, closureInfo)
+
+    procs
+    |> List.filter usedAsFirstClassValueOrReassigned
+    |> List.groupBy argCount
+    |> List.map numberProcedureDefinitions
+    |> List.map resolveProcedures
+
+let generateClassInitializer (topLevelTypes : TopLevelTypes) (closureMapping : (ArgCount * (int * Procedure) list) list) (scope : Scope) =
     let classInitializer = topLevelTypes.mainClass.tb.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public,
                                                                         CallingConventions.Standard,
                                                                         [||])
     let gen = classInitializer.GetILGenerator()
 
-    let createField (ProcedureDefinition (id, c)) (index : int) =
-        let fieldName = SymbolGenerator.toProcedureObjectName id.uniqueName
+    let createField (argCount : ArgCount) (index : int) (procedure : Procedure) =
+        let fieldName = SymbolGenerator.toProcedureObjectName procedure.closure.functionName.uniqueName
         let var = match scope.variables.Item(fieldName) with
-                    | Field v -> v
-                    | v -> failwithf "Expected %s to be a field but was %A" fieldName v
-
-        let procedure = scope.procedures.Item(id.uniqueName)
+                  | Field v -> v
+                  | v -> failwithf "Expected %s to be a field but was %A" fieldName v
 
         gen.Emit(Emit.OpCodes.Ldc_I4, index)
 
-        match c.formals with
-        | SingleArgFormals _ -> gen.Emit(Emit.OpCodes.Ldstr, c.functionName.name)
-                                gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.mainClass.namedVarargsClosureConstructor)
-        | MultiArgFormals ids -> gen.Emit(Emit.OpCodes.Ldc_I4, ids.Length)
-                                 gen.Emit(Emit.OpCodes.Ldstr, c.functionName.name)
-                                 gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.mainClass.namedClosureConstructor)
+        let procedureName = procedure.closure.functionName.name
+        match argCount with
+        | VarArgs -> gen.Emit(Emit.OpCodes.Ldstr, procedureName)
+                     gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.mainClass.namedVarargsClosureConstructor)
+        | NumArgs n -> gen.Emit(Emit.OpCodes.Ldc_I4, n)
+                       gen.Emit(Emit.OpCodes.Ldstr, procedureName)
+                       gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.mainClass.namedClosureConstructor)
 
         gen.Emit(Emit.OpCodes.Stsfld, var)
 
-        (index, procedure.methodBuilder)
-
-    let idMapping = procs
-                    |> List.filter (fun (ProcedureDefinition (_, c)) -> c.isUsedAsFirstClassValue || c.isReassigned)
-                    |> List.groupBy (fun (ProcedureDefinition (_, c)) -> match c.formals with
-                                                                         | MultiArgFormals ids -> List.length ids |> NumArgs
-                                                                         | SingleArgFormals _ -> VarArgs)
-                    |> List.map (fun (argc, procDefs) -> let numberedDefinitions = List.zip (Seq.toList <| seq{0..procDefs.Length-1}) procDefs
-                                                         (argc, numberedDefinitions))
-                    |> List.map (fun (argc, numberedDefinitions) -> let closureInfo = numberedDefinitions
-                                                                                      |> List.map (fun (i, proc) -> createField proc i)
-                                                                    (argc, closureInfo))
+    for (argCount, procs) in closureMapping do
+        for (index, proc) in procs do
+            createField argCount index proc
 
     gen.Emit(Emit.OpCodes.Ret)
-    idMapping
 
 let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
     let closures = findClosuresInScope program.expressions
@@ -783,7 +795,7 @@ let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
     for expr in program.expressions do
         generateExpression mainMethod expr scopeWithClosures false
 
-let generateFuncallMethods (topLevelTypes : TopLevelTypes) (mapping : (ArgCount * (int * Emit.MethodBuilder) list) list) =
+let generateFuncallMethods (topLevelTypes : TopLevelTypes) (mapping : (ArgCount * (int * Procedure) list) list) =
     let parentClassInfo = topLevelTypes.frameClass
     let frameClass = topLevelTypes.mainClass.tb
 
@@ -801,14 +813,14 @@ let generateFuncallMethods (topLevelTypes : TopLevelTypes) (mapping : (ArgCount 
         gen.Emit(Emit.OpCodes.Switch, List.toArray labels)
         gen.Emit(Emit.OpCodes.Br_S, endLabel)
 
-        for (label, (_, mb)) in List.zip labels singleArgClosures do
+        for (label, (_, proc)) in List.zip labels singleArgClosures do
             gen.MarkLabel(label)
-            if not mb.IsStatic then
+            if not proc.methodBuilder.IsStatic then
                 gen.Emit(Emit.OpCodes.Ldarg_0)
 
             gen.Emit(Emit.OpCodes.Ldarg_1)
             gen.Emit(Emit.OpCodes.Tailcall)
-            gen.Emit(Emit.OpCodes.Call, mb)
+            gen.Emit(Emit.OpCodes.Call, proc.methodBuilder)
             gen.Emit(Emit.OpCodes.Ret)
 
         gen.MarkLabel(endLabel)
@@ -830,8 +842,10 @@ let generateMainModule (topLevelTypes : TopLevelTypes) (program : ProgramStructu
                   closureInfo = Map.empty }
 
     generateTopLevelProcedureBodies mainClass scope // TODO: pass topLevelTypes
-    let indexToProcedureMapping = generateClassInitializer topLevelTypes program.procedureDefinitions scope
-    generateFuncallMethods topLevelTypes indexToProcedureMapping
+    let closureMapping = createTopLevelClosureMapping program.procedureDefinitions scope
+
+    generateFuncallMethods topLevelTypes closureMapping
+    generateClassInitializer topLevelTypes closureMapping scope
 
     gen.BeginExceptionBlock() |> ignore
 
