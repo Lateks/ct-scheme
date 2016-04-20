@@ -34,6 +34,17 @@ type FrameInfo = { closureInfo : Map<string, ClosureLoadInfo>;
                    frameVariable : Emit.LocalBuilder option;
                    matchedCapturesFromCurrentScope : (Identifier * Variable) list }
 
+type ClosureTypeInformation = { tb : Emit.TypeBuilder
+                                anonymousClosureConstructor : Emit.ConstructorBuilder
+                                namedClosureConstructor : Emit.ConstructorBuilder
+                                anonymousVarargsClosureConstructor : Emit.ConstructorBuilder
+                                namedVarargsClosureConstructor : Emit.ConstructorBuilder
+                                fields : Map<string, Emit.FieldBuilder>
+                                methods : Map<string, Emit.MethodBuilder> }
+
+type TopLevelTypes = { mainClass : ClosureTypeInformation
+                       frameClass : ClosureTypeInformation }
+
 let builtIns = ref []
 
 let setupAssembly name =
@@ -877,7 +888,20 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
     applyNGen.Emit(Emit.OpCodes.Callvirt, parentType.GetMethod("funcallVarargs"))
     applyNGen.Emit(Emit.OpCodes.Ret)
 
-    tcProcType
+    tcProcType.CreateType() |> ignore
+
+    let fieldMap = Map.empty |> Map.add indexField.Name indexField
+    let methodMap = [apply0; apply1; apply2; apply3; apply4; apply5; applyN]
+                    |> List.map (fun f -> (f.Name, f))
+                    |> Map.ofList
+
+    { tb = tcProcType
+      anonymousClosureConstructor = anonymousConstructor
+      namedClosureConstructor = namedConstructor
+      anonymousVarargsClosureConstructor = anonymousVarargsConstructor
+      namedVarargsClosureConstructor = namedVarargsConstructor
+      fields = fieldMap
+      methods = methodMap }
 
 let generateCodeFor (program : ProgramStructure) (name : string) =
     let capitalizedName = SymbolGenerator.capitalizeWord name
@@ -885,8 +909,7 @@ let generateCodeFor (program : ProgramStructure) (name : string) =
     let assemblyBuilder = setupAssembly capitalizedName
     let moduleBuilder = assemblyBuilder.DefineDynamicModule(capitalizedName, outputFileName);
 
-    let procParentClass = generateProcedureParentClass moduleBuilder
-    procParentClass.CreateType() |> ignore
+    let procParentType = generateProcedureParentClass moduleBuilder
 
     // Create class for the "module body"
     let mainClass = moduleBuilder.DefineType(capitalizedName, TypeAttributes.Public ||| TypeAttributes.Class)
