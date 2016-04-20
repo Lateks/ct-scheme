@@ -31,6 +31,13 @@ namespace CottontailSchemeLib
         { }
     }
 
+    public class InternalError : CottontailSchemeException
+    {
+        public InternalError()
+            : base("Internal error")
+        { }
+    }
+
     public class Constants
     {
         public static readonly CTObject Undefined = new CTUndefined();
@@ -580,7 +587,7 @@ namespace CottontailSchemeLib
 
         private readonly int identifier;
         private readonly string name;
-        private readonly int arity;
+        public int arity { get; private set; }
         public bool isVarargs { get; private set; }
 
         public CTProcedure(int arity)
@@ -628,6 +635,15 @@ namespace CottontailSchemeLib
             return obj == this;
         }
 
+        public void matchNumArgs(int numArgs)
+        {
+            if (arity != numArgs)
+            {
+                Console.WriteLine("\nFailing number of args match");
+                throw new InvalidNumberOfArgsError(GetName(), arity, numArgs);
+            }
+        }
+
         public virtual CTObject funcall0()
         {
             throw new InvalidNumberOfArgsError(GetName(), arity, 0);
@@ -635,6 +651,7 @@ namespace CottontailSchemeLib
 
         public virtual CTObject funcall1(CTObject a1)
         {
+            Console.WriteLine("\nCalling default funcall1");
             throw new InvalidNumberOfArgsError(GetName(), arity, 1);
         }
 
@@ -914,5 +931,16 @@ namespace CottontailSchemeLib
         {
             return fun(BuiltIns.List(args));
         }
+    }
+
+    public class ProcedureFrame
+    {
+        public virtual CTObject funcall0(int index) { throw new InternalError(); }
+        public virtual CTObject funcall1(int index, CTObject a1) { throw new InternalError(); }
+        public virtual CTObject funcall2(int index, CTObject a1, CTObject a2) { throw new InternalError(); }
+        public virtual CTObject funcall3(int index, CTObject a1, CTObject a2, CTObject a3) { throw new InternalError(); }
+        public virtual CTObject funcall4(int index, CTObject a1, CTObject a2, CTObject a3, CTObject a4) { throw new InternalError(); }
+        public virtual CTObject funcall5(int index, CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5) { throw new InternalError(); }
+        public virtual CTObject funcallVarargs(int index, CTObject[] args) { return Constants.Undefined; }
     }
 }

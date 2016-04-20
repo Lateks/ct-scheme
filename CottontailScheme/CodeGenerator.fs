@@ -34,16 +34,16 @@ type FrameInfo = { closureInfo : Map<string, ClosureLoadInfo>;
                    frameVariable : Emit.LocalBuilder option;
                    matchedCapturesFromCurrentScope : (Identifier * Variable) list }
 
-type ClosureTypeInformation = { tb : Emit.TypeBuilder
-                                anonymousClosureConstructor : Emit.ConstructorBuilder
-                                namedClosureConstructor : Emit.ConstructorBuilder
-                                anonymousVarargsClosureConstructor : Emit.ConstructorBuilder
-                                namedVarargsClosureConstructor : Emit.ConstructorBuilder
-                                fields : Map<string, Emit.FieldBuilder>
-                                methods : Map<string, Emit.MethodBuilder> }
+type ClosureHandleTypeInformation = { tb : Emit.TypeBuilder
+                                      anonymousClosureConstructor : Emit.ConstructorBuilder
+                                      namedClosureConstructor : Emit.ConstructorBuilder
+                                      anonymousVarargsClosureConstructor : Emit.ConstructorBuilder
+                                      namedVarargsClosureConstructor : Emit.ConstructorBuilder
+                                      fields : Map<string, Emit.FieldBuilder>
+                                      methods : Map<string, Emit.MethodBuilder> }
 
-type TopLevelTypes = { mainClass : ClosureTypeInformation
-                       frameClass : ClosureTypeInformation }
+type TopLevelTypes = { mainClass : Emit.TypeBuilder
+                       procedureHandleClass : ClosureHandleTypeInformation }
 
 let mainMethodName = "Main"
 let builtIns = ref []
@@ -758,34 +758,43 @@ let createTopLevelClosureMapping (procs : ProcedureDefinition list) (scope : Sco
     |> List.map resolveProcedures
 
 let generateClassInitializer (topLevelTypes : TopLevelTypes) (closureMapping : (ArgCount * (int * Procedure) list) list) (scope : Scope) =
-    let classInitializer = topLevelTypes.mainClass.tb.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public,
-                                                                        CallingConventions.Standard,
-                                                                        [||])
-    let gen = classInitializer.GetILGenerator()
+    if (closureMapping.IsEmpty) then
+       ()
+    else
+        let classInitializer = topLevelTypes.mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public,
+                                                                         CallingConventions.Standard,
+                                                                         [||])
+        let defaultConstructor = topLevelTypes.mainClass.DefineDefaultConstructor(MethodAttributes.Public)
 
-    let createField (argCount : ArgCount) (index : int) (procedure : Procedure) =
-        let fieldName = SymbolGenerator.toProcedureObjectName procedure.closure.functionName.uniqueName
-        let var = match scope.variables.Item(fieldName) with
-                  | Field v -> v
-                  | v -> failwithf "Expected %s to be a field but was %A" fieldName v
+        let gen = classInitializer.GetILGenerator()
+        let instance = gen.DeclareLocal(topLevelTypes.mainClass)
+        gen.Emit(Emit.OpCodes.Newobj, defaultConstructor)
+        gen.Emit(Emit.OpCodes.Stloc, instance)
 
-        gen.Emit(Emit.OpCodes.Ldc_I4, index)
+        let assignField (argCount : ArgCount) (index : int) (procedure : Procedure) =
+            let fieldName = SymbolGenerator.toProcedureObjectName procedure.closure.functionName.uniqueName
+            let var = match scope.variables.Item(fieldName) with
+                      | Field v -> v
+                      | v -> failwithf "Expected %s to be a field but was %A" fieldName v
 
-        let procedureName = procedure.closure.functionName.name
-        match argCount with
-        | VarArgs -> gen.Emit(Emit.OpCodes.Ldstr, procedureName)
-                     gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.mainClass.namedVarargsClosureConstructor)
-        | NumArgs n -> gen.Emit(Emit.OpCodes.Ldc_I4, n)
-                       gen.Emit(Emit.OpCodes.Ldstr, procedureName)
-                       gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.mainClass.namedClosureConstructor)
+            gen.Emit(Emit.OpCodes.Ldloc, instance)
+            gen.Emit(Emit.OpCodes.Ldc_I4, index)
 
-        gen.Emit(Emit.OpCodes.Stsfld, var)
+            let procedureName = procedure.closure.functionName.name
+            match argCount with
+            | VarArgs -> gen.Emit(Emit.OpCodes.Ldstr, procedureName)
+                         gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.namedVarargsClosureConstructor)
+            | NumArgs n -> gen.Emit(Emit.OpCodes.Ldc_I4, n)
+                           gen.Emit(Emit.OpCodes.Ldstr, procedureName)
+                           gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.namedClosureConstructor)
 
-    for (argCount, procs) in closureMapping do
-        for (index, proc) in procs do
-            createField argCount index proc
+            gen.Emit(Emit.OpCodes.Stsfld, var)
 
-    gen.Emit(Emit.OpCodes.Ret)
+        for (argCount, procs) in closureMapping do
+            for (index, proc) in procs do
+                assignField argCount index proc
+
+        gen.Emit(Emit.OpCodes.Ret)
 
 let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
     let closures = findClosuresInScope program.expressions
@@ -796,42 +805,43 @@ let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodB
         generateExpression mainMethod expr scopeWithClosures false
 
 let generateFuncallMethods (topLevelTypes : TopLevelTypes) (mapping : (ArgCount * (int * Procedure) list) list) =
-    let parentClassInfo = topLevelTypes.frameClass
-    let frameClass = topLevelTypes.mainClass.tb
+    let parentClass = typeof<ProcedureFrame>
+    let frameClass = topLevelTypes.mainClass
 
     // TODO: funcall methods for other argument counts
     let map = Map.ofList mapping
     let singleArgClosures = if map.ContainsKey(NumArgs 1) then map.Item(NumArgs 1) |> List.sortBy (fun (i, _) -> i) else []
     if not <| List.isEmpty singleArgClosures then
-        let funcall1 = frameClass.DefineMethod("funcall1", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [| typeof<CTObject> |])
+        let funcall1 = frameClass.DefineMethod("funcall1", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [| typeof<int>; typeof<CTObject> |])
         let gen = funcall1.GetILGenerator()
         let labels = singleArgClosures |> List.map (fun _ -> gen.DefineLabel())
-        let endLabel = gen.DefineLabel()
+        let failureLabel = gen.DefineLabel()
 
-        gen.Emit(Emit.OpCodes.Ldarg_0)
-        gen.Emit(Emit.OpCodes.Ldfld, parentClassInfo.fields.Item "index")
+        gen.Emit(Emit.OpCodes.Ldarg_1)
         gen.Emit(Emit.OpCodes.Switch, List.toArray labels)
-        gen.Emit(Emit.OpCodes.Br_S, endLabel)
+        gen.Emit(Emit.OpCodes.Br_S, failureLabel)
 
         for (label, (_, proc)) in List.zip labels singleArgClosures do
             gen.MarkLabel(label)
             if not proc.methodBuilder.IsStatic then
                 gen.Emit(Emit.OpCodes.Ldarg_0)
 
-            gen.Emit(Emit.OpCodes.Ldarg_1)
+            gen.Emit(Emit.OpCodes.Ldarg_2) // Note: actual arguments to call starting from index 2
             gen.Emit(Emit.OpCodes.Tailcall)
             gen.Emit(Emit.OpCodes.Call, proc.methodBuilder)
             gen.Emit(Emit.OpCodes.Ret)
 
-        gen.MarkLabel(endLabel)
+        gen.MarkLabel(failureLabel)
         gen.Emit(Emit.OpCodes.Ldarg_0)
         gen.Emit(Emit.OpCodes.Ldarg_1)
-        gen.Emit(Emit.OpCodes.Call, typeof<CTProcedure>.GetMethod("funcall1"))
+        gen.Emit(Emit.OpCodes.Ldarg_2)
+        gen.Emit(Emit.OpCodes.Call, parentClass.GetMethod("funcall1"))
         gen.Emit(Emit.OpCodes.Ret)
 
-let generateMainModule (topLevelTypes : TopLevelTypes) (program : ProgramStructure) =
-    let mainMethod = topLevelTypes.mainClass.methods.Item(mainMethodName)
-    let mainClass = topLevelTypes.mainClass.tb
+        frameClass.DefineMethodOverride(funcall1, parentClass.GetMethod("funcall1"))
+
+let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
+    let mainClass = topLevelTypes.mainClass
     let gen = mainMethod.GetILGenerator()
 
     let procedures = defineProcedures mainClass program.procedureDefinitions
@@ -867,16 +877,17 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
     let parentType = typeof<CTProcedure>
 
     // Type
-    let tcProcType = moduleBuilder.DefineType("CTTailCallProcedure", TypeAttributes.Public ||| TypeAttributes.Class, parentType)
+    let tcProcType = moduleBuilder.DefineType("CTTailCallProcedureHandle", TypeAttributes.Public ||| TypeAttributes.Class, parentType)
 
     // Fields
     let indexField = tcProcType.DefineField("index", typeof<int>, FieldAttributes.Assembly)
+    let frameField = tcProcType.DefineField("frame", typeof<ProcedureFrame>, FieldAttributes.Assembly)
 
     // Constructors
-    let namedConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<int>; typeof<string> |])
-    let namedVarargsConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<string>|])
-    let anonymousConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<int>; |])
-    let anonymousVarargsConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; |])
+    let namedConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<ProcedureFrame>; typeof<int>; typeof<int>; typeof<string> |])
+    let namedVarargsConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<ProcedureFrame>; typeof<int>; typeof<string>|])
+    let anonymousConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<ProcedureFrame>; typeof<int>; typeof<int>; |])
+    let anonymousVarargsConstructor = tcProcType.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<ProcedureFrame>; typeof<int>; |])
 
     // Methods
     let apply0 = tcProcType.DefineMethod("apply0", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [||])
@@ -895,30 +906,45 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
     tcProcType.DefineMethodOverride(apply5, parentType.GetMethod("apply5"))
     tcProcType.DefineMethodOverride(applyN, parentType.GetMethod("applyN"))
 
-    let storeIndexAndReturn (gen : Emit.ILGenerator) =
+    let storeIndexAndFrameAndReturn (gen : Emit.ILGenerator) =
         gen.Emit(Emit.OpCodes.Ldarg_0)
         gen.Emit(Emit.OpCodes.Ldarg_1)
+        gen.Emit(Emit.OpCodes.Stfld, frameField)
+        gen.Emit(Emit.OpCodes.Ldarg_0)
+        gen.Emit(Emit.OpCodes.Ldarg_2)
         gen.Emit(Emit.OpCodes.Stfld, indexField)
         gen.Emit(Emit.OpCodes.Ret)
 
     let overrideApplyMethod (mb : Emit.MethodBuilder) numArgs =
         let gen = mb.GetILGenerator()
         let procName = sprintf "funcall%i" numArgs
-        let elseLabel = gen.DefineLabel()
+        let varargsCallLabel = gen.DefineLabel()
+
         gen.Emit(Emit.OpCodes.Ldarg_0)
         gen.Emit(Emit.OpCodes.Callvirt, parentType.GetProperty("isVarargs").GetGetMethod())
-        gen.Emit(Emit.OpCodes.Brtrue, elseLabel)
+        gen.Emit(Emit.OpCodes.Brtrue, varargsCallLabel)
+
         gen.Emit(Emit.OpCodes.Ldarg_0)
+        gen.Emit(Emit.OpCodes.Ldc_I4_S, (byte) numArgs)
+        gen.Emit(Emit.OpCodes.Call, parentType.GetMethod("matchNumArgs"))
+
+        gen.Emit(Emit.OpCodes.Ldarg_0)
+        gen.Emit(Emit.OpCodes.Ldfld, frameField)
+        gen.Emit(Emit.OpCodes.Ldarg_0)
+        gen.Emit(Emit.OpCodes.Ldfld, indexField)
 
         for i in seq{1..numArgs} do
             gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
 
         gen.Emit(Emit.OpCodes.Tailcall)
-        gen.Emit(Emit.OpCodes.Callvirt, parentType.GetMethod(procName))
+        gen.Emit(Emit.OpCodes.Callvirt, typeof<ProcedureFrame>.GetMethod(procName))
         gen.Emit(Emit.OpCodes.Ret)
 
-        gen.MarkLabel(elseLabel)
+        gen.MarkLabel(varargsCallLabel)
         gen.Emit(Emit.OpCodes.Ldarg_0)
+        gen.Emit(Emit.OpCodes.Ldfld, frameField)
+        gen.Emit(Emit.OpCodes.Ldarg_0)
+        gen.Emit(Emit.OpCodes.Ldfld, indexField)
         gen.Emit(Emit.OpCodes.Ldc_I4, numArgs)
         gen.Emit(Emit.OpCodes.Newarr, typeof<CTObject>)
 
@@ -929,32 +955,32 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
             gen.Emit(Emit.OpCodes.Stelem_Ref)
 
         gen.Emit(Emit.OpCodes.Tailcall)
-        gen.Emit(Emit.OpCodes.Callvirt, parentType.GetMethod("funcallVarargs"))
+        gen.Emit(Emit.OpCodes.Callvirt, typeof<ProcedureFrame>.GetMethod("funcallVarargs"))
         gen.Emit(Emit.OpCodes.Ret)
 
     let namedConstructorGen = namedConstructor.GetILGenerator()
     namedConstructorGen.Emit(Emit.OpCodes.Ldarg_0)
-    namedConstructorGen.Emit(Emit.OpCodes.Ldarg_2)
     namedConstructorGen.Emit(Emit.OpCodes.Ldarg_3)
+    namedConstructorGen.Emit(Emit.OpCodes.Ldarg_S, (byte) 4)
     namedConstructorGen.Emit(Emit.OpCodes.Call, parentType.GetConstructor([| typeof<int>; typeof<string> |]))
-    storeIndexAndReturn namedConstructorGen
+    storeIndexAndFrameAndReturn namedConstructorGen
 
     let namedVarargsConstructorGen = namedVarargsConstructor.GetILGenerator()
     namedVarargsConstructorGen.Emit(Emit.OpCodes.Ldarg_0)
-    namedVarargsConstructorGen.Emit(Emit.OpCodes.Ldarg_2)
+    namedVarargsConstructorGen.Emit(Emit.OpCodes.Ldarg_3)
     namedVarargsConstructorGen.Emit(Emit.OpCodes.Call, parentType.GetConstructor([| typeof<string> |]))
-    storeIndexAndReturn namedVarargsConstructorGen
+    storeIndexAndFrameAndReturn namedVarargsConstructorGen
 
     let anonymousConstructorGen = anonymousConstructor.GetILGenerator()
     anonymousConstructorGen.Emit(Emit.OpCodes.Ldarg_0)
-    anonymousConstructorGen.Emit(Emit.OpCodes.Ldarg_2)
+    anonymousConstructorGen.Emit(Emit.OpCodes.Ldarg_3)
     anonymousConstructorGen.Emit(Emit.OpCodes.Call, parentType.GetConstructor([| typeof<int> |]))
-    storeIndexAndReturn anonymousConstructorGen
+    storeIndexAndFrameAndReturn anonymousConstructorGen
 
     let anonymousVarargsConstructorGen = anonymousVarargsConstructor.GetILGenerator()
     anonymousVarargsConstructorGen.Emit(Emit.OpCodes.Ldarg_0)
     anonymousVarargsConstructorGen.Emit(Emit.OpCodes.Call, parentType.GetConstructor([||]))
-    storeIndexAndReturn anonymousVarargsConstructorGen
+    storeIndexAndFrameAndReturn anonymousVarargsConstructorGen
 
     overrideApplyMethod apply0 0
     overrideApplyMethod apply1 1
@@ -983,62 +1009,30 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
       fields = fieldMap
       methods = methodMap }
 
-let generateMainClass (moduleBuilder : Emit.ModuleBuilder) (frameClass : ClosureTypeInformation) mainClassName =
-    let mainClass = moduleBuilder.DefineType(mainClassName, TypeAttributes.Public ||| TypeAttributes.Class, frameClass.tb)
-    let mainMethod = mainClass.DefineMethod(mainMethodName,
-                                            MethodAttributes.Public ||| MethodAttributes.Static,
-                                            typeof<int>,
-                                            [| typeof<string array> |])
-
-    let emitConstructorBody (cons : Emit.ConstructorBuilder) argCount (parentConstructor : Emit.ConstructorBuilder) =
-        let gen = cons.GetILGenerator()
-
-        gen.Emit(Emit.OpCodes.Ldarg_0)
-
-        for i in seq{1..argCount} do
-            gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
-
-        gen.Emit(Emit.OpCodes.Call, parentConstructor)
-        gen.Emit(Emit.OpCodes.Ret)
-
-    let namedConstructor = mainClass.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<int>; typeof<string> |])
-    let namedVarargsConstructor = mainClass.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<string>|])
-    let anonymousConstructor = mainClass.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; typeof<int>; |])
-    let anonymousVarargsConstructor = mainClass.DefineConstructor(MethodAttributes.Public, CallingConventions.Standard, [| typeof<int>; |])
-
-    emitConstructorBody namedConstructor 3 frameClass.namedClosureConstructor
-    emitConstructorBody namedVarargsConstructor 2 frameClass.namedVarargsClosureConstructor
-    emitConstructorBody anonymousConstructor 2 frameClass.anonymousClosureConstructor
-    emitConstructorBody anonymousVarargsConstructor 1 frameClass.anonymousVarargsClosureConstructor
-
-    { tb = mainClass
-      anonymousClosureConstructor = anonymousConstructor
-      namedClosureConstructor = namedConstructor
-      anonymousVarargsClosureConstructor = anonymousVarargsConstructor
-      namedVarargsClosureConstructor = namedVarargsConstructor
-      fields = Map.empty
-      methods = Map.empty |> Map.add mainMethod.Name mainMethod }
-
 let generateCodeFor (program : ProgramStructure) (name : string) =
     let capitalizedName = SymbolGenerator.capitalizeWord name
     let outputFileName = sprintf "%s.exe" capitalizedName
     let assemblyBuilder = setupAssembly capitalizedName
     let moduleBuilder = assemblyBuilder.DefineDynamicModule(capitalizedName, outputFileName);
 
-    let frameClassType = generateProcedureParentClass moduleBuilder
-    frameClassType.tb.CreateType() |> ignore
+    let handleClassType = generateProcedureParentClass moduleBuilder
+    handleClassType.tb.CreateType() |> ignore
 
-    let mainClassType = generateMainClass moduleBuilder frameClassType capitalizedName
-    let topLevelTypes = { mainClass = mainClassType
-                          frameClass = frameClassType }
+    let mainClass = moduleBuilder.DefineType(capitalizedName, TypeAttributes.Public ||| TypeAttributes.Class, typeof<ProcedureFrame>)
+    let mainMethod = mainClass.DefineMethod(mainMethodName,
+                                            MethodAttributes.Public ||| MethodAttributes.Static,
+                                            typeof<int>,
+                                            [| typeof<string array> |])
+    let topLevelTypes = { mainClass = mainClass
+                          procedureHandleClass = handleClassType }
 
     builtIns := getBuiltIns program.scope
-    generateMainModule topLevelTypes program
+    generateMainModule topLevelTypes mainMethod program
 
-    mainClassType.tb.CreateType() |> ignore
+    mainClass.CreateType() |> ignore
 
     // Save assembly and mark it as a console application
-    assemblyBuilder.SetEntryPoint(mainClassType.methods.Item(mainMethodName), Emit.PEFileKinds.ConsoleApplication)
+    assemblyBuilder.SetEntryPoint(mainMethod, Emit.PEFileKinds.ConsoleApplication)
     assemblyBuilder.Save(outputFileName)
 
     copyLibs()
