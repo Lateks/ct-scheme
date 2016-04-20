@@ -771,14 +771,19 @@ let rebindTopLevelFirstClassProcedureReferences (procs, vars, exprs) =
         | SequenceExpression (seqType, exprs) -> SequenceExpression (seqType, List.map rebind exprs)
         | Assignment (id, expr) -> Assignment (newIdFor id, rebind expr)
         | VariableReference id -> VariableReference (newIdFor id)
-        | Closure clos -> let newClos = { clos with body = List.map rebind clos.body
-                                                    environment = List.map newIdFor clos.environment }
-                          Closure newClos
+        | Closure clos -> rebindClosure clos |> Closure
         | ValueExpression _ | UndefinedValue as e -> e
+    and rebindClosure clos =
+        { clos with body = List.map rebind clos.body
+                    environment = List.map newIdFor clos.environment }
+
+    let rebindProcDefinition (ProcedureDefinition (id, clos)) =
+        ProcedureDefinition (id, rebindClosure clos)
 
     let exprsAfterRebinding = List.map rebind exprs
+    let procsAfterRebinding = List.map rebindProcDefinition procs
 
-    (procs, List.append vars newVariableDeclarations, exprsAfterRebinding)
+    (procsAfterRebinding, List.append vars newVariableDeclarations, exprsAfterRebinding)
 
 // Performs several passes through the AST (passes documented
 // above) producing a Program value (either ValidProgram or

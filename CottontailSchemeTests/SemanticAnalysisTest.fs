@@ -421,4 +421,4 @@ type ``Name bindings`` () =
         |> getFunction
         |> fun c -> List.head c.body
                     |> getId
-                    |> should equal c.functionName
+                    |> fun id -> id.uniqueName |> should equal (CottontailScheme.SymbolGenerator.toProcedureObjectName c.functionName.uniqueName)
