@@ -808,37 +808,61 @@ let generateFuncallMethods (topLevelTypes : TopLevelTypes) (mapping : (ArgCount 
     let parentClass = typeof<ProcedureFrame>
     let frameClass = topLevelTypes.mainClass
 
-    // TODO: funcall methods for other argument counts
-    let map = Map.ofList mapping
-    let singleArgClosures = if map.ContainsKey(NumArgs 1) then map.Item(NumArgs 1) |> List.sortBy (fun (i, _) -> i) else []
-    if not <| List.isEmpty singleArgClosures then
-        let funcall1 = frameClass.DefineMethod("funcall1", MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, [| typeof<int>; typeof<CTObject> |])
-        let gen = funcall1.GetILGenerator()
-        let labels = singleArgClosures |> List.map (fun _ -> gen.DefineLabel())
-        let failureLabel = gen.DefineLabel()
+    let loadArgs (gen : Emit.ILGenerator) argc =
+        match argc with
+        | NumArgs n ->
+            for i in seq{2..n+1} do
+                gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
+        | VarArgs ->
+            gen.Emit(Emit.OpCodes.Ldarg_2)
 
-        gen.Emit(Emit.OpCodes.Ldarg_1)
-        gen.Emit(Emit.OpCodes.Switch, List.toArray labels)
-        gen.Emit(Emit.OpCodes.Br_S, failureLabel)
+    let overrideFuncall argc closures =
+        let sortedClosures = closures |> List.sortBy (fun (i, _) -> i)
+        if List.isEmpty sortedClosures then
+            ()
+        else
+            let methodName = match argc with
+                             | NumArgs n -> sprintf "funcall%i" n
+                             | VarArgs -> "funcallVarargs"
 
-        for (label, (_, proc)) in List.zip labels singleArgClosures do
-            gen.MarkLabel(label)
-            if not proc.methodBuilder.IsStatic then
-                gen.Emit(Emit.OpCodes.Ldarg_0)
+            let paramTypes = match argc with
+                             | NumArgs n -> seq{1..n} |> List.ofSeq |> List.map (fun _ -> typeof<CTObject>)
+                             | VarArgs -> [typeof<CTObject>]
+                             |> fun l -> typeof<int> :: l
+                             |> List.toArray
 
-            gen.Emit(Emit.OpCodes.Ldarg_2) // Note: actual arguments to call starting from index 2
-            gen.Emit(Emit.OpCodes.Tailcall)
-            gen.Emit(Emit.OpCodes.Call, proc.methodBuilder)
+            let mb = frameClass.DefineMethod(methodName, MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, paramTypes)
+            let gen = mb.GetILGenerator()
+            let labels = sortedClosures |> List.map (fun _ -> gen.DefineLabel())
+            let failureLabel = gen.DefineLabel()
+
+            gen.Emit(Emit.OpCodes.Ldarg_1)
+            gen.Emit(Emit.OpCodes.Switch, List.toArray labels)
+            gen.Emit(Emit.OpCodes.Br_S, failureLabel)
+
+            for (label, (_, proc)) in List.zip labels sortedClosures do
+                gen.MarkLabel(label)
+
+                if not proc.methodBuilder.IsStatic then
+                    gen.Emit(Emit.OpCodes.Ldarg_0)
+
+                loadArgs gen argc
+
+                gen.Emit(Emit.OpCodes.Tailcall)
+                gen.Emit(Emit.OpCodes.Call, proc.methodBuilder)
+                gen.Emit(Emit.OpCodes.Ret)
+
+            gen.MarkLabel(failureLabel)
+            gen.Emit(Emit.OpCodes.Ldarg_0)
+            gen.Emit(Emit.OpCodes.Ldarg_1)
+            loadArgs gen argc
+            gen.Emit(Emit.OpCodes.Call, parentClass.GetMethod(methodName))
             gen.Emit(Emit.OpCodes.Ret)
 
-        gen.MarkLabel(failureLabel)
-        gen.Emit(Emit.OpCodes.Ldarg_0)
-        gen.Emit(Emit.OpCodes.Ldarg_1)
-        gen.Emit(Emit.OpCodes.Ldarg_2)
-        gen.Emit(Emit.OpCodes.Call, parentClass.GetMethod("funcall1"))
-        gen.Emit(Emit.OpCodes.Ret)
+            frameClass.DefineMethodOverride(mb, parentClass.GetMethod(methodName))
 
-        frameClass.DefineMethodOverride(funcall1, parentClass.GetMethod("funcall1"))
+    for (argc, procs) in mapping do
+        overrideFuncall argc procs
 
 let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let mainClass = topLevelTypes.mainClass
@@ -954,6 +978,8 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
             gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
             gen.Emit(Emit.OpCodes.Stelem_Ref)
 
+        convertArrayOnStackToList gen
+
         gen.Emit(Emit.OpCodes.Tailcall)
         gen.Emit(Emit.OpCodes.Callvirt, typeof<ProcedureFrame>.GetMethod("funcallVarargs"))
         gen.Emit(Emit.OpCodes.Ret)
@@ -991,9 +1017,13 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
 
     let applyNGen = applyN.GetILGenerator()
     applyNGen.Emit(Emit.OpCodes.Ldarg_0)
+    applyNGen.Emit(Emit.OpCodes.Ldfld, frameField)
+    applyNGen.Emit(Emit.OpCodes.Ldarg_0)
+    applyNGen.Emit(Emit.OpCodes.Ldfld, indexField)
     applyNGen.Emit(Emit.OpCodes.Ldarg_1)
+    convertArrayOnStackToList applyNGen
     applyNGen.Emit(Emit.OpCodes.Tailcall)
-    applyNGen.Emit(Emit.OpCodes.Callvirt, parentType.GetMethod("funcallVarargs"))
+    applyNGen.Emit(Emit.OpCodes.Callvirt, typeof<ProcedureFrame>.GetMethod("funcallVarargs"))
     applyNGen.Emit(Emit.OpCodes.Ret)
 
     let fieldMap = Map.empty |> Map.add indexField.Name indexField

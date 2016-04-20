@@ -941,6 +941,6 @@ namespace CottontailSchemeLib
         public virtual CTObject funcall3(int index, CTObject a1, CTObject a2, CTObject a3) { throw new InternalError(); }
         public virtual CTObject funcall4(int index, CTObject a1, CTObject a2, CTObject a3, CTObject a4) { throw new InternalError(); }
         public virtual CTObject funcall5(int index, CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5) { throw new InternalError(); }
-        public virtual CTObject funcallVarargs(int index, CTObject[] args) { return Constants.Undefined; }
+        public virtual CTObject funcallVarargs(int index, CTObject args) { return Constants.Undefined; }
     }
 }
