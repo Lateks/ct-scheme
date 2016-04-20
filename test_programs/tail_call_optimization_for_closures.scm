@@ -2,7 +2,7 @@
   (lambda (n)
     (if (zero? n)
 	     #f
-		 (even? (- n 1)))))
+		 (even-fun? (- n 1)))))
 
 (define odd-fun? odd?)
 		 
