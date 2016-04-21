@@ -318,6 +318,24 @@
 	  (transform 6 3)
 	  4)
 
+(define double-closure
+  (lambda (x)
+    (define c x)
+	(define f (lambda () (set! c (+ c 1)) c))
+	(cons f f)))
+
+(define dc (double-closure 41))
+(define first-result ((car dc)))
+(define second-result ((cdr dc)))
+
+(test "first class use of local procedure name #3"
+      first-result
+	  42)
+
+(test "first class use of local procedure name #4"
+	  second-result
+	  43)
+
 (define odd?
   (lambda (n)
     (if (zero? n)
