@@ -771,12 +771,12 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
         |> List.groupBy (fun proc -> argCount proc.closure)
         |> List.map (fun (argc, procs) ->
                          let startingIndex = match Map.tryFind argc currentMapping with
-                                            | None -> 0
-                                            | Some indexedProcs ->
-                                                indexedProcs
-                                                |> List.map (fun (i, p) -> i)
-                                                |> List.max
-                                                |> fun x -> x + 1
+                                             | None -> 0
+                                             | Some indexedProcs ->
+                                                 indexedProcs
+                                                 |> List.map (fun (i, p) -> i)
+                                                 |> List.max
+                                                 |> fun x -> x + 1
                          (argc, indexList startingIndex procs))
 
     if List.isEmpty closures then
@@ -956,7 +956,7 @@ let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.Method
     gen.Emit(Emit.OpCodes.Ldc_I4_0)
     gen.Emit(Emit.OpCodes.Ret)
 
-    let finalClosureMapping = updatedFrame.closureMapping :: [closuresFromMainMethodBody] |> mergeClosureMappings
+    let finalClosureMapping = [updatedFrame.closureMapping; closuresFromMainMethodBody] |> mergeClosureMappings
     generateFuncallMethods topLevelTypes.mainClass finalClosureMapping
 
 let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =

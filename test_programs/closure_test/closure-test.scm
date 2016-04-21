@@ -352,3 +352,21 @@
 (test "mutual recursion between closures created inside the module body (main method)"
       (odd-fun? 9999999)
 	  #true)
+
+(define is-odd
+  (lambda (n) ; emulating "continuation passing style" locally
+    (define odd?
+	  (lambda (n cont)
+        (if (zero? n)
+		    #f
+			(cont (- n 1) odd?))))
+	(define even?
+	  (lambda (n cont)
+	    (if (zero? n)
+		    #t
+			(cont (- n 1) even?))))
+	(odd? n even?)))
+
+(test "mutual recursion between local closures passed as first class objects to procedures"
+	(is-odd 9999999)
+	#true)
