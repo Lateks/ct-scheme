@@ -42,3 +42,13 @@
 (define loller lol)
 (display (loller 1 2 3 4 5))
 (newline)
+
+(define get-greeter
+  (lambda (x)
+    (lambda ()
+	  (display "Good morning, ")
+	  (display x)
+	  (display "!\n"))))
+
+(define greeter (get-greeter "Laura"))
+(greeter)
