@@ -21,7 +21,8 @@ type FrameVariable = StaticInstance of Emit.FieldBuilder
                    | LocalInstance of Emit.LocalBuilder
 
 type ClosureLoadInfo = { lambdaBuilder : Emit.MethodBuilder;
-                         localFrameField : FrameVariable }
+                         localFrameField : FrameVariable;
+                         index : int }
 
 type Scope = { variables : Map<string, Variable>;
                procedures : Map<string, Procedure>;
@@ -47,6 +48,18 @@ type ClosureHandleTypeInformation = { tb : Emit.TypeBuilder
 
 type TopLevelTypes = { mainClass : Emit.TypeBuilder
                        procedureHandleClass : ClosureHandleTypeInformation }
+
+type ArgCount = NumArgs of int
+              | VarArgs
+
+let argCount c =
+    match c.formals with
+    | MultiArgFormals ids -> List.length ids |> NumArgs
+    | SingleArgFormals _ -> VarArgs
+
+let indexList procs =
+    let count = List.length procs
+    List.zip (Seq.toList <| seq{0..count-1}) procs
 
 let mainMethodName = "Main"
 let builtIns = ref []
@@ -452,7 +465,7 @@ let generateExpression (mb : Emit.MethodBuilder) (expr : Expression) (scope : Sc
 
 let defineFrame (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (capturesFromCurrentScope : Identifier list) (captureParentFrame : bool) parentProcedureName =
     let frameClassName = sprintf "%s$frame" parentProcedureName
-    let frameClass = mainClass.DefineNestedType(frameClassName, TypeAttributes.NestedAssembly)
+    let frameClass = mainClass.DefineNestedType(frameClassName, TypeAttributes.NestedAssembly, typeof<ProcedureFrame>)
 
     let fields = capturesFromCurrentScope
                  |> List.map (fun id ->
@@ -506,6 +519,65 @@ let rebindFrameFields frameVar scope captures =
             | (_, f)::_ -> failwithf "Error, expected an instance field but got %A" f
 
         rebind scope captures
+
+let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : (ArgCount * (int * Procedure) list) list) =
+    let parentClass = typeof<ProcedureFrame>
+
+    let loadArgs (gen : Emit.ILGenerator) argc =
+        match argc with
+        | NumArgs n ->
+            for i in seq{2..n+1} do
+                gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
+        | VarArgs ->
+            gen.Emit(Emit.OpCodes.Ldarg_2)
+
+    let overrideFuncall argc closures =
+        let sortedClosures = closures |> List.sortBy (fun (i, _) -> i)
+        if List.isEmpty sortedClosures then
+            ()
+        else
+            let methodName = match argc with
+                             | NumArgs n -> sprintf "funcall%i" n
+                             | VarArgs -> "funcallVarargs"
+
+            let paramTypes = match argc with
+                             | NumArgs n -> seq{1..n} |> List.ofSeq |> List.map (fun _ -> typeof<CTObject>)
+                             | VarArgs -> [typeof<CTObject>]
+                             |> fun l -> typeof<int> :: l
+                             |> List.toArray
+
+            let mb = frameClass.DefineMethod(methodName, MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, paramTypes)
+            let gen = mb.GetILGenerator()
+            let labels = sortedClosures |> List.map (fun _ -> gen.DefineLabel())
+            let failureLabel = gen.DefineLabel()
+
+            gen.Emit(Emit.OpCodes.Ldarg_1)
+            gen.Emit(Emit.OpCodes.Switch, List.toArray labels)
+            gen.Emit(Emit.OpCodes.Br_S, failureLabel)
+
+            for (label, (_, proc)) in List.zip labels sortedClosures do
+                gen.MarkLabel(label)
+
+                if not proc.methodBuilder.IsStatic then
+                    gen.Emit(Emit.OpCodes.Ldarg_0)
+
+                loadArgs gen argc
+
+                gen.Emit(Emit.OpCodes.Tailcall)
+                gen.Emit(Emit.OpCodes.Call, proc.methodBuilder)
+                gen.Emit(Emit.OpCodes.Ret)
+
+            gen.MarkLabel(failureLabel)
+            gen.Emit(Emit.OpCodes.Ldarg_0)
+            gen.Emit(Emit.OpCodes.Ldarg_1)
+            loadArgs gen argc
+            gen.Emit(Emit.OpCodes.Call, parentClass.GetMethod(methodName))
+            gen.Emit(Emit.OpCodes.Ret)
+
+            frameClass.DefineMethodOverride(mb, parentClass.GetMethod(methodName))
+
+    for (argc, procs) in mapping do
+        overrideFuncall argc procs
 
 // Helper functions for handling closure definitions.
 let getFormals (c : ClosureDefinition) =
@@ -581,12 +653,13 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
                                         defineProcedure lambdaParentClass nestedClosure asInstanceMethods,
                                         nestedClosure))
 
+    // TODO: this needs information on current index
     let generateBodies builders frame scope =
         for (name, lb, nestedClosure) in builders do
             generateProcedureBody topLevelTypes frame lb nestedClosure scope
 
     let buildClosureInfoMap localFrameVar =
-        List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = localFrameVar }))
+        List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = localFrameVar; index = 0 }))
         >> Map.ofList
 
     let isArgument id = List.contains id args
@@ -704,7 +777,17 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
                                     |> extendScopeWithIndirectlyAccessibleFields nonLocalCaptures newFrame.staticLink
 
             let builders = makeBuilders newFrame.frameClass true closures
+            let closureMapping =
+                builders
+                |> List.map (fun (name, mb, c) -> { methodBuilder = mb; closure = c })
+                |> List.groupBy (fun proc -> argCount proc.closure)
+                |> List.map (fun (argc, procs) -> (argc, indexList procs))
+
+            // TODO: pass number information to next level (inside Frame?)
+            //       and get possible new closure information for this level
             generateBodies builders newFrame lambdaScope
+
+            generateFuncallMethods newFrame.frameClass closureMapping
 
             newFrame.frameClass.CreateType() |> ignore
 
@@ -731,19 +814,10 @@ let generateTopLevelProcedureBodies (topLevelTypes : TopLevelTypes) (topLevelFra
     for (_, proc) in Map.toSeq scope.procedures do
         generateProcedureBody topLevelTypes topLevelFrame proc.methodBuilder proc.closure scope
 
-type ArgCount = NumArgs of int
-              | VarArgs
-
 let createTopLevelClosureMapping (procs : ProcedureDefinition list) (scope : Scope) =
     let usedAsFirstClassValueOrReassigned (ProcedureDefinition (_, c)) = c.isUsedAsFirstClassValue || c.isReassigned
-    let argCount (ProcedureDefinition (_, c)) =
-        match c.formals with
-        | MultiArgFormals ids -> List.length ids |> NumArgs
-        | SingleArgFormals _ -> VarArgs
-    let numberProcedureDefinitions (argc, procDefs) =
-        let count = List.length procDefs
-        let numberedDefinitions = List.zip (Seq.toList <| seq{0..count-1}) procDefs
-        (argc, numberedDefinitions)
+    let argCount (ProcedureDefinition (_, c)) = argCount c
+    let numberProcedureDefinitions (argc, procDefs) = (argc, indexList procDefs)
     let resolveProcedures (argc, numberedDefinitions) =
         let closureInfo = numberedDefinitions
                           |> List.map (fun (i, proc) -> let (ProcedureDefinition (id, _)) = proc
@@ -803,66 +877,6 @@ let generateMainMethod (topLevelTypes : TopLevelTypes) (mainMethod : Emit.Method
     for expr in program.expressions do
         generateExpression mainMethod expr scopeWithClosures false
 
-let generateFuncallMethods (topLevelTypes : TopLevelTypes) (mapping : (ArgCount * (int * Procedure) list) list) =
-    let parentClass = typeof<ProcedureFrame>
-    let frameClass = topLevelTypes.mainClass
-
-    let loadArgs (gen : Emit.ILGenerator) argc =
-        match argc with
-        | NumArgs n ->
-            for i in seq{2..n+1} do
-                gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
-        | VarArgs ->
-            gen.Emit(Emit.OpCodes.Ldarg_2)
-
-    let overrideFuncall argc closures =
-        let sortedClosures = closures |> List.sortBy (fun (i, _) -> i)
-        if List.isEmpty sortedClosures then
-            ()
-        else
-            let methodName = match argc with
-                             | NumArgs n -> sprintf "funcall%i" n
-                             | VarArgs -> "funcallVarargs"
-
-            let paramTypes = match argc with
-                             | NumArgs n -> seq{1..n} |> List.ofSeq |> List.map (fun _ -> typeof<CTObject>)
-                             | VarArgs -> [typeof<CTObject>]
-                             |> fun l -> typeof<int> :: l
-                             |> List.toArray
-
-            let mb = frameClass.DefineMethod(methodName, MethodAttributes.Public ||| MethodAttributes.Virtual, typeof<CTObject>, paramTypes)
-            let gen = mb.GetILGenerator()
-            let labels = sortedClosures |> List.map (fun _ -> gen.DefineLabel())
-            let failureLabel = gen.DefineLabel()
-
-            gen.Emit(Emit.OpCodes.Ldarg_1)
-            gen.Emit(Emit.OpCodes.Switch, List.toArray labels)
-            gen.Emit(Emit.OpCodes.Br_S, failureLabel)
-
-            for (label, (_, proc)) in List.zip labels sortedClosures do
-                gen.MarkLabel(label)
-
-                if not proc.methodBuilder.IsStatic then
-                    gen.Emit(Emit.OpCodes.Ldarg_0)
-
-                loadArgs gen argc
-
-                gen.Emit(Emit.OpCodes.Tailcall)
-                gen.Emit(Emit.OpCodes.Call, proc.methodBuilder)
-                gen.Emit(Emit.OpCodes.Ret)
-
-            gen.MarkLabel(failureLabel)
-            gen.Emit(Emit.OpCodes.Ldarg_0)
-            gen.Emit(Emit.OpCodes.Ldarg_1)
-            loadArgs gen argc
-            gen.Emit(Emit.OpCodes.Call, parentClass.GetMethod(methodName))
-            gen.Emit(Emit.OpCodes.Ret)
-
-            frameClass.DefineMethodOverride(mb, parentClass.GetMethod(methodName))
-
-    for (argc, procs) in mapping do
-        overrideFuncall argc procs
-
 let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let mainClass = topLevelTypes.mainClass
     let gen = mainMethod.GetILGenerator()
@@ -902,8 +916,8 @@ let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.Method
     gen.Emit(Emit.OpCodes.Ldc_I4_0)
     gen.Emit(Emit.OpCodes.Ret)
 
-    generateFuncallMethods topLevelTypes closureMapping // TODO: pass in extended closure mapping
-                                                        // (extended with data received from generateMainMethod and generateTopLevelProcedureBodies
+    generateFuncallMethods topLevelTypes.mainClass closureMapping // TODO: pass in extended closure mapping
+                                                                  // (extended with data received from generateMainMethod and generateTopLevelProcedureBodies
     generateClassInitializer topLevelTypes closureMapping instanceField scope
 
 let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
