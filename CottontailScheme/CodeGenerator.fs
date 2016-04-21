@@ -28,16 +28,17 @@ type Scope = { variables : Map<string, Variable>;
                procedures : Map<string, Procedure>;
                closureInfo : Map<string, ClosureLoadInfo> }
 
-type Frame = { frameClass : Emit.TypeBuilder;
-               frameFields: (string * Emit.FieldBuilder) list;
-               staticLink: Emit.FieldBuilder option;
-               parent: Frame option
-               frameVariable : FrameVariable }
-
 type ArgCount = NumArgs of int
               | VarArgs
 
 type ClosureMapping = (ArgCount * (int * Procedure) list) list
+
+type Frame = { frameClass : Emit.TypeBuilder
+               frameFields: (string * Emit.FieldBuilder) list
+               staticLink: Emit.FieldBuilder option
+               parent: Frame option
+               frameVariable : FrameVariable
+               closureMapping : ClosureMapping }
 
 type FrameInfo = { closureInfo : Map<string, ClosureLoadInfo>
                    frameVariable : FrameVariable
@@ -60,9 +61,10 @@ let argCount c =
     | MultiArgFormals ids -> List.length ids |> NumArgs
     | SingleArgFormals _ -> VarArgs
 
-let indexList procs =
+let indexList startIndex procs =
     let count = List.length procs
-    List.zip (Seq.toList <| seq{0..count-1}) procs
+    let endIndex = startIndex + count - 1
+    List.zip (Seq.toList <| seq{startIndex..endIndex}) procs
 
 let mainMethodName = "Main"
 let builtIns = ref []
@@ -350,7 +352,6 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
     let emitAssignment (id : Identifier) expr =
         let push () = pushExprResultToStack expr
 
-        printfn "Assigning to %A, scope contains variables %A" id scope.variables
         if scope.variables.ContainsKey(id.uniqueName) then
             match scope.variables.Item(id.uniqueName) with
             | LocalVar v -> push ()
@@ -364,7 +365,6 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
                                       push ()
                                       gen.Emit(Emit.OpCodes.Stfld, v)
         else
-            printfn "Falling back to argIndex"
             match id.argIndex with
             | Some n ->
                 push ()
@@ -510,6 +510,11 @@ let rebindFrameFields frameVar scope captures =
 
 let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMapping) =
     let parentClass = typeof<ProcedureFrame>
+    printfn "Generating funcall methods for the following mapping"
+    for (argc, procs) in mapping do
+        printfn "%A:" argc
+        for (i, p) in procs do
+            printfn "    %i: %s" i p.closure.functionName.uniqueName
 
     let loadArgs (gen : Emit.ILGenerator) argc =
         match argc with
@@ -615,7 +620,7 @@ let rec generateProcedureBody (topLevelTypes : TopLevelTypes) (parentFrame : Fra
                    List.append namedProcedures anonymousProcedures
 
     // Debug printing, TODO: remove
-    printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
+    //printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
 
     // Create frame classes and closure body methods.
     let frameInfo = generateClosures topLevelTypes mb scope (Some c) parentFrame closures
@@ -637,8 +642,8 @@ let rec generateProcedureBody (topLevelTypes : TopLevelTypes) (parentFrame : Fra
             closureInfo = frameInfo.closureInfo }
 
     // Debug printing, TODO: remove
-    printfn "Extended scope for %s with closures contains variables %A" c.functionName.uniqueName scopeWithLocalFieldsAndClosures.variables
-    printfn "Generating body for closure %A" c
+    //printfn "Extended scope for %s with closures contains variables %A" c.functionName.uniqueName scopeWithLocalFieldsAndClosures.variables
+    //printfn "Generating body for closure %A" c
 
     // Populate (assign) the local variables that hold closures.
     for ProcedureDefinition (id, proc) in c.procedureDefinitions do
@@ -667,7 +672,6 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
         List.map (fun nestedClosure -> { methodBuilder = defineProcedure lambdaParentClass nestedClosure asInstanceMethods
                                          closure = nestedClosure })
 
-    // TODO: this needs information on current indices
     let generateBodies builders frame scope =
         builders
         |> List.map (fun proc ->
@@ -711,7 +715,8 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
                          frameFields = fields |> List.map (fun (n, InstanceField f) -> (n, f));
                          staticLink = capturedFrameField;
                          frameClass = frameClass;
-                         frameVariable = LocalInstance frameVar }
+                         frameVariable = LocalInstance frameVar;
+                         closureMapping = [] }
 
         newFrame, matchedCapturesInCurrentScope
 
@@ -760,10 +765,19 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
                              scope.variables
             { scope with variables = newVars }
 
-    let generateIdentifiersForClosures builders =
+    let generateIdentifiersForClosures builders frame =
+        let currentMapping = Map.ofList frame.closureMapping
         builders
         |> List.groupBy (fun proc -> argCount proc.closure)
-        |> List.map (fun (argc, procs) -> (argc, indexList procs))
+        |> List.map (fun (argc, procs) ->
+                         let startingIndex = match Map.tryFind argc currentMapping with
+                                            | None -> 0
+                                            | Some indexedProcs ->
+                                                indexedProcs
+                                                |> List.map (fun (i, p) -> i)
+                                                |> List.max
+                                                |> fun x -> x + 1
+                         (argc, indexList startingIndex procs))
 
     if List.isEmpty closures then
         { closureInfo = Map.empty;
@@ -779,8 +793,10 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
             let isInsideMainClass = parentClass = topLevelTypes.mainClass
             let builders = makeBuilders parentClass (not isInsideMainClass) closures
 
-            let closuresWithIdentifiers = generateIdentifiersForClosures builders
-            let closuresFromNestedFrames = generateBodies builders currentFrame scope
+            let closuresWithIdentifiers = generateIdentifiersForClosures builders currentFrame
+            let frameWithClosureMapping = { currentFrame with closureMapping = mergeClosureMappings [closuresWithIdentifiers; currentFrame.closureMapping] }
+
+            let closuresFromNestedFrames = generateBodies builders frameWithClosureMapping scope
             let closureMapping = closuresWithIdentifiers :: closuresFromNestedFrames |> mergeClosureMappings
 
             { closureInfo = buildClosureInfoMap currentFrame.frameVariable closureMapping;
@@ -789,7 +805,7 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
               closureMappingForParentFrame = closureMapping }
         else
             // Debug printing, TODO: remove
-            printfn "Generating closures inside %s, capture list is %A" parentProcedureName (List.map (fun id -> id.uniqueName) captures)
+            // printfn "Generating closures inside %s, capture list is %A" parentProcedureName (List.map (fun id -> id.uniqueName) captures)
 
             let newFrame, matchedCapturesInCurrentScope = createFrame captures
 
@@ -800,19 +816,18 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
                                     |> extendScopeWithIndirectlyAccessibleFields nonLocalCaptures newFrame.staticLink
 
             let builders = makeBuilders newFrame.frameClass true closures
-            let closuresWithIdentifiers = generateIdentifiersForClosures builders
+            let closuresWithIdentifiers = generateIdentifiersForClosures builders newFrame
+            let frameWithClosureMapping = { newFrame with closureMapping = closuresWithIdentifiers }
 
-            // TODO: pass number information to next level (inside Frame?)
-            //       and get possible new closure information for this level
-            let closuresFromNestedFrames = generateBodies builders newFrame lambdaScope
+            let closuresFromNestedFrames = generateBodies builders frameWithClosureMapping lambdaScope
             let closureMapping = closuresWithIdentifiers :: closuresFromNestedFrames |> mergeClosureMappings
 
             generateFuncallMethods newFrame.frameClass closureMapping
 
-            newFrame.frameClass.CreateType() |> ignore
+            frameWithClosureMapping.frameClass.CreateType() |> ignore
 
-            { closureInfo = buildClosureInfoMap newFrame.frameVariable closureMapping;
-              frameVariable = newFrame.frameVariable;
+            { closureInfo = buildClosureInfoMap frameWithClosureMapping.frameVariable closureMapping;
+              frameVariable = frameWithClosureMapping.frameVariable;
               matchedCapturesFromCurrentScope = matchedCapturesInCurrentScope;
               closureMappingForParentFrame = [] }
 
@@ -833,12 +848,11 @@ let generateTopLevelProcedureBodies (topLevelTypes : TopLevelTypes) (topLevelFra
     Map.toList scope.procedures
     |> List.map (fun (_, proc) ->
                      generateProcedureBody topLevelTypes topLevelFrame proc.methodBuilder proc.closure scope)
-    |> mergeClosureMappings
 
 let createTopLevelClosureMapping (procs : ProcedureDefinition list) (scope : Scope) =
     let usedAsFirstClassValueOrReassigned (ProcedureDefinition (_, c)) = c.isUsedAsFirstClassValue || c.isReassigned
     let argCount (ProcedureDefinition (_, c)) = argCount c
-    let numberProcedureDefinitions (argc, procDefs) = (argc, indexList procDefs)
+    let numberProcedureDefinitions (argc, procDefs) = (argc, indexList 0 procDefs)
     let resolveProcedures (argc, numberedDefinitions) =
         let closureInfo = numberedDefinitions
                           |> List.map (fun (i, proc) -> let (ProcedureDefinition (id, _)) = proc
@@ -913,17 +927,22 @@ let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.Method
 
     let instanceField = mainClass.DefineField("_instance", mainClass, FieldAttributes.Assembly ||| FieldAttributes.Static)
     let closureMapping = createTopLevelClosureMapping program.procedureDefinitions scope
+
+    generateClassInitializer topLevelTypes closureMapping instanceField scope
+
     let frame = { frameClass = topLevelTypes.mainClass
                   frameFields = []
                   staticLink = None
                   parent = None
-                  frameVariable = StaticInstance instanceField }
+                  frameVariable = StaticInstance instanceField
+                  closureMapping = closureMapping }
 
-    let closuresFromProcedureBodies = generateTopLevelProcedureBodies topLevelTypes frame scope // TODO: closureMapping needed to get correct numbering?
+    let closuresFromProcedureBodies = generateTopLevelProcedureBodies topLevelTypes frame scope
 
     gen.BeginExceptionBlock() |> ignore
 
-    let closuresFromMainMethodBody = generateMainMethod topLevelTypes mainMethod program frame scope // TODO: extended closureMapping (from generateTopLevelProcedureBodies) needed for correct numbering?
+    let updatedFrame = { frame with closureMapping = (closureMapping :: closuresFromProcedureBodies) |> mergeClosureMappings}
+    let closuresFromMainMethodBody = generateMainMethod topLevelTypes mainMethod program updatedFrame scope
 
     gen.BeginCatchBlock(typeof<CottontailSchemeException>)
 
@@ -937,9 +956,8 @@ let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.Method
     gen.Emit(Emit.OpCodes.Ldc_I4_0)
     gen.Emit(Emit.OpCodes.Ret)
 
-    generateFuncallMethods topLevelTypes.mainClass closureMapping // TODO: pass in extended closure mapping
-                                                                  // (extended with data received from generateMainMethod and generateTopLevelProcedureBodies
-    generateClassInitializer topLevelTypes closureMapping instanceField scope
+    let finalClosureMapping = updatedFrame.closureMapping :: [closuresFromMainMethodBody] |> mergeClosureMappings
+    generateFuncallMethods topLevelTypes.mainClass finalClosureMapping
 
 let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
     let parentType = typeof<CTProcedure>
