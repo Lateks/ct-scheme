@@ -159,14 +159,14 @@ let capturedLocals (clos : ClosureDefinition) (scope : Scope) =
     clos.environment
     |> List.filter (isGlobalVariable >> not)
 
-let defineProcedure (parentClass : Emit.TypeBuilder) (c : ClosureDefinition) (isInClosureFrameClass : bool) =
+let defineProcedure (parentClass : Emit.TypeBuilder) (c : ClosureDefinition) (isInstanceMethod : bool) =
     let parameterTypes = match c.formals with
                          | SingleArgFormals id -> [| typeof<CTObject> |]
                          | MultiArgFormals ids -> ids |> List.map (fun _ -> typeof<CTObject> )
                                                       |> Array.ofList
 
     let methodAttributes =
-        if isInClosureFrameClass then
+        if isInstanceMethod then
             MethodAttributes.Public
         else
             MethodAttributes.Static ||| MethodAttributes.Private
@@ -576,10 +576,9 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
         | None -> [], [], "Main"
     let parentClass = currentFrame.frameClass
 
-    // TODO: more descriptive name for isFrameClass
-    let makeBuilders lambdaParentClass isFrameClass =
+    let makeBuilders lambdaParentClass asInstanceMethods =
         List.map (fun nestedClosure -> (nestedClosure.functionName.uniqueName,
-                                        defineProcedure lambdaParentClass nestedClosure isFrameClass,
+                                        defineProcedure lambdaParentClass nestedClosure asInstanceMethods,
                                         nestedClosure))
 
     let generateBodies builders frame scope =
@@ -680,8 +679,8 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
                        |> List.concat
                        |> List.distinct
         if captures.IsEmpty then
-            let isInsideFrameClass = parentClass <> topLevelTypes.mainClass
-            let builders = makeBuilders parentClass isInsideFrameClass closures
+            let isInsideMainClass = parentClass = topLevelTypes.mainClass
+            let builders = makeBuilders parentClass (not isInsideMainClass) closures
 
             generateBodies builders currentFrame scope
 
