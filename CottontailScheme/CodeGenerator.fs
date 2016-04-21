@@ -520,7 +520,7 @@ let getLocalProcedureIds (c : ClosureDefinition) =
 let getVariableIdsInScope (c : ClosureDefinition) =
     List.append (getLocalVariableIds c) (getLocalProcedureIds c)
 
-let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Frame option) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
+let rec generateProcedureBody (topLevelTypes : TopLevelTypes) (parentFrame : Frame option) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let gen = mb.GetILGenerator()
     let closures = let namedProcedures = c.procedureDefinitions
                                          |> List.map (fun (ProcedureDefinition (_, def)) -> def)
@@ -531,7 +531,7 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Fram
     printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
 
     // Create frame classes and closure body methods.
-    let frameInfo = generateClosures mainClass mb scope (Some c) parentFrame closures
+    let frameInfo = generateClosures topLevelTypes mb scope (Some c) parentFrame closures
     let scopeWithFrameReferences = rebindFrameFields frameInfo.frameVariable scope frameInfo.matchedCapturesFromCurrentScope
 
     // Find local variables that were not captured in the frame and
@@ -566,18 +566,14 @@ let rec generateProcedureBody (mainClass : Emit.TypeBuilder) (parentFrame : Fram
 
     generateExpression mb tailExpr scopeWithLocalFieldsAndClosures true
 
-// mainClass: Top level class in module, containing the main method.
-//            Used for defining nested frame classes.
-// parentClass: Parent class of current method (mb).
-//              Used to house non-capturing lambda bodies as methods.
-and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (scope : Scope) (parentProcedure : ClosureDefinition option) (currentFrame : Frame option) closures =
+and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (scope : Scope) (parentProcedure : ClosureDefinition option) (currentFrame : Frame option) closures =
     let gen = mb.GetILGenerator()
     let localVars, args, parentProcedureName =
         match parentProcedure with
         | Some p -> getVariableIdsInScope p, getFormals p, p.functionName.uniqueName
         | None -> [], [], "Main"
     let parentClass = match currentFrame with
-                      | None -> mainClass
+                      | None -> topLevelTypes.mainClass
                       | Some f -> f.frameClass
     let makeBuilders lambdaParentClass isFrameClass =
         List.map (fun nestedClosure -> (nestedClosure.functionName.uniqueName,
@@ -586,7 +582,7 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
 
     let generateBodies builders frame scope =
         for (name, lb, nestedClosure) in builders do
-            generateProcedureBody mainClass frame lb nestedClosure scope
+            generateProcedureBody topLevelTypes frame lb nestedClosure scope
 
     let buildClosureInfoMap localFrameVar =
         List.map (fun (name, lb, _) -> (name, { lambdaBuilder = lb; localFrameField = localFrameVar }))
@@ -601,7 +597,7 @@ and generateClosures (mainClass : Emit.TypeBuilder) (mb : Emit.MethodBuilder) (s
     let createFrame captures =
         let currentScopeCaptures = capturesFromCurrentScope captures
         let captureParentFrame = List.length captures <> List.length currentScopeCaptures
-        let frameClass, cons, fields, capturedFrameField = defineFrame mainClass parentClass currentScopeCaptures captureParentFrame parentProcedureName
+        let frameClass, cons, fields, capturedFrameField = defineFrame topLevelTypes.mainClass parentClass currentScopeCaptures captureParentFrame parentProcedureName
 
         let frameVar = gen.DeclareLocal(frameClass)
         let matchedCapturesInCurrentScope = matchCaptures currentScopeCaptures fields
@@ -727,9 +723,9 @@ let defineProcedures (mainClass : Emit.TypeBuilder) =
                   (id.uniqueName, { methodBuilder = procedure; closure = clos }))
     >> Map.ofList
 
-let generateTopLevelProcedureBodies (mainClass : Emit.TypeBuilder) (scope : Scope) =
+let generateTopLevelProcedureBodies (topLevelTypes : TopLevelTypes) (scope : Scope) =
     for (_, proc) in Map.toSeq scope.procedures do
-        generateProcedureBody mainClass None proc.methodBuilder proc.closure scope
+        generateProcedureBody topLevelTypes None proc.methodBuilder proc.closure scope
 
 type ArgCount = NumArgs of int
               | VarArgs
@@ -796,9 +792,9 @@ let generateClassInitializer (topLevelTypes : TopLevelTypes) (closureMapping : (
 
         gen.Emit(Emit.OpCodes.Ret)
 
-let generateMainMethod (mainClass : Emit.TypeBuilder) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
+let generateMainMethod (topLevelTypes : TopLevelTypes) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) scope =
     let closures = findClosuresInScope program.expressions
-    let frameInfo = generateClosures mainClass mainMethod scope None None closures
+    let frameInfo = generateClosures topLevelTypes mainMethod scope None None closures
     let scopeWithClosures = { scope with closureInfo = frameInfo.closureInfo }
 
     for expr in program.expressions do
@@ -875,15 +871,15 @@ let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.Method
                   procedures = procedures;
                   closureInfo = Map.empty }
 
-    generateTopLevelProcedureBodies mainClass scope // TODO: pass topLevelTypes
-    let closureMapping = createTopLevelClosureMapping program.procedureDefinitions scope
+    generateTopLevelProcedureBodies topLevelTypes scope
 
+    let closureMapping = createTopLevelClosureMapping program.procedureDefinitions scope
     generateFuncallMethods topLevelTypes closureMapping
     generateClassInitializer topLevelTypes closureMapping scope
 
     gen.BeginExceptionBlock() |> ignore
 
-    generateMainMethod mainClass mainMethod program scope // TODO: pass topLevelTypes
+    generateMainMethod topLevelTypes mainMethod program scope
 
     gen.BeginCatchBlock(typeof<CottontailSchemeException>)
 

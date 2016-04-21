@@ -349,6 +349,6 @@
 	    #t
 		(odd-fun? (- n 1)))))
 
-(test "mutual recursion between closures"
+(test "mutual recursion between closures created inside the module body (main method)"
       (odd-fun? 9999999)
 	  #true)
