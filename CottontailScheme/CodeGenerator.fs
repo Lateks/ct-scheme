@@ -429,8 +429,7 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
     | VariableReference id
         -> emitVariableLoad id
     | Closure c
-        -> printfn "Looking for closure info for %s, scope contains %A" c.functionName.uniqueName (mapKeys scope.closureInfo)
-           let closureInfo = scope.closureInfo.Item(c.functionName.uniqueName)
+        -> let closureInfo = scope.closureInfo.Item(c.functionName.uniqueName)
            createProcedureObjectOnStack topLevelTypes gen c closureInfo
     | UndefinedValue -> ()
 
@@ -510,11 +509,6 @@ let rebindFrameFields frameVar scope captures =
 
 let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMapping) =
     let parentClass = typeof<ProcedureFrame>
-    printfn "Generating funcall methods for the following mapping"
-    for (argc, procs) in mapping do
-        printfn "%A:" argc
-        for (i, p) in procs do
-            printfn "    %i: %s" i p.closure.functionName.uniqueName
 
     let loadArgs (gen : Emit.ILGenerator) argc =
         match argc with
@@ -619,9 +613,6 @@ let rec generateProcedureBody (topLevelTypes : TopLevelTypes) (parentFrame : Fra
                    let anonymousProcedures = findClosuresInScope c.body
                    List.append namedProcedures anonymousProcedures
 
-    // Debug printing, TODO: remove
-    //printfn "Closures in procedure body of %A: %A" c.functionName.uniqueName (List.map (fun c -> c.functionName.uniqueName) closures)
-
     // Create frame classes and closure body methods.
     let frameInfo = generateClosures topLevelTypes mb scope (Some c) parentFrame closures
     let scopeWithFrameReferences = rebindFrameFields frameInfo.frameVariable scope frameInfo.matchedCapturesFromCurrentScope
@@ -633,17 +624,12 @@ let rec generateProcedureBody (topLevelTypes : TopLevelTypes) (parentFrame : Fra
                     |> List.filter (fun id -> not <| List.contains id capturedVarIds)
                     |> List.map (fun id -> (id.uniqueName, LocalVar <| gen.DeclareLocal(typeof<CTObject>)))
 
-    // TODO: do some local names need to be removed from scope later?
     let scopeWithLocalFieldsAndClosures =
         { scopeWithFrameReferences with
             variables = Map.toSeq scopeWithFrameReferences.variables
                         |> Seq.append newLocals
                         |> Map.ofSeq
             closureInfo = frameInfo.closureInfo }
-
-    // Debug printing, TODO: remove
-    //printfn "Extended scope for %s with closures contains variables %A" c.functionName.uniqueName scopeWithLocalFieldsAndClosures.variables
-    //printfn "Generating body for closure %A" c
 
     // Populate (assign) the local variables that hold closures.
     for ProcedureDefinition (id, proc) in c.procedureDefinitions do
@@ -804,9 +790,6 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
               matchedCapturesFromCurrentScope = [];
               closureMappingForParentFrame = closureMapping }
         else
-            // Debug printing, TODO: remove
-            // printfn "Generating closures inside %s, capture list is %A" parentProcedureName (List.map (fun id -> id.uniqueName) captures)
-
             let newFrame, matchedCapturesInCurrentScope = createFrame captures
 
             let isNonLocalCapture = let captureIds = matchedCapturesInCurrentScope |> List.map (fun (id, _) -> id)

@@ -20,6 +20,8 @@
 
 (define nested-tc
   (lambda (n)
+    (display n)
+	(newline)
     (if (zero? n)
 	    "passed"
         (and #t n (and #t (nested-tc (- n 1)))))))
