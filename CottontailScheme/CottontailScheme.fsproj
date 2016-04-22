@@ -58,9 +58,9 @@
     <Compile Include="AssemblyInfo.fs" />
     <None Include="App.config" />
     <Content Include="packages.config" />
+    <Compile Include="Literals.fs" />
     <Compile Include="Parsing.fsi" />
     <Compile Include="Parsing.fs" />
-    <Compile Include="Literals.fs" />
     <Compile Include="Scope.fs" />
     <Compile Include="ASTBuilder.fsi" />
     <Compile Include="ASTBuilder.fs" />

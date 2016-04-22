@@ -1,17 +1,12 @@
 ﻿module CottontailScheme.Parsing
 
 open FParsec
+open Literals
 
 type ParsePosition = { line: int64; column: int64 }
 
-type CTDatum = CTBool of bool
-             | CTNumber of float
-             | CTString of string
-             | CTSymbol of string
-             | CTList of CTDatum list
-
 type CTExpression = CTIdentifierExpression of ParsePosition * string
-                  | CTLiteralExpression of ParsePosition * CTDatum
+                  | CTLiteralExpression of ParsePosition * LiteralValue
                   | CTListExpression of ParsePosition * CTExpression list
 
 type CTProgram = CTProgram of CTExpression list
@@ -34,7 +29,7 @@ let parseListOf p = (ws >>. sepEndBy p exprWs .>> ws)
 let parseParenthesisedListOf p = betweenStrings "(" ")" (parseListOf p)
 
 // High level S-expression parsers
-let parseDatum, parseDatumRef = createParserForwardedToRef<CTDatum, unit>()
+let parseDatum, parseDatumRef = createParserForwardedToRef<LiteralValue, unit>()
 let parseExpression, parseExpressionRef = createParserForwardedToRef<CTExpression, unit>()
 let parseProgram = parseListOf parseExpression .>> eof
                    |>> CTProgram
@@ -54,15 +49,15 @@ let parseSymbolOrIdentifier =
                                                 parseRegularIdentifier
     parseRegularIdentifier <|> parsePeculiarIdentifier
 
-let parseBoolean = skipChar '#' >>. (((pstring "true" <|> pstring "t") >>% CTBool true)
-                                <|> ((pstring "false" <|> pstring "f") >>% CTBool false))
+let parseBoolean = skipChar '#' >>. (((pstring "true" <|> pstring "t") >>% Boolean true)
+                                <|> ((pstring "false" <|> pstring "f") >>% Boolean false))
 
 let parseNumber =
     let numberFormat =     NumberLiteralOptions.AllowMinusSign
                         ||| NumberLiteralOptions.AllowPlusSign
                         ||| NumberLiteralOptions.AllowFraction
     numberLiteral numberFormat "number"
-    |>> fun nl -> CTNumber (float nl.String)
+    |>> fun nl -> Number (float nl.String)
 
 let parseStringLiteral =
     let escape = anyOf "\"\\tnr"
@@ -74,11 +69,11 @@ let parseStringLiteral =
     let escapedChar = pstring "\\" >>. escape
     let normalCharSeq = manySatisfy (fun c -> c <> '"' && c <> '\\')
     betweenStrings "\"" "\"" (stringsSepBy normalCharSeq escapedChar)
-    |>> CTString
+    |>> String
 
-let parseSymbol = parseSymbolOrIdentifier |>> CTSymbol
+let parseSymbol = parseSymbolOrIdentifier |>> Symbol
 
-let parseList = parseParenthesisedListOf parseDatum |>> CTList
+let parseList = parseParenthesisedListOf parseDatum |>> List
 
 let parseSugaredQuotation = pchar '\'' >>. parseDatum
 

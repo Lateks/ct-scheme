@@ -38,15 +38,6 @@ let isSpecialFunction name = List.contains name specialFunctions
 
 let buildFromIdentifier = Identifier >> IdentifierExpression
 
-let rec buildFromDatum = function
-                         | CTBool b -> Boolean b
-                         | CTNumber f -> Number f
-                         | CTString s -> String s
-                         | CTSymbol s -> Symbol s
-                         | CTList l -> l |> List.map buildFromDatum |> List
-
-let buildLiteral = buildFromDatum >> LiteralExpression
-
 let isDefinition =
     function
     | Definition _ -> true
@@ -165,13 +156,13 @@ let rec buildFromList pos =
                match x with
                | CTIdentifierExpression (pos, id) -> buildCallToIdentifier pos id
                | CTLiteralExpression (pos, datum)
-                  -> let repr = datum |> buildFromDatum |> toCottontailSchemeType
+                  -> let repr = datum |> toCottontailSchemeType
                      ExpressionError { message = sprintf "Not a procedure: %A" repr;
                                        position = pos }
                | CTListExpression (pos, l) -> buildFromList pos l |> buildProcCall
 and buildFromExpression = function
                           | CTIdentifierExpression (_, id) -> buildFromIdentifier id
-                          | CTLiteralExpression (_, datum) -> buildLiteral datum
+                          | CTLiteralExpression (_, datum) -> LiteralExpression datum
                           | CTListExpression (pos, exprs) -> buildFromList pos exprs
 and buildFromExprList = List.map buildFromExpression
 and buildLambda pos =

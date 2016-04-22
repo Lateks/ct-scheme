@@ -5,6 +5,7 @@ open FsUnit
 open FParsec
 
 open CottontailScheme.Parsing
+open CottontailScheme.Literals
 
 module ParserTest =
     let testEquals p expected str =
@@ -21,13 +22,13 @@ module ParserTest =
 type ``Boolean literal parser`` () =
     [<Test>]
     member x.``accepts literal values representing true`` () =
-        let testAccepts = ParserTest.testEquals parseDatum (CTBool true)
+        let testAccepts = ParserTest.testEquals parseDatum (Boolean true)
         testAccepts "#true"
         testAccepts "#t"
 
     [<Test>]
     member x.``accepts literal values representing false`` () =
-        let testAccepts = ParserTest.testEquals parseDatum (CTBool false)
+        let testAccepts = ParserTest.testEquals parseDatum (Boolean false)
         testAccepts "#false"
         testAccepts "#f"
 
@@ -43,18 +44,18 @@ type ``Number parser`` () =
 
     [<Test>]
     member x.``accepts floating point and integer values with or without signs`` () =
-        testParsesAs (CTNumber 3.14159) "3.14159"
-        testParsesAs (CTNumber 42.0) "42"
-        testParsesAs (CTNumber 9.5) "+9.5"
-        testParsesAs (CTNumber -54.2) "-54.2"
-        testParsesAs (CTNumber 0.5) "0.5"
+        testParsesAs (Number 3.14159) "3.14159"
+        testParsesAs (Number 42.0) "42"
+        testParsesAs (Number 9.5) "+9.5"
+        testParsesAs (Number -54.2) "-54.2"
+        testParsesAs (Number 0.5) "0.5"
 
     [<Test>]
     member x.``rejects invalid numbers`` () =
         let testRejects = ParserTest.testRejects parseExpression
         testRejects ".59"
-        testParsesAs (CTNumber 0.0) "0xFF"
-        testParsesAs (CTNumber 0.2) "0.2e10"
+        testParsesAs (Number 0.0) "0xFF"
+        testParsesAs (Number 0.2) "0.2e10"
 
 [<TestFixture>]
 type ``String literal parser`` () =
@@ -62,16 +63,16 @@ type ``String literal parser`` () =
 
     [<Test>]
     member x.``accepts well formed string literals with escapes`` () =
-        testParsesAs (CTString "Hello, world!") "\"Hello, world!\""
-        testParsesAs (CTString "foo\nbar\tbaz\r") "\"foo\\nbar\\tbaz\\r\""
-        testParsesAs (CTString "") "\"\""
+        testParsesAs (String "Hello, world!") "\"Hello, world!\""
+        testParsesAs (String "foo\nbar\tbaz\r") "\"foo\\nbar\\tbaz\\r\""
+        testParsesAs (String "") "\"\""
 
     [<Test>]
     member x.``rejects invalid strings`` () =
         let testRejects = ParserTest.testRejects parseExpression
         testRejects ""
         testRejects "\"Hello"
-        testParsesAs (CTString "She said, ") "\"She said, \"hello\"\""
+        testParsesAs (String "She said, ") "\"She said, \"hello\"\""
 
 [<TestFixture>]
 type ``Symbol parser`` () =
@@ -79,23 +80,23 @@ type ``Symbol parser`` () =
 
     [<Test>]
     member x.``accepts well formed basic symbols`` () =
-        testParsesAs (CTSymbol "fib") "fib"
-        testParsesAs (CTSymbol "call-with-current-continuation") "call-with-current-continuation"
-        testParsesAs (CTSymbol "+") "+"
-        testParsesAs (CTSymbol "-") "-"
-        testParsesAs (CTSymbol "<") "<"
-        testParsesAs (CTSymbol ">") ">"
-        testParsesAs (CTSymbol "set!") "set!"
-        testParsesAs (CTSymbol "add5") "add5"
-        testParsesAs (CTSymbol "-one") "-one"
-        testParsesAs (CTSymbol "foo_bar") "foo_bar"
-        testParsesAs (CTSymbol "odd?") "odd?"
+        testParsesAs (Symbol "fib") "fib"
+        testParsesAs (Symbol "call-with-current-continuation") "call-with-current-continuation"
+        testParsesAs (Symbol "+") "+"
+        testParsesAs (Symbol "-") "-"
+        testParsesAs (Symbol "<") "<"
+        testParsesAs (Symbol ">") ">"
+        testParsesAs (Symbol "set!") "set!"
+        testParsesAs (Symbol "add5") "add5"
+        testParsesAs (Symbol "-one") "-one"
+        testParsesAs (Symbol "foo_bar") "foo_bar"
+        testParsesAs (Symbol "odd?") "odd?"
 
     [<Test>]
     member x.``rejects ill formed symbols`` () =
         let testRejects = ParserTest.testRejects parseDatum
         testRejects ""
-        testParsesAs (CTSymbol "x") "x'"
+        testParsesAs (Symbol "x") "x'"
 
 [<TestFixture>]
 type ``List parser`` () =
@@ -103,20 +104,20 @@ type ``List parser`` () =
 
     [<Test>]
     member x.``accepts well formed lists of datum objects (including recursive lists)`` () =
-        testParsesAs (CTList []) "()"
-        testParsesAs (CTList [CTNumber 1.0; CTNumber 2.0; CTNumber 3.0]) "(1 2 3)"
-        testParsesAs (CTList [CTSymbol "+"; CTNumber 1.0; CTNumber 2.0]) "(+ 1 2)"
-        testParsesAs (CTList [CTBool true; CTBool false]) "(#t #f)"
-        testParsesAs (CTList [CTList [CTNumber 1.0; CTNumber 2.0]; CTList [CTSymbol "fib"; CTNumber 42.0]]) "((1 2) (fib 42))"
-        testParsesAs (CTList [CTList [CTList [CTList []]]]) "(((())))"
+        testParsesAs (List []) "()"
+        testParsesAs (List [Number 1.0; Number 2.0; Number 3.0]) "(1 2 3)"
+        testParsesAs (List [Symbol "+"; Number 1.0; Number 2.0]) "(+ 1 2)"
+        testParsesAs (List [Boolean true; Boolean false]) "(#t #f)"
+        testParsesAs (List [List [Number 1.0; Number 2.0]; List [Symbol "fib"; Number 42.0]]) "((1 2) (fib 42))"
+        testParsesAs (List [List [List [List []]]]) "(((())))"
 
     [<Test>]
     member x.``allows extra whitespace between elements`` () =
-        testParsesAs (CTList [CTNumber 1.0; CTNumber 2.0; CTNumber 3.0]) "(\n\r\t 1\n\r\t 2\n\r\t 3\n\r\t )"
+        testParsesAs (List [Number 1.0; Number 2.0; Number 3.0]) "(\n\r\t 1\n\r\t 2\n\r\t 3\n\r\t )"
 
     [<Test>]
     member x.``allows single line comments between elements`` () =
-        testParsesAs (CTList [CTNumber 1.0; CTNumber 2.0; CTNumber 3.0]) "(; starting list\n\t1 ; first element \n\t2 ; second element \n\t3 ; third element\n\t)"
+        testParsesAs (List [Number 1.0; Number 2.0; Number 3.0]) "(; starting list\n\t1 ; first element \n\t2 ; second element \n\t3 ; third element\n\t)"
 
     [<Test>]
     member x.``rejects ill formed lists and lists of invalid datum objects`` () =
@@ -131,12 +132,12 @@ type ``Parsing quotations`` () =
     member x.``parses syntax sugared quotations`` () =
         let testParsesAs = ParserTest.testEquals parseExpression
         let startPosition = {line = 1L; column = 1L}
-        testParsesAs (CTLiteralExpression (startPosition, CTList [])) "'()"
-        testParsesAs (CTLiteralExpression (startPosition, CTNumber 3.14159)) "'+3.14159"
-        testParsesAs (CTLiteralExpression (startPosition, CTString "Hello, world!")) "'\"Hello, world!\""
-        testParsesAs (CTLiteralExpression (startPosition, CTBool true)) "'#true"
-        testParsesAs (CTLiteralExpression (startPosition, CTSymbol "call-with-current-continuation")) "'call-with-current-continuation"
-        testParsesAs (CTLiteralExpression (startPosition, CTSymbol "+")) "'+"
+        testParsesAs (CTLiteralExpression (startPosition, List [])) "'()"
+        testParsesAs (CTLiteralExpression (startPosition, Number 3.14159)) "'+3.14159"
+        testParsesAs (CTLiteralExpression (startPosition, String "Hello, world!")) "'\"Hello, world!\""
+        testParsesAs (CTLiteralExpression (startPosition, Boolean true)) "'#true"
+        testParsesAs (CTLiteralExpression (startPosition, Symbol "call-with-current-continuation")) "'call-with-current-continuation"
+        testParsesAs (CTLiteralExpression (startPosition, Symbol "+")) "'+"
 
 [<TestFixture>]
 type ``List expression parser`` () =
@@ -146,11 +147,11 @@ type ``List expression parser`` () =
     member x.``accepts nonempty lists of expressions`` () =
         testParsesAs (CTListExpression ({ line = 1L; column = 1L },
                                         [CTIdentifierExpression ({ line = 1L; column = 2L }, "if")
-                                         CTLiteralExpression ({ line = 1L; column = 5L }, CTBool true)
+                                         CTLiteralExpression ({ line = 1L; column = 5L }, Boolean true)
                                          CTListExpression ({ line = 1L; column = 8L },
                                                            [CTIdentifierExpression ({ line = 1L; column = 9L}, "display");
-                                                            CTLiteralExpression ({ line = 1L; column = 17L }, CTString "Hello")])
-                                         CTLiteralExpression ({ line = 1L; column = 26L}, CTNumber 42.0)])) "(if #t (display \"Hello\") 42)"
+                                                            CTLiteralExpression ({ line = 1L; column = 17L }, String "Hello")])
+                                         CTLiteralExpression ({ line = 1L; column = 26L}, Number 42.0)])) "(if #t (display \"Hello\") 42)"
 
     [<Test>]
     member x.``accepts empty lists of expressions`` () =
@@ -160,7 +161,7 @@ type ``List expression parser`` () =
     member x.``parses quotations as datum objects`` () =
         testParsesAs (CTLiteralExpression
                         ({ line = 1L; column = 1L },
-                         CTList [CTNumber 1.0; CTNumber 2.0; CTNumber 3.0]))
+                         List [Number 1.0; Number 2.0; Number 3.0]))
                      "(quote (1 2 3))"
 
 
@@ -181,7 +182,7 @@ type ``Whole program parser`` () =
                 [CTListExpression ({ line = 1L; column = 1L },
                                    [CTIdentifierExpression ({ line = 1L; column = 2L}, "define")
                                     CTIdentifierExpression ({ line = 1L; column = 9L}, "pi")
-                                    CTLiteralExpression ({ line = 1L; column = 12L }, CTNumber 3.14159)])
+                                    CTLiteralExpression ({ line = 1L; column = 12L }, Number 3.14159)])
                  CTListExpression ({ line = 2L; column = 1L },
                                    [CTIdentifierExpression ({ line = 2L; column = 2L }, "define")
                                     CTIdentifierExpression ({ line = 2L; column = 9L }, "circle-area")
@@ -200,7 +201,7 @@ type ``Whole program parser`` () =
                                    [CTIdentifierExpression ({ line = 5L; column = 2L }, "display")
                                     CTListExpression ({ line = 5L; column = 10L },
                                                       [CTIdentifierExpression ({ line = 5L; column = 11L }, "circle-area")
-                                                       CTLiteralExpression ({ line = 5L; column = 23L }, CTNumber 5.0)])])
-                 CTLiteralExpression ({ line = 6L; column = 1L }, CTNumber 42.0)]
+                                                       CTLiteralExpression ({ line = 5L; column = 23L }, Number 5.0)])])
+                 CTLiteralExpression ({ line = 6L; column = 1L }, Number 42.0)]
         testParsesAs expectedParse program
 
