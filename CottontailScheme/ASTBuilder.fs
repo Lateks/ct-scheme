@@ -52,6 +52,16 @@ let isDefinition =
     | Definition _ -> true
     | _ -> false
 
+let rec toCottontailSchemeType datum : CottontailSchemeLib.CTObject =
+    match datum with
+    | Number n -> CottontailSchemeLib.CTNumber n :> CottontailSchemeLib.CTObject
+    | String s -> CottontailSchemeLib.CTString s :> CottontailSchemeLib.CTObject
+    | Symbol s -> CottontailSchemeLib.CTSymbol s :> CottontailSchemeLib.CTObject
+    | Boolean b -> if b then CottontailSchemeLib.Constants.True else CottontailSchemeLib.Constants.False
+    | List l -> List.map toCottontailSchemeType l
+                |> List.toArray
+                |> CottontailSchemeLib.BuiltIns.List
+
 let buildBinding pos name =
     function
     | ident::expr::[] ->
@@ -69,7 +79,11 @@ let buildBinding pos name =
                        Binding (id, expr)
             | IdentifierError msg
                 -> BindingError msg
-        | _ -> BindingError { message = sprintf "Not an identifier: %A" ident;
+        | _ -> let makeErrorMessage obj = sprintf "Not an identifier: %A" obj
+               let message = match ident with
+                             | LiteralExpression lit -> toCottontailSchemeType lit |> makeErrorMessage
+                             | e -> makeErrorMessage e
+               BindingError { message = message;
                               position = pos }
     | _  -> BindingError { message = sprintf "Invalid number of arguments to %s" name;
                            position = pos }
@@ -132,7 +146,6 @@ let buildBooleanExpression pos exprType exprs =
     else
         BooleanExpression (exprType, exprs)
 
-// TODO: printing datum objects properly in error messages
 let rec buildFromList pos =
     function
     | []    -> ExpressionError { message = "Empty procedure call expressions are not allowed";
@@ -151,8 +164,10 @@ let rec buildFromList pos =
                    | x -> buildFromIdentifier x |> buildProcCall
                match x with
                | CTIdentifierExpression (pos, id) -> buildCallToIdentifier pos id
-               | CTLiteralExpression (pos, datum) -> ExpressionError { message = sprintf "Not a procedure: %A" datum;
-                                                                       position = pos }
+               | CTLiteralExpression (pos, datum)
+                  -> let repr = datum |> buildFromDatum |> toCottontailSchemeType
+                     ExpressionError { message = sprintf "Not a procedure: %A" repr;
+                                       position = pos }
                | CTListExpression (pos, l) -> buildFromList pos l |> buildProcCall
 and buildFromExpression = function
                           | CTIdentifierExpression (_, id) -> buildFromIdentifier id

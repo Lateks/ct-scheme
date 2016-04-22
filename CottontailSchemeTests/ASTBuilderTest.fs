@@ -194,15 +194,14 @@ type ``Produces appropriate error messages when given a program with faulty sema
         testErrors "(or (define p 3) (set! a 2))"
                    [exprContextError]
 
-    // TODO: datum/literal printing in error messages!
     [<Test>]
     member x.``produces an error when attempting to call a non-procedure`` () =
-        testErrors "(#f)" [{ message = "Not a procedure: CTBool false"; position = { line = 1L; column = 2L }}]
-        testErrors "(1 2 3)" [{ message = "Not a procedure: CTNumber 1.0"; position = { line = 1L; column = 2L }}]
+        testErrors "(#f)" [{ message = "Not a procedure: #f"; position = { line = 1L; column = 2L }}]
+        testErrors "(1 2 3)" [{ message = "Not a procedure: 1"; position = { line = 1L; column = 2L }}]
 
     [<Test>]
     member x.``produces an error when attempting to use a literal in place of an identifier`` () =
-        testErrors "(define 42 0)" [{ message = "Not an identifier: LiteralExpression (Number 42.0)"; position = { line = 1L; column = 2L }}]
-        testErrors "(set! #true 0)" [{ message = "Not an identifier: LiteralExpression (Boolean true)"; position = { line = 1L; column = 2L }}]
+        testErrors "(define 42 0)" [{ message = "Not an identifier: 42"; position = { line = 1L; column = 2L }}]
+        testErrors "(set! #true 0)" [{ message = "Not an identifier: #t"; position = { line = 1L; column = 2L }}]
         testErrors "(lambda \"foo\" (display \"foo\"))" [{ message = "Invalid syntax in lambda expression"; position = { line = 1L; column = 9L }}]
         testErrors "(lambda (42) (display \"foo\"))" [{ message = "Invalid syntax in lambda expression"; position = { line = 1L; column = 9L }}]
