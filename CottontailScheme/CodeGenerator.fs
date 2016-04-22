@@ -285,7 +285,7 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
         if emitReturn then
             gen.Emit(Emit.OpCodes.Ret)
         else
-            gen.Emit(Emit.OpCodes.Br_S, exitLabel)
+            gen.Emit(Emit.OpCodes.Br, exitLabel)
 
         gen.MarkLabel(elseLabel)
         pushExprResultToStack elseExpression
@@ -546,7 +546,7 @@ let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMap
 
             gen.Emit(Emit.OpCodes.Ldarg_1)
             gen.Emit(Emit.OpCodes.Switch, List.toArray labels)
-            gen.Emit(Emit.OpCodes.Br_S, failureLabel)
+            gen.Emit(Emit.OpCodes.Br, failureLabel)
 
             for (label, (_, proc)) in List.zip labels sortedClosures do
                 gen.MarkLabel(label)
