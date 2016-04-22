@@ -1091,9 +1091,9 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
       fields = fieldMap
       methods = methodMap }
 
-let generateCodeFor (program : ProgramStructure) (name : string) =
+let generateCodeFor (program : ProgramStructure) =
     try
-        let capitalizedName = SymbolGenerator.capitalizeWord name
+        let capitalizedName = SymbolGenerator.capitalizeWord program.programName
         let outputFileName = sprintf "%s.exe" capitalizedName
         let assemblyBuilder = setupAssembly capitalizedName
         let moduleBuilder = assemblyBuilder.DefineDynamicModule(capitalizedName, outputFileName);

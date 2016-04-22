@@ -58,7 +58,8 @@ and ClosureDefinition = { formals: ClosureFormals;
 and ProcedureDefinition = ProcedureDefinition of Scope.Identifier * ClosureDefinition
 and VariableDeclaration = VariableDeclaration of Scope.Identifier
 
-type ProgramStructure = { procedureDefinitions: ProcedureDefinition list;
+type ProgramStructure = { programName : string;
+                          procedureDefinitions: ProcedureDefinition list;
                           variableDeclarations: VariableDeclaration list;
                           expressions : Expression list;
                           scope : Scope.Scope }
@@ -790,7 +791,7 @@ let rebindTopLevelFirstClassProcedureReferences (procs, vars, exprs) =
 // ProgramAnalysisError).
 //
 // TODO: prevent attempts to set constants (for simplicity)
-let analyse exprs =
+let analyse exprs programName =
     try
         let builtInNames = Map.toList IdentifierHelpers.builtIns
                            |> List.map (fun (k, v) -> k)
@@ -807,7 +808,8 @@ let analyse exprs =
                                  |> convertModuleOrProcedureBody
                                  |> rebindTopLevelFirstClassProcedureReferences
 
-        ValidProgram { procedureDefinitions = procs;
+        ValidProgram { programName = programName;
+                       procedureDefinitions = procs;
                        variableDeclarations = vars;
                        expressions = exprs;
                        scope = topLevelScope }

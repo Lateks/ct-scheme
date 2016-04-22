@@ -11,8 +11,8 @@ open Newtonsoft.Json
 type OutputType = Json
                 | Exe
 
-let generateCode p programName =
-    match generateCodeFor p programName with
+let generateCode p =
+    match generateCodeFor p with
     | CodeGenSuccess msg -> printfn "Success: %s" msg
     | CodeGenInternalError msg -> printfn "Internal error occurred: %s" msg
 
@@ -42,10 +42,10 @@ let main args =
         | Success(result, _, _)
             -> match buildAST result with
                 | ASTBuildSuccess exprs
-                   -> match analyse exprs with
+                   -> match analyse exprs programName with
                       | ValidProgram p -> match !outputType with
                                           | Json -> outputJson p
-                                          | Exe -> generateCode p programName
+                                          | Exe -> generateCode p
                       | ProgramAnalysisError err -> printfn "Error: %s" err
                 | ASTBuildFailure errs -> errs |> List.map (fun e -> printfn "Error (line %i, column %i): %A" e.position.line e.position.column e.message) |> ignore
         | Failure(errorMsg, _, _) -> printfn "Error: %s" errorMsg

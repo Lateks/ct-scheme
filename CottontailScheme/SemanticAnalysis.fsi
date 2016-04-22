@@ -28,7 +28,8 @@ and ClosureDefinition = { formals: ClosureFormals;
 and ProcedureDefinition = ProcedureDefinition of Scope.Identifier * ClosureDefinition
 and VariableDeclaration = VariableDeclaration of Scope.Identifier
 
-type ProgramStructure = { procedureDefinitions: ProcedureDefinition list;
+type ProgramStructure = { programName : string;
+                          procedureDefinitions: ProcedureDefinition list;
                           variableDeclarations: VariableDeclaration list;
                           expressions : Expression list;
                           scope : Scope.Scope }
@@ -37,4 +38,4 @@ type Program =
     | ValidProgram of ProgramStructure
     | ProgramAnalysisError of string
 
-val analyse: ASTBuilder.Expression list -> Program
+val analyse: ASTBuilder.Expression list -> string -> Program
