@@ -867,42 +867,39 @@ let createTopLevelClosureMapping (procs : ProcedureDefinition list) (scope : Sco
     |> List.map resolveProcedures
 
 let generateClassInitializer (topLevelTypes : TopLevelTypes) (closureMapping : ClosureMapping) (instanceField : Emit.FieldBuilder) (scope : Scope) =
-    if (closureMapping.IsEmpty) then
-       ()
-    else
-        let classInitializer = topLevelTypes.mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public,
-                                                                         CallingConventions.Standard,
-                                                                         [||])
-        let defaultConstructor = topLevelTypes.mainClass.DefineDefaultConstructor(MethodAttributes.Public)
+    let classInitializer = topLevelTypes.mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public,
+                                                                        CallingConventions.Standard,
+                                                                        [||])
+    let defaultConstructor = topLevelTypes.mainClass.DefineDefaultConstructor(MethodAttributes.Public)
 
-        let gen = classInitializer.GetILGenerator()
-        gen.Emit(Emit.OpCodes.Newobj, defaultConstructor)
-        gen.Emit(Emit.OpCodes.Stsfld, instanceField)
+    let gen = classInitializer.GetILGenerator()
+    gen.Emit(Emit.OpCodes.Newobj, defaultConstructor)
+    gen.Emit(Emit.OpCodes.Stsfld, instanceField)
 
-        let assignField (argCount : ArgCount) (index : int) (procedure : Procedure) =
-            let fieldName = SymbolGenerator.toProcedureObjectName procedure.closure.functionName.uniqueName
-            let var = match scope.variables.Item(fieldName) with
-                      | Field v -> v
-                      | v -> failwithf "Expected %s to be a field but was %A" fieldName v
+    let assignField (argCount : ArgCount) (index : int) (procedure : Procedure) =
+        let fieldName = SymbolGenerator.toProcedureObjectName procedure.closure.functionName.uniqueName
+        let var = match scope.variables.Item(fieldName) with
+                    | Field v -> v
+                    | v -> failwithf "Expected %s to be a field but was %A" fieldName v
 
-            gen.Emit(Emit.OpCodes.Ldsfld, instanceField)
-            gen.Emit(Emit.OpCodes.Ldc_I4, index)
+        gen.Emit(Emit.OpCodes.Ldsfld, instanceField)
+        gen.Emit(Emit.OpCodes.Ldc_I4, index)
 
-            let procedureName = procedure.closure.functionName.name
-            match argCount with
-            | VarArgs -> gen.Emit(Emit.OpCodes.Ldstr, procedureName)
-                         gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.namedVarargsClosureConstructor)
-            | NumArgs n -> gen.Emit(Emit.OpCodes.Ldc_I4, n)
-                           gen.Emit(Emit.OpCodes.Ldstr, procedureName)
-                           gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.namedClosureConstructor)
+        let procedureName = procedure.closure.functionName.name
+        match argCount with
+        | VarArgs -> gen.Emit(Emit.OpCodes.Ldstr, procedureName)
+                     gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.namedVarargsClosureConstructor)
+        | NumArgs n -> gen.Emit(Emit.OpCodes.Ldc_I4, n)
+                       gen.Emit(Emit.OpCodes.Ldstr, procedureName)
+                       gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.namedClosureConstructor)
 
-            gen.Emit(Emit.OpCodes.Stsfld, var)
+        gen.Emit(Emit.OpCodes.Stsfld, var)
 
-        for (argCount, procs) in closureMapping do
-            for (index, proc) in procs do
-                assignField argCount index proc
+    for (argCount, procs) in closureMapping do
+        for (index, proc) in procs do
+            assignField argCount index proc
 
-        gen.Emit(Emit.OpCodes.Ret)
+    gen.Emit(Emit.OpCodes.Ret)
 
 let generateMainMethod (topLevelTypes : TopLevelTypes) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) (topLevelFrame : Frame) scope =
     let closures = findClosuresInScope program.expressions
