@@ -192,9 +192,7 @@ let rec listErrors exprs =
                                | MultiArgFormals ids -> List.map getIdError ids
                                                      |> List.concat
                                | SingleArgFormals id -> getIdError id
-    let getBindingError = function
-                          | BindingError msg -> [msg]
-                          | _ -> []
+
     exprs
     |> List.map (function
                  | ExpressionError msg -> [msg]
@@ -206,7 +204,10 @@ let rec listErrors exprs =
                     let exprErrors = listErrors exprs
                     List.concat [idErrors; defErrors; exprErrors]
                  | AssignmentExpression binding
-                 | Definition binding -> getBindingError binding
+                 | Definition binding ->
+                      match binding with
+                      | BindingError msg -> [msg]
+                      | Binding (_, expr) -> listErrors [expr]
                  | ProcedureCallExpression (expr, exprs) ->
                     listErrors <| expr::exprs
                  | ConditionalExpression (cond, thenBranch, elseBranch) ->
