@@ -268,8 +268,9 @@ let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticCo
             gen.Emit(Emit.OpCodes.Ldarg_S, (byte) index)
 
 let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : Emit.MethodBuilder) (scope: Scope) (pushOnStack : bool) (emitReturn : bool) (expr : Expression) =
-    let recur push expr = generateSubExpression topLevelTypes methodBuilder scope push false expr
-    let pushExprResultToStack = recur true
+    let recurInScope = generateSubExpression topLevelTypes methodBuilder scope
+    let recurInNonTailContext push expr = recurInScope push false expr
+    let pushExprResultToStack = recurInNonTailContext true
     let gen = methodBuilder.GetILGenerator()
 
     let emitConditional condition thenExpression elseExpression =
@@ -280,19 +281,15 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
         emitBooleanConversion gen
         gen.Emit(Emit.OpCodes.Brfalse, elseLabel)
 
-        pushExprResultToStack thenExpression
+        recurInScope true emitReturn thenExpression
 
-        if emitReturn then
-            gen.Emit(Emit.OpCodes.Ret)
-        else
+        if not emitReturn then
             gen.Emit(Emit.OpCodes.Br, exitLabel)
 
         gen.MarkLabel(elseLabel)
-        pushExprResultToStack elseExpression
+        recurInScope true emitReturn elseExpression
 
-        if emitReturn then
-            gen.Emit(Emit.OpCodes.Ret)
-        else
+        if not emitReturn then
             gen.MarkLabel(exitLabel)
             if not pushOnStack then popStack gen
 
@@ -303,7 +300,7 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
         | exprs -> let tailExpr = List.last exprs
                    let nonTailExprs = List.take (exprs.Length - 1) exprs
                    for expr in nonTailExprs do
-                       recur false expr
+                       recurInNonTailContext false expr
                    generateSubExpression topLevelTypes methodBuilder scope pushOnStack emitReturn tailExpr
 
     let emitBooleanCombinationExpression breakValue =
@@ -335,18 +332,18 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
                 emitBooleanConversion gen
                 gen.Emit(comparison, exitLabel)
 
-            pushExprResultToStack tailExpr
-            if emitReturn then // return with tail expression value
-                gen.Emit(Emit.OpCodes.Ret)
-            elif pushOnStack then
-                storeTempValue ()
+            if emitReturn then
+                recurInScope false true tailExpr
             else
-                popStack gen
+                pushExprResultToStack tailExpr
+                if pushOnStack then
+                    storeTempValue ()
+                else
+                    popStack gen
 
             gen.MarkLabel(exitLabel)
             loadTempValue ()
-            if emitReturn then // return with stored value
-                               // TODO: what if there are nested sequence expressions inside the boolean combination expression?
+            if emitReturn then
                 gen.Emit(Emit.OpCodes.Ret)
 
     let emitVariableLoad id =

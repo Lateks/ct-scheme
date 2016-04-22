@@ -17,3 +17,12 @@
     (display "Got undefined value")
 	(display "Don't know what happened"))
 (newline)
+
+(define nested-tc
+  (lambda (n)
+    (if (zero? n)
+	    "passed"
+        (and #t n (and #t (nested-tc (- n 1)))))))
+
+(display (nested-tc 50000))
+(newline)
