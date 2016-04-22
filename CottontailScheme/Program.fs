@@ -36,17 +36,26 @@ let main args =
         let programName = inputFileName.Split([|"."; "_"|], StringSplitOptions.RemoveEmptyEntries)
                           |> fun xs -> String.Join("-", xs)
                           |> kebabCaseToCamelCase
-        let programCode = IO.File.ReadAllText(args.[fileNamePosition])
 
-        match run CottontailScheme.Parsing.parseProgram programCode with
-        | Success(result, _, _)
-            -> match buildAST result with
-                | ASTBuildSuccess exprs
-                   -> match analyse exprs programName with
-                      | ValidProgram p -> match !outputType with
-                                          | Json -> outputJson p
-                                          | Exe -> generateCode p
-                      | ProgramAnalysisError err -> printfn "Error: %s" err
-                | ASTBuildFailure errs -> errs |> List.map (fun e -> printfn "Error (line %i, column %i): %A" e.position.line e.position.column e.message) |> ignore
-        | Failure(errorMsg, _, _) -> printfn "Error: %s" errorMsg
+        let programCode = try
+                             let text = IO.File.ReadAllText(args.[fileNamePosition])
+                             Some text
+                          with
+                          | e -> printfn "Error reading file %s:\n%A" args.[fileNamePosition] e
+                                 None
+
+        match programCode with
+        | Some programText ->
+            match run CottontailScheme.Parsing.parseProgram programText with
+            | Success(result, _, _)
+                -> match buildAST result with
+                    | ASTBuildSuccess exprs
+                       -> match analyse exprs programName with
+                          | ValidProgram p -> match !outputType with
+                                              | Json -> outputJson p
+                                              | Exe -> generateCode p
+                          | ProgramAnalysisError err -> printfn "Error: %s" err
+                    | ASTBuildFailure errs -> errs |> List.map (fun e -> printfn "Error (line %i, column %i): %A" e.position.line e.position.column e.message) |> ignore
+            | Failure(errorMsg, _, _) -> printfn "Error: %s" errorMsg
+        | None -> printfn "Exiting..."
     0
