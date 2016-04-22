@@ -68,6 +68,7 @@
     <Compile Include="SemanticAnalysis.fsi" />
     <Compile Include="SemanticAnalysis.fs" />
     <None Include="Test.fsx" />
+    <Compile Include="CodeGenerator.fsi" />
     <Compile Include="CodeGenerator.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

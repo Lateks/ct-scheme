@@ -9,6 +9,11 @@ open CottontailSchemeLib
 open System
 open System.Reflection
 
+exception CodeGenException of string
+
+type CodeGenResult = CodeGenInternalError of string
+                   | CodeGenSuccess of string
+
 type Procedure = { methodBuilder : Emit.MethodBuilder;
                    closure : ClosureDefinition }
 
@@ -146,15 +151,9 @@ let convertBuiltInName =
     | "<" -> "LessThan"
     | ">" -> "GreaterThan"
     | "eq?" -> "AreEq"
-    | "list"
-    | "display"
-    | "car"
-    | "cdr"
-    | "cons"
-    | "not"
-    | "newline" as n
+    | "list" | "display" | "car" | "cdr" | "cons" | "not" | "newline" as n
         -> SymbolGenerator.capitalizeWord n
-    | e -> failwithf "Built-in function %s is not implemented!" e
+    | e -> sprintf "Built-in function %s is not implemented!" e |> CodeGenException |> raise
 
 let loadBuiltInProcedure (gen : Emit.ILGenerator) (id : Identifier) =
     let builtInName = convertBuiltInName id.uniqueName
@@ -252,8 +251,9 @@ let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticCo
         loadBuiltInProcedure gen id
     else
         if id.argIndex.IsNone then
-            failwithf "Attempting to load unknown variable %A, current scope contains the following variables %A"
-                      id.uniqueName (mapKeys scope.variables)
+            sprintf "Attempting to load unknown variable %s, current scope contains the following variables %A" id.uniqueName (mapKeys scope.variables)
+            |> CodeGenException
+            |> raise
 
         let n = id.argIndex.Value
         let index = if isStaticContext then n else n + 1
@@ -370,7 +370,7 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
                 push ()
                 let index = if methodBuilder.IsStatic then n else n + 1
                 gen.Emit(Emit.OpCodes.Starg_S, (byte) index)
-            | None -> failwith "Attempting to set! unknown variable %A" id
+            | None -> sprintf "Attempting to set! unknown variable %A" id |> CodeGenException |> raise
 
     let pushArgsAsArray args = emitArray gen args (generateSubExpression topLevelTypes methodBuilder scope true false)
     let pushIndividualArgs args = for arg in args do pushExprResultToStack arg
@@ -476,10 +476,15 @@ let matchCaptures capturedVars captureFields =
 let instantiateClosureFrameOnStack (gen : Emit.ILGenerator) (constructorHandle : Emit.ConstructorBuilder) captures scope isStaticContext =
     gen.Emit(Emit.OpCodes.Newobj, constructorHandle)
 
-    for (id, InstanceField f) in captures do
-        gen.Emit(Emit.OpCodes.Dup)
-        emitVariableLoad gen scope id isStaticContext
-        gen.Emit(Emit.OpCodes.Stfld, f)
+    for (id, var) in captures do
+        match var with
+        | InstanceField f ->
+            gen.Emit(Emit.OpCodes.Dup)
+            emitVariableLoad gen scope id isStaticContext
+            gen.Emit(Emit.OpCodes.Stfld, f)
+        | f -> sprintf "Closure frame instantiation failed, expected %s to be an instance field but was %A" id.uniqueName f
+               |> CodeGenException
+               |> raise
 
 let rebindFrameFields frameVar scope captures =
         let frameVariable = match frameVar with
@@ -492,7 +497,7 @@ let rebindFrameFields frameVar scope captures =
             if scope.variables.ContainsKey name then
                 match scope.variables.Item(name) with
                 | InstanceField _ | ObjectField _ -> scope.variables
-                | Field _ | LocalVar _ as f -> failwithf "Unexpected field found in captures (%s): %A" name f
+                | Field _ | LocalVar _ as f -> sprintf "Unexpected field found in captures (%s): %A" name f |> CodeGenException |> raise
             else
                 let frameFieldReference = ObjectField (fb, frameVariable)
                 Map.add name frameFieldReference scope.variables
@@ -503,7 +508,7 @@ let rebindFrameFields frameVar scope captures =
                 -> let newVars = rebindName id.uniqueName newScope f
                    let scope' = { newScope with variables = newVars }
                    rebind scope' xs
-            | (_, f)::_ -> failwithf "Error, expected an instance field but got %A" f
+            | (_, f)::_ -> sprintf "Error, expected an instance field but got %A" f |> CodeGenException |> raise
 
         rebind scope captures
 
@@ -697,8 +702,13 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
                     gen.Emit(Emit.OpCodes.Stfld, f)
         gen.Emit(Emit.OpCodes.Stloc, frameVar)
 
+        let frameFields = fields |> List.map (fun (n, var) ->
+                                                  match var with
+                                                  | InstanceField f -> (n, f)
+                                                  | f -> sprintf "Frame generation failed: expected %s to be an instance field but was %A" n f |> CodeGenException |> raise)
+
         let newFrame = { parent = Some currentFrame;
-                         frameFields = fields |> List.map (fun (n, InstanceField f) -> (n, f));
+                         frameFields = frameFields;
                          staticLink = capturedFrameField;
                          frameClass = frameClass;
                          frameVariable = LocalInstance frameVar;
@@ -716,7 +726,7 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
         { scope with variables = extendedVars }
 
     let createIndirectReferenceTo staticLink name =
-        let fail () = failwithf "Cannot build an indirect reference to field %s" name
+        let fail () = sprintf "Cannot build an indirect reference to field %s" name |> CodeGenException |> raise
         let rec buildIndirectReferenceChain frameOpt =
             if Option.isNone frameOpt then fail ()
 
@@ -863,7 +873,7 @@ let generateClassInitializer (topLevelTypes : TopLevelTypes) (closureMapping : C
         let fieldName = SymbolGenerator.toProcedureObjectName procedure.closure.functionName.uniqueName
         let var = match scope.variables.Item(fieldName) with
                     | Field v -> v
-                    | v -> failwithf "Expected %s to be a field but was %A" fieldName v
+                    | v -> sprintf "Expected %s to be a field but was %A" fieldName v |> CodeGenException |> raise
 
         gen.Emit(Emit.OpCodes.Ldsfld, instanceField)
         gen.Emit(Emit.OpCodes.Ldc_I4, index)
@@ -1082,29 +1092,34 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
       methods = methodMap }
 
 let generateCodeFor (program : ProgramStructure) (name : string) =
-    let capitalizedName = SymbolGenerator.capitalizeWord name
-    let outputFileName = sprintf "%s.exe" capitalizedName
-    let assemblyBuilder = setupAssembly capitalizedName
-    let moduleBuilder = assemblyBuilder.DefineDynamicModule(capitalizedName, outputFileName);
+    try
+        let capitalizedName = SymbolGenerator.capitalizeWord name
+        let outputFileName = sprintf "%s.exe" capitalizedName
+        let assemblyBuilder = setupAssembly capitalizedName
+        let moduleBuilder = assemblyBuilder.DefineDynamicModule(capitalizedName, outputFileName);
 
-    let handleClassType = generateProcedureParentClass moduleBuilder
-    handleClassType.tb.CreateType() |> ignore
+        let handleClassType = generateProcedureParentClass moduleBuilder
+        handleClassType.tb.CreateType() |> ignore
 
-    let mainClass = moduleBuilder.DefineType(capitalizedName, TypeAttributes.Public ||| TypeAttributes.Class, typeof<ProcedureFrame>)
-    let mainMethod = mainClass.DefineMethod(mainMethodName,
-                                            MethodAttributes.Public ||| MethodAttributes.Static,
-                                            typeof<int>,
-                                            [| typeof<string array> |])
-    let topLevelTypes = { mainClass = mainClass
-                          procedureHandleClass = handleClassType }
+        let mainClass = moduleBuilder.DefineType(capitalizedName, TypeAttributes.Public ||| TypeAttributes.Class, typeof<ProcedureFrame>)
+        let mainMethod = mainClass.DefineMethod(mainMethodName,
+                                                MethodAttributes.Public ||| MethodAttributes.Static,
+                                                typeof<int>,
+                                                [| typeof<string array> |])
+        let topLevelTypes = { mainClass = mainClass
+                              procedureHandleClass = handleClassType }
 
-    builtIns := getBuiltIns program.scope
-    generateMainModule topLevelTypes mainMethod program
+        builtIns := getBuiltIns program.scope
+        generateMainModule topLevelTypes mainMethod program
 
-    mainClass.CreateType() |> ignore
+        mainClass.CreateType() |> ignore
 
-    // Save assembly and mark it as a console application
-    assemblyBuilder.SetEntryPoint(mainMethod, Emit.PEFileKinds.ConsoleApplication)
-    assemblyBuilder.Save(outputFileName)
+        // Save assembly and mark it as a console application
+        assemblyBuilder.SetEntryPoint(mainMethod, Emit.PEFileKinds.ConsoleApplication)
+        assemblyBuilder.Save(outputFileName)
 
-    copyLibs()
+        copyLibs()
+
+        sprintf "Output written to file %s" outputFileName |> CodeGenSuccess
+     with
+        | CodeGenException msg -> CodeGenInternalError msg
