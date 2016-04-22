@@ -298,16 +298,18 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
 
     let emitBeginSequence =
         function
-        | [] -> if pushOnStack then loadUndefined gen
+        | [] -> if pushOnStack || emitReturn then loadUndefined gen
+                if emitReturn then gen.Emit(Emit.OpCodes.Ret)
         | exprs -> let tailExpr = List.last exprs
                    let nonTailExprs = List.take (exprs.Length - 1) exprs
                    for expr in nonTailExprs do
                        recur false expr
-                   recur pushOnStack tailExpr
+                   generateSubExpression topLevelTypes methodBuilder scope pushOnStack emitReturn tailExpr
 
     let emitBooleanCombinationExpression breakValue =
         function
-        | [] -> if pushOnStack then loadBooleanObject gen (not breakValue)
+        | [] -> if pushOnStack || emitReturn then loadBooleanObject gen (not breakValue)
+                if emitReturn then gen.Emit(Emit.OpCodes.Ret)
         | exprs ->
             let exitLabel = gen.DefineLabel()
             let tempVar = if pushOnStack || emitReturn then
@@ -344,6 +346,7 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
             gen.MarkLabel(exitLabel)
             loadTempValue ()
             if emitReturn then // return with stored value
+                               // TODO: what if there are nested sequence expressions inside the boolean combination expression?
                 gen.Emit(Emit.OpCodes.Ret)
 
     let emitVariableLoad id =
