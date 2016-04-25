@@ -4,3 +4,5 @@ obj/
 packages/repositories.config
 *.exe
 *.dll
+.idea/
+target/
