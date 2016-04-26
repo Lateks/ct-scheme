@@ -1,6 +1,3 @@
 package backend.ast
 
-class Identifier(n : String, un : String) {
-  val name = n
-  val uniqueName = un
-}
+case class Identifier(name : String, uniqueName : String, argIndex : Option[Int]) { }
