@@ -18,7 +18,6 @@ object Reader {
     ClosureFormalsSerializer +
     IdentifierSerializer +
     ExpressionSerializer +
-    ClosureSerializer +
     LiteralValueSerializer
 
   object IdentifierSerializer extends CustomSerializer[Identifier](format => (
@@ -58,26 +57,6 @@ object Reader {
     },
     {
       case x: ClosureFormals => write(x)
-    }
-    ))
-
-  object ClosureSerializer extends CustomSerializer[ClosureDefinition](format => (
-    {
-      case x: JObject =>
-        val formals = (x \ "formals").extract[ClosureFormals]
-        val name = (x \ "functionName").extract[Identifier]
-        val procedureDefinitions = (x \ "procedureDefinitions").extract[List[ProcedureDefinition]]
-        val variableDeclarations = (x \ "variableDeclarations").extract[List[VariableDeclaration]]
-        val environment = (x \ "environment").extract[List[Identifier]]
-        val body = (x \ "body").extract[List[Expression]]
-        val tailRec = (x \ "isTailRecursive").extract[Boolean]
-        val firstClass = (x \ "isUsedAsFirstClassValue").extract[Boolean]
-        val reassigned = (x \ "isReassigned").extract[Boolean]
-        ClosureDefinition(name, formals, body, procedureDefinitions, variableDeclarations,
-          environment, tailRec, firstClass, reassigned)
-    },
-    {
-      case x: ClosureDefinition => write(x)
     }
     ))
 
