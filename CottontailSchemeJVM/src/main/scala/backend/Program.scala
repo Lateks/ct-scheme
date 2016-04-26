@@ -10,7 +10,8 @@ object Program {
     if (input.isEmpty) {
       println("No input")
     } else {
-      val json = parse(input.mkString("\n"))
+      val rawJson = input.mkString("\n")
+      val json = parse(rawJson)
       println(json)
     }
 
