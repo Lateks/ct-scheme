@@ -8,4 +8,4 @@ case class ClosureDefinition(functionName : Identifier,
                              environment : List[Identifier],
                              isTailRecursive : Boolean,
                              isUsedAsFirstClassValue : Boolean,
-                             isReassigned : Boolean) { }
+                             isReassigned : Boolean)
