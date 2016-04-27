@@ -230,7 +230,6 @@ object Reader {
     } else {
       val rawJson = input.mkString("\n")
       val json = parse(rawJson)
-      println(pretty(render(json)))
       convertToAST(json)
     }
   }

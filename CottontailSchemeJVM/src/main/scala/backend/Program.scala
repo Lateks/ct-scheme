@@ -10,7 +10,6 @@ object Program {
 
     Reader.readAST(input) match {
       case ReadSuccess(program) =>
-        println("AST parsing succeeded: " + program.toString)
         CodeGenerator.generateCodeFor(program)
       case ReadFailure(message) => println("AST parsing failed: " + message)
     }
