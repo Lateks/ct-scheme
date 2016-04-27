@@ -9,7 +9,9 @@ object Program {
     val input = Source.stdin.getLines
 
     Reader.readAST(input) match {
-      case ReadSuccess(program) => println("AST parsing succeeded: " + program.toString())
+      case ReadSuccess(program) =>
+        println("AST parsing succeeded: " + program.toString)
+        CodeGenerator.generateCodeFor(program)
       case ReadFailure(message) => println("AST parsing failed: " + message)
     }
   }

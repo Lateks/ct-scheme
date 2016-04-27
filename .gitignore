@@ -6,3 +6,4 @@ packages/repositories.config
 *.dll
 .idea/
 target/
+*.class
