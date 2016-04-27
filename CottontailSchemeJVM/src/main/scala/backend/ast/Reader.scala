@@ -212,12 +212,16 @@ object Reader {
     ))
 
   def convertToAST(json : JValue) : ReadResult = {
-    val programName = (json \ "programName").extract[String]
-    val procedureDefinitions = (json \ "procedureDefinitions").extract[List[ProcedureDefinition]]
-    val variableDeclarations = (json \ "variableDeclarations").extract[List[VariableDeclaration]]
-    val expressions = (json \ "expressions").extract[List[Expression]]
-    val ast = new ProgramSyntaxTree(programName, expressions, procedureDefinitions, variableDeclarations)
-    ReadSuccess(ast)
+    try {
+      val programName = (json \ "programName").extract[String]
+      val procedureDefinitions = (json \ "procedureDefinitions").extract[List[ProcedureDefinition]]
+      val variableDeclarations = (json \ "variableDeclarations").extract[List[VariableDeclaration]]
+      val expressions = (json \ "expressions").extract[List[Expression]]
+      val ast = new ProgramSyntaxTree(programName, expressions, procedureDefinitions, variableDeclarations)
+      ReadSuccess(ast)
+    } catch {
+      case e: MappingException => ReadFailure(e.msg)
+    }
   }
 
   def readAST(input : Iterator[String]) : ReadResult = {
