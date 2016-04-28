@@ -1,27 +1,38 @@
 package backend
 
-import java.io.FileOutputStream
+import java.io.{FileOutputStream, PrintStream, PrintWriter}
 
 import backend.ast._
-import backend.codegen.SimpleMethodVisitor
-import org.objectweb.asm.ClassWriter
+import backend.codegen.{DebugClassWriter, SimpleMethodVisitor}
+import org.objectweb.asm.Type
 import org.objectweb.asm.Opcodes._
 
 object CodeGenerator {
 
+  def getInternalName(c : Class [_]): String = {
+    Type.getType(c).getInternalName
+  }
+
+  def getDescriptor(c : Class [_]): String = {
+    Type.getType(c).getDescriptor
+  }
+
   def generateCodeFor(program : ProgramSyntaxTree) : Unit = {
-    val mainClass = new ClassWriter(0)
-    mainClass.visit(V1_8, ACC_PUBLIC, program.programName, null, "java/lang/Object", new Array[String](0))
-    val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", "([Ljava/lang/String;)V")
-    mainMethod.emitGetStatic("java/lang/System", "out", "Ljava/io/PrintStream;")
+    val pw = new PrintWriter(System.out)
+    val mainClass = new DebugClassWriter(true, pw)
+    mainClass.declareClass(program.programName, getInternalName(classOf[Object]))
+
+    val mainMethodDescriptor = "([" + getDescriptor(classOf[String]) + ")" + Type.VOID_TYPE.getDescriptor
+    val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor)
+
+    mainMethod.visitCode()
+    mainMethod.emitGetStatic(getInternalName(classOf[System]), "out", getDescriptor(classOf[PrintStream]))
     mainMethod.visitLdcInsn("Hello, world!")
-    mainMethod.emitInvokeVirtual("java/io/PrintStream", "println", "(Ljava/lang/String;)V", false)
+    mainMethod.emitInvokeVirtual(getInternalName(classOf[PrintStream]), "println", "(Ljava/lang/String;)V", false)
     mainMethod.emitReturn()
     mainMethod.visitEnd()
 
-    val maxStack = 2
-    val maxLocals = 1
-    mainMethod.visitMaxs(maxStack, maxLocals)
+    mainMethod.visitMaxs(0, 0)
     mainClass.visitEnd()
 
     val bytes = mainClass.toByteArray

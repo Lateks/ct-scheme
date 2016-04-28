@@ -19,6 +19,6 @@
     <orderEntry type="library" name="Maven: org.json4s:json4s-scalap_2.12.0-M3:3.3.0" level="project" />
     <orderEntry type="library" name="Maven: com.thoughtworks.paranamer:paranamer:2.8" level="project" />
     <orderEntry type="library" name="Maven: org.scala-lang.modules:scala-xml_2.12.0-M3:1.0.5" level="project" />
-    <orderEntry type="library" name="Maven: org.ow2.asm:asm:5.1" level="project" />
+    <orderEntry type="library" name="Maven: org.ow2.asm:asm-all:5.1" level="project" />
   </component>
 </module>
