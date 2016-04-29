@@ -18,6 +18,19 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
     methodVisitor.visitInsn(RETURN)
   }
 
+  def createAndDupObject(objectType : String): Unit = {
+    methodVisitor.visitTypeInsn(NEW, objectType)
+    methodVisitor.visitInsn(DUP)
+  }
+
+  def invokeConstructor(objectType : String, paramTypeDescriptor : String): Unit = {
+    methodVisitor.visitMethodInsn(INVOKESPECIAL, objectType, "<init>", "(" + paramTypeDescriptor + ")V", false)
+  }
+
+  def loadConstant(obj : AnyRef): Unit = {
+    methodVisitor.visitLdcInsn(obj)
+  }
+
   def setMaxs(): Unit = {
     methodVisitor.visitMaxs(0, 0)
   }

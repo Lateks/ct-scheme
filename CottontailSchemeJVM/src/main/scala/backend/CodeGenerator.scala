@@ -33,10 +33,9 @@ object CodeGenerator {
     literalValue match {
       case LiteralString(s) =>
         val classTypeName = getInternalName(classOf[CTString])
-        method.visitTypeInsn(NEW, classTypeName)
-        method.visitInsn(DUP)
-        method.visitLdcInsn(s)
-        method.visitMethodInsn(INVOKESPECIAL, classTypeName, "<init>", "(" + getDescriptor(classOf[String]) + ")V", false)
+        method.createAndDupObject(classTypeName)
+        method.loadConstant(s)
+        method.invokeConstructor(classTypeName, getDescriptor(classOf[String]))
       case LiteralSymbol(s) => throw new CodeGenException("Not implemented yet: symbols")
       case LiteralBoolean(b) => throw new CodeGenException("Not implemented yet: booleans")
       case LiteralNumber(n) => throw new CodeGenException("Not implemented yet: numbers")
