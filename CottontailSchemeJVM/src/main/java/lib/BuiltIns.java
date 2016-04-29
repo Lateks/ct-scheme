@@ -1,7 +1,8 @@
 package lib;
 
 public class BuiltIns {
-    static void Display(Object obj) {
+    public static Object display(Object obj) {
         System.out.println(obj);
+        return CTUndefined.instance;
     }
 }
