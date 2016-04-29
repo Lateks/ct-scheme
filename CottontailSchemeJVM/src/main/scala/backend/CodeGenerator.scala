@@ -9,6 +9,9 @@ import org.objectweb.asm.Opcodes._
 
 object CodeGenerator {
 
+  val debug = true
+  val stdout = new PrintWriter(System.out)
+
   def getInternalName(c : Class [_]): String = {
     Type.getType(c).getInternalName
   }
@@ -17,10 +20,14 @@ object CodeGenerator {
     Type.getType(c).getDescriptor
   }
 
+  def declareClass(className : String, parentClassType : String): DebugClassWriter = {
+    val c = new DebugClassWriter(debug, stdout)
+    c.declareClass(className, parentClassType)
+    c
+  }
+
   def generateCodeFor(program : ProgramSyntaxTree) : Unit = {
-    val pw = new PrintWriter(System.out)
-    val mainClass = new DebugClassWriter(true, pw)
-    mainClass.declareClass(program.programName, getInternalName(classOf[Object]))
+    val mainClass = declareClass(program.programName, getInternalName(classOf[Object]))
 
     val mainMethodDescriptor = "([" + getDescriptor(classOf[String]) + ")" + Type.VOID_TYPE.getDescriptor
     val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor)
