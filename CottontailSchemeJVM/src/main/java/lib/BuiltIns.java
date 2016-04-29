@@ -1,14 +1,26 @@
 package lib;
 
 public class BuiltIns {
+    private static String getTypeName(Object n) {
+        if (n instanceof CTObject) {
+            CTObject param = (CTObject)n;
+            return param.getTypeName();
+        } else {
+            return "procedure";
+        }
+    }
+
     private static void assertNumber(String procedureName, Object n) {
         if (!(n instanceof CTNumber)) {
-            String typeName = "procedure";
-            if (n instanceof CTObject) {
-                CTObject param = (CTObject)n;
-                typeName = param.getTypeName();
-            }
+            String typeName = getTypeName(n);
             throw new TypeError(procedureName, CTNumber.typeName, typeName);
+        }
+    }
+
+    private static void assertPair(String procedureName, Object n) {
+        if (!(n instanceof CTPair)) {
+            String typeName = getTypeName(n);
+            throw new TypeError(procedureName, CTPair.typeName, typeName);
         }
     }
 
@@ -32,6 +44,18 @@ public class BuiltIns {
 
     public static Object cons(Object a, Object b) {
         return new CTPair(a, b);
+    }
+
+    public static Object car(Object a) {
+        assertPair("car", a);
+        CTPair p = (CTPair) a;
+        return p.getCar();
+    }
+
+    public static Object cdr(Object a) {
+        assertPair("cdr", a);
+        CTPair p = (CTPair) a;
+        return p.getCdr();
     }
 
     public static boolean toBoolean(Object a) {

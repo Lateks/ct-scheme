@@ -79,22 +79,38 @@ object CodeGenerator {
     }
   }
 
-  val builtInProcedures = List("display", "newline", "zero?", "null?")
+  val builtInProcedures = List("display", "newline", "zero?", "null?", "cons", "car", "cdr")
   val builtInProceduresTakingArrayParam = List()
 
   def emitBuiltInProcedureCall(method : SimpleMethodVisitor, procedureName : String): Unit = {
     val builtInsClass = getInternalName(classOf[BuiltIns])
     val objectDescriptor = getDescriptor(classOf[Object])
+
+    def makeBuiltInMethodDescriptor(numParams : Int): String = {
+      val paramDesc = List.range(0, numParams).map((_) => objectDescriptor).mkString("")
+      "(" + paramDesc + ")" + objectDescriptor
+    }
+
+    def callMethod(name : String, numParams : Int): Unit = {
+      method.emitInvokeStatic(builtInsClass, name, makeBuiltInMethodDescriptor(numParams))
+    }
+
     procedureName match {
       case "display" =>
-        method.emitInvokeStatic(builtInsClass, "display", "(" + objectDescriptor + ")" + objectDescriptor)
+        callMethod("display", 1)
       case "newline" =>
-        method.emitInvokeStatic(builtInsClass, "newline", "()" + objectDescriptor)
+        callMethod("newline", 0)
       case "zero?" =>
-        method.emitInvokeStatic(builtInsClass, "isZero", "(" + objectDescriptor + ")" + objectDescriptor)
+        callMethod("isZero", 1)
       case "null?" =>
-        method.emitInvokeStatic(builtInsClass, "isNull", "(" + objectDescriptor + ")" + objectDescriptor)
-      case s =>
+        callMethod("isNull", 1)
+      case "cons" =>
+        callMethod("cons", 2)
+      case "car" =>
+        callMethod("car", 1)
+      case "cdr" =>
+        callMethod("cdr", 1)
+      case _ =>
         throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
     }
   }
