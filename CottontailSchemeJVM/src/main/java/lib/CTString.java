@@ -17,4 +17,14 @@ public class CTString extends CTObject {
     public String toString() {
         return s;
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof CTString) {
+            CTString other = (CTString)obj;
+            return other.s.equals(this.s);
+        } else {
+            return false;
+        }
+    }
 }

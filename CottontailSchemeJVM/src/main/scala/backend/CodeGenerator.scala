@@ -1,10 +1,10 @@
 package backend
 
-import java.io.{PrintStream, PrintWriter}
+import java.io.{PrintWriter}
 
 import backend.ast._
 import backend.codegen.{CodeGenException, DebugClassWriter, SimpleMethodVisitor}
-import lib.{BuiltIns, CTString}
+import lib._
 import org.objectweb.asm.Type
 import org.objectweb.asm.Opcodes._
 
@@ -27,18 +27,35 @@ object CodeGenerator {
     c
   }
 
-  val builtInProcedures = List("display")
+  val builtInProcedures = List("display", "newline")
 
   def loadLiteral(method : SimpleMethodVisitor, literalValue: LiteralValue): Unit = {
+    def initializeObjectWithString(classTypeName : String, param : String): Unit = {
+      method.createAndDupObject(classTypeName)
+      method.loadConstant(param)
+      method.invokeConstructor(classTypeName, getDescriptor(classOf[String]))
+    }
+
     literalValue match {
       case LiteralString(s) =>
         val classTypeName = getInternalName(classOf[CTString])
+        initializeObjectWithString(classTypeName, s)
+      case LiteralSymbol(s) =>
+        val classTypeName = getInternalName(classOf[CTSymbol])
+        initializeObjectWithString(classTypeName, s)
+      case LiteralBoolean(b) =>
+        val boolClassTypeName = getInternalName(classOf[CTBool])
+        val ctObjectDescriptor = getDescriptor(classOf[CTObject])
+        if (b) {
+          method.visitFieldInsn(GETSTATIC, boolClassTypeName, "trueInstance", ctObjectDescriptor)
+        } else {
+          method.visitFieldInsn(GETSTATIC, boolClassTypeName, "falseInstance", ctObjectDescriptor)
+        }
+      case LiteralNumber(n) =>
+        val classTypeName = getInternalName(classOf[CTNumber])
         method.createAndDupObject(classTypeName)
-        method.loadConstant(s)
-        method.invokeConstructor(classTypeName, getDescriptor(classOf[String]))
-      case LiteralSymbol(s) => throw new CodeGenException("Not implemented yet: symbols")
-      case LiteralBoolean(b) => throw new CodeGenException("Not implemented yet: booleans")
-      case LiteralNumber(n) => throw new CodeGenException("Not implemented yet: numbers")
+        method.loadConstant(n.asInstanceOf[java.lang.Double])
+        method.invokeConstructor(classTypeName, getDescriptor(classOf[Double]))
       case LiteralList(l) => throw new CodeGenException("Not implemented yet: lists")
     }
   }
@@ -48,6 +65,9 @@ object CodeGenerator {
       case "display" =>
         val objectDescriptor = getDescriptor(classOf[Object])
         method.visitMethodInsn(INVOKESTATIC, getInternalName(classOf[BuiltIns]), "display", "(" + objectDescriptor + ")" + objectDescriptor, false)
+      case "newline" =>
+        val objectDescriptor = getDescriptor(classOf[Object])
+        method.visitMethodInsn(INVOKESTATIC, getInternalName(classOf[BuiltIns]), "newline", "()" + objectDescriptor, false)
       case s =>
         throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
     }
