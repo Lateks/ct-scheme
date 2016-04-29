@@ -39,6 +39,10 @@ object CodeGenerator {
     }
   }
 
+  def loadUndefined(method : SimpleMethodVisitor): Unit = {
+    method.emitGetStatic(getInternalName(classOf[CTUndefined]), "instance", getDescriptor(classOf[CTObject]))
+  }
+
   def createArray[T](method : SimpleMethodVisitor, elems : List[T], loader : T => Unit): Unit = {
     method.loadConstant(elems.length.asInstanceOf[java.lang.Integer])
     method.visitTypeInsn(ANEWARRAY, getInternalName(classOf[Object]))
@@ -112,12 +116,26 @@ object CodeGenerator {
         emitProcedureCall(method, proc, args)
       case ValueExpression(lit) =>
         loadLiteral(method, lit)
-      case _ =>
-        throw new CodeGenException("Expression type not implemented yet: " + expression)
+      case Conditional(cond, thenBranch, elseBranch) =>
+        throw new CodeGenException("Expression type not implemented yet: conditional expression")
+      case SequenceExpression(sequenceType, exprs) =>
+        throw new CodeGenException("Expression type not implemented yet: sequence expressions")
+      case Assignment(id, expr) =>
+        throw new CodeGenException("Expression type not implemented yet: assignment expression")
+      case VariableReference(id) =>
+        throw new CodeGenException("Expression type not implemented yet: variable reference expression")
+      case Closure(id) =>
+        throw new CodeGenException("Expression type not implemented yet: closure")
+      case UndefinedValue() => ()
     }
 
-    if (!keepResultOnStack) {
-      method.popStack()
+    expression match {
+      case UndefinedValue() =>
+        if (keepResultOnStack)
+          loadUndefined(method)
+      case _ =>
+        if (!keepResultOnStack)
+          method.popStack()
     }
   }
 
