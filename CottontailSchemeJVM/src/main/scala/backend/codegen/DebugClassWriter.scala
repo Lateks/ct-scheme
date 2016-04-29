@@ -1,6 +1,6 @@
 package backend.codegen
 
-import java.io.PrintWriter
+import java.io.{FileOutputStream, PrintWriter}
 
 import org.objectweb.asm.util.{CheckClassAdapter, TraceClassVisitor}
 import org.objectweb.asm.{AnnotationVisitor, MethodVisitor, _}
@@ -15,12 +15,25 @@ class DebugClassWriter(debug : Boolean, pw : PrintWriter) extends ClassVisitor(A
     cw
   }
 
+  var className: Option[String] = None
+
   def declareClass(className : String, parentClass : String): Unit = {
+    this.className = Some(className)
     classVisitor.visit(V1_8, ACC_PUBLIC, className, null, parentClass, new Array[String](0))
   }
 
   def toByteArray: Array[Byte] = {
     cw.toByteArray
+  }
+
+  def writeToDisk(): Unit = {
+    className match {
+      case None =>
+        throw new CodeGenException("Trying to write class to disk before class has been declared.")
+      case Some(n) =>
+        val bytes = toByteArray
+        new FileOutputStream(n + ".class").write(bytes)
+    }
   }
 
   override def visitAttribute(attribute: Attribute): Unit = classVisitor.visitAttribute(attribute)

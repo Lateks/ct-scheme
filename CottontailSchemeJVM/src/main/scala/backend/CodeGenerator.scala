@@ -1,6 +1,6 @@
 package backend
 
-import java.io.{FileOutputStream, PrintStream, PrintWriter}
+import java.io.{PrintStream, PrintWriter}
 
 import backend.ast._
 import backend.codegen.{DebugClassWriter, SimpleMethodVisitor}
@@ -35,8 +35,7 @@ object CodeGenerator {
     mainMethod.setMaxs()
     mainClass.visitEnd()
 
-    val bytes = mainClass.toByteArray
-    new FileOutputStream(program.programName + ".class").write(bytes)
+    mainClass.writeToDisk()
   }
 
 }
