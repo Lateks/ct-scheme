@@ -22,4 +22,8 @@ public class BuiltIns {
     public static Object cons(Object a, Object b) {
         return new CTPair(a, b);
     }
+
+    public static boolean toBoolean(Object a) {
+        return !(a instanceof CTBool && a == CTBool.falseInstance);
+    }
 }

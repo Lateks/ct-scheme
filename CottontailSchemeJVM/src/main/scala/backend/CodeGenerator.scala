@@ -5,7 +5,7 @@ import java.io.PrintWriter
 import backend.ast._
 import backend.codegen.{CodeGenException, DebugClassWriter, SimpleMethodVisitor}
 import lib._
-import org.objectweb.asm.Type
+import org.objectweb.asm.{Label, Type}
 import org.objectweb.asm.Opcodes._
 
 object CodeGenerator {
@@ -110,6 +110,29 @@ object CodeGenerator {
     }
   }
 
+  def emitBooleanConversion(method : SimpleMethodVisitor): Unit = {
+    val booleanConverterDescriptor = "(" + getDescriptor(classOf[Object]) + ")" + getDescriptor(classOf[Boolean])
+    method.emitInvokeStatic(getInternalName(classOf[BuiltIns]), "toBoolean", booleanConverterDescriptor)
+  }
+
+  def emitConditional(method : SimpleMethodVisitor, cond : Expression, thenBranch : Expression, elseBranch : Expression): Unit = {
+    val thenLabel = new Label()
+    val exitLabel = new Label()
+
+    pushExpressionResultToStack(method, cond)
+    emitBooleanConversion(method)
+    method.visitJumpInsn(IFNE, thenLabel)
+
+    pushExpressionResultToStack(method, elseBranch)
+    method.visitJumpInsn(GOTO, exitLabel)
+
+    method.visitLabel(thenLabel)
+
+    pushExpressionResultToStack(method, thenBranch)
+
+    method.visitLabel(exitLabel)
+  }
+
   def generateExpression(method : SimpleMethodVisitor, expression : Expression, keepResultOnStack : Boolean): Unit = {
     expression match {
       case ProcedureCall(proc, args, tc) => // TODO: Not handling tail calls yet
@@ -117,7 +140,7 @@ object CodeGenerator {
       case ValueExpression(lit) =>
         loadLiteral(method, lit)
       case Conditional(cond, thenBranch, elseBranch) =>
-        throw new CodeGenException("Expression type not implemented yet: conditional expression")
+        emitConditional(method, cond, thenBranch, elseBranch)
       case SequenceExpression(sequenceType, exprs) =>
         throw new CodeGenException("Expression type not implemented yet: sequence expressions")
       case Assignment(id, expr) =>

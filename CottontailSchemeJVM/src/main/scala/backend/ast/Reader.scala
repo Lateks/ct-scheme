@@ -130,7 +130,6 @@ object Reader {
           new MappingException("Invalid parameter list for " + caseName + ": " + pretty(render(params)))
         }
         s match {
-          case "UndefinedValue" => UndefinedValue()
           case "VariableReference" =>
             fs match {
               case JArray(id :: Nil) =>
@@ -203,8 +202,13 @@ object Reader {
           case x =>
             throw new MappingException("Unknown expression type: " + x)
         }
+      case JObject(JField("Case", JString(s)) :: Nil) =>
+        s match {
+          case "UndefinedValue" => UndefinedValue()
+          case x => throw new MappingException("Unknown expression type: " + x)
+        }
       case x =>
-        throw new MappingException("Cannot convert object " + pretty(render(x)) + "to an expression.")
+        throw new MappingException("Cannot convert object " + pretty(render(x)) + " to an expression.")
     },
     {
       case x: Expression => write(x)

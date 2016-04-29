@@ -22,6 +22,10 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
     methodVisitor.visitInsn(RETURN)
   }
 
+  def emitObjectReturn(): Unit = {
+    methodVisitor.visitInsn(ARETURN)
+  }
+
   def createAndDupObject(objectType : String): Unit = {
     methodVisitor.visitTypeInsn(NEW, objectType)
     methodVisitor.visitInsn(DUP)
