@@ -1,6 +1,6 @@
 package backend
 
-import java.io.{PrintWriter}
+import java.io.PrintWriter
 
 import backend.ast._
 import backend.codegen.{CodeGenException, DebugClassWriter, SimpleMethodVisitor}
@@ -29,6 +29,16 @@ object CodeGenerator {
 
   val builtInProcedures = List("display", "newline")
 
+  def loadBoolean(method : SimpleMethodVisitor, b : Boolean): Unit = {
+    val boolClassTypeName = getInternalName(classOf[CTBool])
+    val ctObjectDescriptor = getDescriptor(classOf[CTObject])
+    if (b) {
+      method.emitGetStatic(boolClassTypeName, "trueInstance", ctObjectDescriptor)
+    } else {
+      method.emitGetStatic(boolClassTypeName, "falseInstance", ctObjectDescriptor)
+    }
+  }
+
   def loadLiteral(method : SimpleMethodVisitor, literalValue: LiteralValue): Unit = {
     def initializeObjectWithString(classTypeName : String, param : String): Unit = {
       method.createAndDupObject(classTypeName)
@@ -44,13 +54,7 @@ object CodeGenerator {
         val classTypeName = getInternalName(classOf[CTSymbol])
         initializeObjectWithString(classTypeName, s)
       case LiteralBoolean(b) =>
-        val boolClassTypeName = getInternalName(classOf[CTBool])
-        val ctObjectDescriptor = getDescriptor(classOf[CTObject])
-        if (b) {
-          method.visitFieldInsn(GETSTATIC, boolClassTypeName, "trueInstance", ctObjectDescriptor)
-        } else {
-          method.visitFieldInsn(GETSTATIC, boolClassTypeName, "falseInstance", ctObjectDescriptor)
-        }
+        loadBoolean(method, b)
       case LiteralNumber(n) =>
         val classTypeName = getInternalName(classOf[CTNumber])
         method.createAndDupObject(classTypeName)
@@ -61,13 +65,13 @@ object CodeGenerator {
   }
 
   def emitBuiltInProcedureCall(method : SimpleMethodVisitor, procedureName : String): Unit = {
+    val builtInsClass = getInternalName(classOf[BuiltIns])
+    val objectDescriptor = getDescriptor(classOf[Object])
     procedureName match {
       case "display" =>
-        val objectDescriptor = getDescriptor(classOf[Object])
-        method.visitMethodInsn(INVOKESTATIC, getInternalName(classOf[BuiltIns]), "display", "(" + objectDescriptor + ")" + objectDescriptor, false)
+        method.emitInvokeStatic(builtInsClass, "display", "(" + objectDescriptor + ")" + objectDescriptor)
       case "newline" =>
-        val objectDescriptor = getDescriptor(classOf[Object])
-        method.visitMethodInsn(INVOKESTATIC, getInternalName(classOf[BuiltIns]), "newline", "()" + objectDescriptor, false)
+        method.emitInvokeStatic(builtInsClass, "newline", "()" + objectDescriptor)
       case s =>
         throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
     }
@@ -100,7 +104,7 @@ object CodeGenerator {
     }
 
     if (!keepResultOnStack) {
-      method.visitInsn(POP)
+      method.popStack()
     }
   }
 

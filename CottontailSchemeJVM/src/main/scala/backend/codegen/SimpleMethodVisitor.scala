@@ -14,6 +14,10 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
     methodVisitor.visitMethodInsn(INVOKEVIRTUAL, ownerType, methodName, methodType, onInterface)
   }
 
+  def emitInvokeStatic(ownerType : String, methodName : String, methodType : String): Unit = {
+    methodVisitor.visitMethodInsn(INVOKESTATIC, ownerType, methodName, methodType, false)
+  }
+
   def emitReturn(): Unit = {
     methodVisitor.visitInsn(RETURN)
   }
@@ -29,6 +33,10 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
 
   def loadConstant(obj : AnyRef): Unit = {
     methodVisitor.visitLdcInsn(obj)
+  }
+
+  def popStack(): Unit = {
+    methodVisitor.visitInsn(POP)
   }
 
   def setMaxs(): Unit = {
