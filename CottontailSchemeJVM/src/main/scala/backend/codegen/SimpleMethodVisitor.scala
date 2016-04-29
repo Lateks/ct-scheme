@@ -18,6 +18,10 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
     methodVisitor.visitInsn(RETURN)
   }
 
+  def setMaxs(): Unit = {
+    methodVisitor.visitMaxs(0, 0)
+  }
+
   override def visitMaxs(maxStack : Int, maxLocals : Int): Unit = {
     methodVisitor.visitMaxs(maxStack, maxLocals)
   }

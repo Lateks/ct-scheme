@@ -32,7 +32,7 @@ object CodeGenerator {
     mainMethod.emitReturn()
     mainMethod.visitEnd()
 
-    mainMethod.visitMaxs(0, 0)
+    mainMethod.setMaxs()
     mainClass.visitEnd()
 
     val bytes = mainClass.toByteArray

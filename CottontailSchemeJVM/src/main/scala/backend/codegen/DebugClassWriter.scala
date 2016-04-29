@@ -2,14 +2,15 @@ package backend.codegen
 
 import java.io.PrintWriter
 
-import org.objectweb.asm.util.{TraceClassVisitor}
+import org.objectweb.asm.util.{CheckClassAdapter, TraceClassVisitor}
 import org.objectweb.asm.{AnnotationVisitor, MethodVisitor, _}
 import org.objectweb.asm.Opcodes._
 
 class DebugClassWriter(debug : Boolean, pw : PrintWriter) extends ClassVisitor(ASM5) {
   val cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES)
   val classVisitor = if (debug) {
-    new TraceClassVisitor(cw, pw)
+    val checkDataFlow = false
+    new CheckClassAdapter(new TraceClassVisitor(cw, pw), checkDataFlow)
   } else {
     cw
   }
