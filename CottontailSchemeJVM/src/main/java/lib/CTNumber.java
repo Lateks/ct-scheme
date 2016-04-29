@@ -1,7 +1,7 @@
 package lib;
 
 public class CTNumber extends CTObject {
-    private static final String typeName = "number";
+    public static final String typeName = "number";
 
     private double value;
 
@@ -32,5 +32,9 @@ public class CTNumber extends CTObject {
 
     public String getTypeName() {
         return typeName;
+    }
+
+    public double getValue() {
+        return value;
     }
 }

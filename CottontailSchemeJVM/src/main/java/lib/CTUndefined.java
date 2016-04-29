@@ -5,7 +5,7 @@ public class CTUndefined extends CTObject {
 
     private CTUndefined() {}
 
-    private static final String typeName = "undefined";
+    public static final String typeName = "undefined";
 
     public String getTypeName() {
         return typeName;

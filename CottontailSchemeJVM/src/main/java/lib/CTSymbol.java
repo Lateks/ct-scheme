@@ -3,7 +3,7 @@ package lib;
 // Symbols are implemented as strings for simplicity
 // in this prototype implementation.
 public class CTSymbol extends CTString {
-    private static final String typeName = "symbol";
+    public static final String typeName = "symbol";
 
     public CTSymbol(String s) {
         super(s);

@@ -27,8 +27,6 @@ object CodeGenerator {
     c
   }
 
-  val builtInProcedures = List("display", "newline")
-
   def loadBoolean(method : SimpleMethodVisitor, b : Boolean): Unit = {
     val boolClassTypeName = getInternalName(classOf[CTBool])
     val ctObjectDescriptor = getDescriptor(classOf[CTObject])
@@ -81,6 +79,9 @@ object CodeGenerator {
     }
   }
 
+  val builtInProcedures = List("display", "newline", "zero?", "null?")
+  val builtInProceduresTakingArrayParam = List()
+
   def emitBuiltInProcedureCall(method : SimpleMethodVisitor, procedureName : String): Unit = {
     val builtInsClass = getInternalName(classOf[BuiltIns])
     val objectDescriptor = getDescriptor(classOf[Object])
@@ -89,6 +90,10 @@ object CodeGenerator {
         method.emitInvokeStatic(builtInsClass, "display", "(" + objectDescriptor + ")" + objectDescriptor)
       case "newline" =>
         method.emitInvokeStatic(builtInsClass, "newline", "()" + objectDescriptor)
+      case "zero?" =>
+        method.emitInvokeStatic(builtInsClass, "isZero", "(" + objectDescriptor + ")" + objectDescriptor)
+      case "null?" =>
+        method.emitInvokeStatic(builtInsClass, "isNull", "(" + objectDescriptor + ")" + objectDescriptor)
       case s =>
         throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
     }

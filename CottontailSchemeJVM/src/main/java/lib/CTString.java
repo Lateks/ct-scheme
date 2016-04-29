@@ -1,7 +1,7 @@
 package lib;
 
 public class CTString extends CTObject {
-    private static final String typeName = "string";
+    public static final String typeName = "string";
 
     private String s = null;
 

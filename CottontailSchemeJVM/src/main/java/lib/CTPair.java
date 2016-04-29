@@ -1,7 +1,7 @@
 package lib;
 
 public class CTPair extends CTObject {
-    private static final String typeName = "pair";
+    public static final String typeName = "pair";
 
     private Object car;
     private Object cdr;

@@ -1,7 +1,7 @@
 package lib;
 
 public class CTEmptyList extends CTObject {
-    private static final String typeName = "()";
+    public static final String typeName = "()";
 
     public static CTObject instance = new CTEmptyList();
 
