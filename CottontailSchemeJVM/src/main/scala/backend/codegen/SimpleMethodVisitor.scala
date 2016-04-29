@@ -39,6 +39,14 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
     methodVisitor.visitInsn(POP)
   }
 
+  def storeInArray(): Unit = {
+    methodVisitor.visitInsn(AASTORE)
+  }
+
+  def dup(): Unit = {
+    methodVisitor.visitInsn(DUP)
+  }
+
   def setMaxs(): Unit = {
     methodVisitor.visitMaxs(0, 0)
   }

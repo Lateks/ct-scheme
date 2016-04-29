@@ -39,6 +39,17 @@ object CodeGenerator {
     }
   }
 
+  def createArray[T](method : SimpleMethodVisitor, elems : List[T], loader : T => Unit): Unit = {
+    method.loadConstant(elems.length.asInstanceOf[java.lang.Integer])
+    method.visitTypeInsn(ANEWARRAY, getInternalName(classOf[Object]))
+    for ((elem, i) <- elems.zipWithIndex) {
+      method.dup()
+      method.loadConstant(i.asInstanceOf[java.lang.Integer])
+      loader(elem)
+      method.storeInArray()
+    }
+  }
+
   def loadLiteral(method : SimpleMethodVisitor, literalValue: LiteralValue): Unit = {
     def initializeObjectWithString(classTypeName : String, param : String): Unit = {
       method.createAndDupObject(classTypeName)
@@ -60,7 +71,9 @@ object CodeGenerator {
         method.createAndDupObject(classTypeName)
         method.loadConstant(n.asInstanceOf[java.lang.Double])
         method.invokeConstructor(classTypeName, getDescriptor(classOf[Double]))
-      case LiteralList(l) => throw new CodeGenException("Not implemented yet: lists")
+      case LiteralList(l) =>
+        createArray(method, l, (elem : LiteralValue) => loadLiteral(method, elem))
+        method.emitInvokeStatic(getInternalName(classOf[BuiltIns]), "toList", "([" + getDescriptor(classOf[Object]) + ")" + getDescriptor(classOf[Object]))
     }
   }
 

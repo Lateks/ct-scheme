@@ -10,4 +10,16 @@ public class BuiltIns {
         System.out.println();
         return CTUndefined.instance;
     }
+
+    public static Object toList(Object[] args) {
+        Object lst = CTEmptyList.instance;
+        for (int i = args.length - 1; i >= 0; --i) {
+            lst = cons(args[i], lst);
+        }
+        return lst;
+    }
+
+    public static Object cons(Object a, Object b) {
+        return new CTPair(a, b);
+    }
 }

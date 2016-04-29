@@ -9,6 +9,8 @@
 (newline)
 (display 'fib)
 (newline)
+(display '())
+(newline)
 (display '(1 2 3))
 (newline)
 (display '(1 2 (3 4)))
