@@ -79,4 +79,63 @@ public class BuiltIns {
     public static Object areEq(Object a, Object b) {
         return CTBool.toCTBool(a.equals(b));
     }
+
+    public static Object plus(Object[] args) {
+        double sum = 0;
+        for (Object arg : args) {
+            assertNumber("+", arg);
+            sum += getNumberValue(arg);
+        }
+        return new CTNumber(sum);
+    }
+
+    public static Object minus(Object[] args) {
+        for (Object arg : args) {
+            assertNumber("-", arg);
+        }
+
+        double result = 0;
+        if (args.length == 1) {
+            result = -getNumberValue(args[0]);
+        } else {
+            result = getNumberValue(args[0]);
+            for (int i = 1; i < args.length; ++i) {
+                result -= getNumberValue(args[i]);
+            }
+        }
+        return new CTNumber(result);
+    }
+
+    public static Object mult(Object[] args) {
+        double result = 1;
+
+        for (Object arg : args) {
+            assertNumber("*", arg);
+            result *= getNumberValue(arg);
+        }
+
+        return new CTNumber(result);
+    }
+
+    public static Object div(Object[] args) {
+        for (Object arg : args) {
+            assertNumber("/", arg);
+        }
+
+        double result = 0;
+        if (args.length == 1) {
+            result = 1.0 / getNumberValue(args[0]);
+        } else {
+            result = getNumberValue(args[0]);
+            for (int i = 1; i < args.length; ++i) {
+                result /= getNumberValue(args[i]);
+            }
+        }
+
+        return new CTNumber(result);
+    }
+
+    private static double getNumberValue(Object o) {
+        return ((CTNumber) o).getValue();
+    }
 }
