@@ -2,6 +2,7 @@ package backend
 
 import java.io.PrintWriter
 
+import backend.ast.SequenceType.SequenceType
 import backend.ast._
 import backend.codegen.{CodeGenException, DebugClassWriter, SimpleMethodVisitor}
 import lib._
@@ -171,6 +172,48 @@ object CodeGenerator {
     method.visitLabel(exitLabel)
   }
 
+  def emitBeginSequence(method : SimpleMethodVisitor, exprs : List[Expression]): Unit = {
+    val nonTailExprs = exprs.init
+    val tailExpr = exprs.last
+    for (expr <- nonTailExprs) {
+      generateExpression(method, expr, keepResultOnStack = false)
+    }
+    generateExpression(method, tailExpr, keepResultOnStack = true)
+  }
+
+  def emitBooleanSequence(method : SimpleMethodVisitor, exprs : List[Expression], breakValue : Boolean): Unit = {
+    if (exprs.isEmpty) {
+      loadBoolean(method, !breakValue)
+    } else {
+      val nonTailExprs = exprs.init
+      val tailExpr = exprs.last
+      val exitLabel = new Label()
+      val comparison = if (breakValue) IFNE else IFEQ
+
+      for (expr <- nonTailExprs) {
+        generateExpression(method, expr, keepResultOnStack = true)
+
+        method.dup()
+
+        emitBooleanConversion(method)
+        method.visitJumpInsn(comparison, exitLabel)
+        method.popStack()
+      }
+
+      generateExpression(method, tailExpr, keepResultOnStack = true)
+
+      method.visitLabel(exitLabel)
+    }
+  }
+
+  def emitSequenceExpression(method : SimpleMethodVisitor, seqType : SequenceType, exprs : List[Expression]): Unit = {
+    seqType match {
+      case SequenceType.BeginSequence => emitBeginSequence(method, exprs)
+      case SequenceType.AndSequence => emitBooleanSequence(method, exprs, breakValue = false)
+      case SequenceType.OrSequence => emitBooleanSequence(method, exprs, breakValue = true)
+    }
+  }
+
   def generateExpression(method : SimpleMethodVisitor, expression : Expression, keepResultOnStack : Boolean): Unit = {
     expression match {
       case ProcedureCall(proc, args, tc) => // TODO: Not handling tail calls yet
@@ -180,24 +223,19 @@ object CodeGenerator {
       case Conditional(cond, thenBranch, elseBranch) =>
         emitConditional(method, cond, thenBranch, elseBranch)
       case SequenceExpression(sequenceType, exprs) =>
-        throw new CodeGenException("Expression type not implemented yet: sequence expressions")
+        emitSequenceExpression(method, sequenceType, exprs)
       case Assignment(id, expr) =>
         throw new CodeGenException("Expression type not implemented yet: assignment expression")
       case VariableReference(id) =>
         throw new CodeGenException("Expression type not implemented yet: variable reference expression")
       case Closure(id) =>
         throw new CodeGenException("Expression type not implemented yet: closure")
-      case UndefinedValue() => ()
+      case UndefinedValue() =>
+        loadUndefined(method)
     }
 
-    expression match {
-      case UndefinedValue() =>
-        if (keepResultOnStack)
-          loadUndefined(method)
-      case _ =>
-        if (!keepResultOnStack)
-          method.popStack()
-    }
+    if (!keepResultOnStack)
+      method.popStack()
   }
 
   def pushExpressionResultToStack(method : SimpleMethodVisitor, expression : Expression): Unit = {

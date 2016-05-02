@@ -3,8 +3,12 @@
 	   (display "world")
 	   (newline))
 
+(newline)
+
 (display (and #t #f #t)) ; #f
+(newline)
 (and (display "hello\n") #f (display "world\n")) ; hello
+(newline)
 (and (display "foo\n") #t (display "baz\n")) ; foo\nbaz
 (display (and #t)) ; #t
 (newline)
@@ -28,3 +32,4 @@
 (display (or #t)) ; #t
 (newline)
 (display (or #f)) ; #f
+(newline)
