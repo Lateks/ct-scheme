@@ -8,6 +8,7 @@ import org.json4s.native.Serialization
 
 abstract class ReadResult
 case class ReadSuccess(program : ProgramSyntaxTree) extends ReadResult
+case class ReadError(message : String) extends ReadResult
 case class ReadFailure(message : String) extends ReadResult
 
 object Reader {
@@ -217,12 +218,14 @@ object Reader {
 
   def convertToAST(json : JValue) : ReadResult = {
     try {
-      val programName = (json \ "programName").extract[String]
-      val procedureDefinitions = (json \ "procedureDefinitions").extract[List[ProcedureDefinition]]
-      val variableDeclarations = (json \ "variableDeclarations").extract[List[VariableDeclaration]]
-      val expressions = (json \ "expressions").extract[List[Expression]]
-      val ast = new ProgramSyntaxTree(programName, expressions, procedureDefinitions, variableDeclarations)
-      ReadSuccess(ast)
+      val programOk = (json \ "valid").extract[Boolean]
+      if (programOk) {
+        val ast = (json \ "program").extract[ProgramSyntaxTree]
+        ReadSuccess(ast)
+      } else {
+        val errorMsg = (json \ "message").extract[String]
+        ReadError(errorMsg)
+      }
     } catch {
       case e: MappingException => ReadFailure(e.msg)
     }

@@ -11,15 +11,26 @@ open Newtonsoft.Json
 type OutputType = Json
                 | Exe
 
+type ValidOutput = { valid : bool; program : ProgramStructure }
+type ErrorOutput = { valid : bool; message : String }
+
 let generateCode p =
     match generateCodeFor p with
     | CodeGenSuccess msg -> printfn "Success: %s" msg
     | CodeGenInternalError msg -> printfn "Internal error occurred: %s" msg
 
-let outputJson p =
-    let json = JsonConvert.SerializeObject(p, Formatting.Indented)
+let printJson op =
+    let json = JsonConvert.SerializeObject(op, Formatting.Indented)
     printfn "%s" json
 
+let outputJson p =
+    { valid = true; program = p } |> printJson
+
+let outputError outputType msg =
+    match outputType with
+    | Exe -> printfn "%s" msg
+    | Json -> { valid = false; message = msg } |> printJson
+              
 [<EntryPoint>]
 let main args =
     if args.Length < 1 then
@@ -37,25 +48,32 @@ let main args =
                           |> fun xs -> String.Join("-", xs)
                           |> kebabCaseToCamelCase
 
+        let displayError = outputError !outputType
         let programCode = try
                              let text = IO.File.ReadAllText(args.[fileNamePosition])
                              Some text
                           with
-                          | e -> printfn "Error reading file %s:\n%A" args.[fileNamePosition] e
+                          | e -> let err = sprintf "Error reading file %s:\n%A" args.[fileNamePosition] e
+                                 displayError err
                                  None
 
-        match programCode with
-        | Some programText ->
-            match run CottontailScheme.Parsing.parseProgram programText with
-            | Success(result, _, _)
-                -> match buildAST result with
-                    | ASTBuildSuccess exprs
-                       -> match analyse exprs programName with
-                          | ValidProgram p -> match !outputType with
-                                              | Json -> outputJson p
-                                              | Exe -> generateCode p
-                          | ProgramAnalysisError err -> printfn "Error: %s" err
-                    | ASTBuildFailure errs -> errs |> List.map (fun e -> printfn "Error (line %i, column %i): %A" e.position.line e.position.column e.message) |> ignore
-            | Failure(errorMsg, _, _) -> printfn "Error: %s" errorMsg
-        | None -> printfn "Exiting..."
+        try
+            match programCode with
+            | Some programText ->
+                match run CottontailScheme.Parsing.parseProgram programText with
+                | Success(result, _, _)
+                    -> match buildAST result with
+                        | ASTBuildSuccess exprs
+                           -> match analyse exprs programName with
+                              | ValidProgram p -> match !outputType with
+                                                  | Json -> outputJson p
+                                                  | Exe -> generateCode p
+                              | ProgramAnalysisError err -> sprintf "Error: %s" err |> displayError
+                        | ASTBuildFailure errs -> errs |> List.map (fun e -> sprintf "Error (line %i, column %i): %A" e.position.line e.position.column e.message)
+                                                       |> String.concat "\n"
+                                                       |> displayError
+                | Failure(errorMsg, _, _) -> sprintf "Error: %s" errorMsg |> displayError
+            | None -> if !outputType = Exe then printfn "Exiting..."
+        with
+        | e -> sprintf "Unexpected error occurred:\n%A" e |> displayError
     0
