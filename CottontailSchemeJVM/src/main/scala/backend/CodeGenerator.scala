@@ -83,10 +83,8 @@ object CodeGenerator {
   val builtInProceduresTakingArrayParam = List("list", "+", "-", "*", "/")
 
   def emitBuiltInProcedureCall(method : SimpleMethodVisitor, procedureName : String): Unit = {
-    val builtInsClass = getInternalName(classOf[BuiltIns])
-    val objectDescriptor = getDescriptor(classOf[Object])
-
     def makeBuiltInMethodDescriptor(numParams : Int, isArray : Boolean): String = {
+      val objectDescriptor = getDescriptor(classOf[Object])
       val paramTypes = List.range(0, numParams).map((_) => objectDescriptor).mkString("")
       val paramDesc = if (isArray) {
         "[" + paramTypes
@@ -97,42 +95,31 @@ object CodeGenerator {
       "(" + paramDesc + ")" + objectDescriptor
     }
 
-    def callMethod(name : String, numParams : Int, isArray : Boolean): Unit = {
-      method.emitInvokeStatic(builtInsClass, name, makeBuiltInMethodDescriptor(numParams, isArray))
-    }
+    val convertedProcedureName =
+      procedureName match {
+        case "eq?" => "areEq"
+        case "list" => "toList"
+        case "null?" => "isNull"
+        case "zero?" => "isZero"
+        case "+" => "plus"
+        case "-" => "minus"
+        case "*" => "mult"
+        case "/" => "div"
+        case "car" | "cdr" | "cons" | "display" | "newline" | "not" => procedureName
+        case _ => throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
+      }
 
-    procedureName match {
-      case "car" =>
-        callMethod("car", 1, isArray = false)
-      case "cdr" =>
-        callMethod("cdr", 1, isArray = false)
-      case "cons" =>
-        callMethod("cons", 2, isArray = false)
-      case "display" =>
-        callMethod("display", 1, isArray = false)
-      case "eq?" =>
-        callMethod("areEq", 2, isArray = false)
-      case "list" =>
-        callMethod("toList", 1, isArray = true)
-      case "newline" =>
-        callMethod("newline", 0, isArray = false)
-      case "not" =>
-        callMethod("not", 1, isArray = false)
-      case "null?" =>
-        callMethod("isNull", 1, isArray = false)
-      case "zero?" =>
-        callMethod("isZero", 1, isArray = false)
-      case "+" =>
-        callMethod("plus", 1, isArray = true)
-      case "-" =>
-        callMethod("minus", 1, isArray = true)
-      case "*" =>
-        callMethod("mult", 1, isArray = true)
-      case "/" =>
-        callMethod("div", 1, isArray = true)
-      case _ =>
-        throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
-    }
+    val paramCount =
+      procedureName match {
+        case "newline" => 0
+        case "cons" | "eq?" => 2
+        case _ => 1
+      }
+
+    val builtInsClass = getInternalName(classOf[BuiltIns])
+    val isArray = builtInProceduresTakingArrayParam.contains(procedureName)
+    val methodDescriptor = makeBuiltInMethodDescriptor(paramCount, isArray)
+    method.emitInvokeStatic(builtInsClass, convertedProcedureName, methodDescriptor)
   }
 
   def pushBuiltInProcedureArgs(method : SimpleMethodVisitor, procedureName : String, args : List[Expression]): Unit = {
