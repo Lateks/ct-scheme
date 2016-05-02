@@ -79,8 +79,8 @@ object CodeGenerator {
     }
   }
 
-  val builtInProcedures = List("car", "cdr", "cons", "display", "eq?", "list", "newline", "not", "null?", "zero?", "+", "-", "*", "/")
-  val builtInProceduresTakingArrayParam = List("list", "+", "-", "*", "/")
+  val builtInProcedures = List("car", "cdr", "cons", "display", "eq?", "list", "newline", "not", "null?", "zero?", "+", "-", "*", "/", "<", ">")
+  val builtInProceduresTakingArrayParam = List("list", "+", "-", "*", "/", "<", ">")
 
   def emitBuiltInProcedureCall(method : SimpleMethodVisitor, procedureName : String): Unit = {
     def makeBuiltInMethodDescriptor(numParams : Int, isArray : Boolean): String = {
@@ -105,6 +105,8 @@ object CodeGenerator {
         case "-" => "minus"
         case "*" => "mult"
         case "/" => "div"
+        case "<" => "lessThan"
+        case ">" => "greaterThan"
         case "car" | "cdr" | "cons" | "display" | "newline" | "not" => procedureName
         case _ => throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
       }

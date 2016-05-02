@@ -1,5 +1,7 @@
 package lib;
 
+import java.util.Comparator;
+
 public class BuiltIns {
     private static String getTypeName(Object n) {
         if (n instanceof CTObject) {
@@ -133,6 +135,35 @@ public class BuiltIns {
         }
 
         return new CTNumber(result);
+    }
+
+    public static Object lessThan(Object[] args) {
+        for (Object arg : args) {
+            assertNumber("<", arg);
+        }
+
+        return comparePairs(args, Comparator.naturalOrder());
+    }
+
+    public static Object greaterThan(Object[] args) {
+        for (Object arg : args) {
+            assertNumber(">", arg);
+        }
+
+        return comparePairs(args, Comparator.reverseOrder());
+    }
+
+    private static Object comparePairs(Object[] args, Comparator<Double> comp) {
+        double prev = getNumberValue(args[0]);
+        for (int i = 1; i < args.length; ++i) {
+            double val = getNumberValue(args[i]);
+            if (comp.compare(prev, val) < 0) {
+                prev = val;
+            } else {
+                return CTBool.falseInstance;
+            }
+        }
+        return CTBool.trueInstance;
     }
 
     private static double getNumberValue(Object o) {
