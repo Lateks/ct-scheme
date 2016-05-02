@@ -22,7 +22,9 @@ public class CTNumber extends CTObject {
 
     @Override
     public boolean equals(Object obj) {
-        if (obj instanceof CTNumber) {
+        if (obj == this) {
+            return true;
+        } else if (obj instanceof CTNumber) {
             CTNumber other = (CTNumber)obj;
             return other.value == this.value;
         } else {

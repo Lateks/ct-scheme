@@ -16,6 +16,6 @@ public class CTSymbol extends CTString {
 
     @Override
     public boolean equals(Object obj) {
-        return obj instanceof CTSymbol && super.equals(obj);
+        return obj == this || obj instanceof CTSymbol && super.equals(obj);
     }
 }

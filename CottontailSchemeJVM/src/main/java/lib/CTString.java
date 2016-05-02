@@ -20,7 +20,9 @@ public class CTString extends CTObject {
 
     @Override
     public boolean equals(Object obj) {
-        if (obj instanceof CTString) {
+        if (obj == this) {
+            return true;
+        } else if (obj instanceof CTString) {
             CTString other = (CTString)obj;
             return other.s.equals(this.s);
         } else {

@@ -71,4 +71,12 @@ public class BuiltIns {
     public static Object isNull(Object a) {
         return CTBool.toCTBool(a instanceof CTEmptyList);
     }
+
+    public static Object not(Object a) {
+        return CTBool.toCTBool(!toBoolean(a));
+    }
+
+    public static Object areEq(Object a, Object b) {
+        return CTBool.toCTBool(a.equals(b));
+    }
 }

@@ -79,7 +79,7 @@ object CodeGenerator {
     }
   }
 
-  val builtInProcedures = List("display", "newline", "zero?", "null?", "cons", "car", "cdr", "list")
+  val builtInProcedures = List("car", "cdr", "cons", "display", "eq?", "list", "newline", "not", "null?", "zero?")
   val builtInProceduresTakingArrayParam = List("list")
 
   def emitBuiltInProcedureCall(method : SimpleMethodVisitor, procedureName : String): Unit = {
@@ -102,22 +102,26 @@ object CodeGenerator {
     }
 
     procedureName match {
-      case "display" =>
-        callMethod("display", 1, isArray = false)
-      case "newline" =>
-        callMethod("newline", 0, isArray = false)
-      case "zero?" =>
-        callMethod("isZero", 1, isArray = false)
-      case "null?" =>
-        callMethod("isNull", 1, isArray = false)
-      case "cons" =>
-        callMethod("cons", 2, isArray = false)
       case "car" =>
         callMethod("car", 1, isArray = false)
       case "cdr" =>
         callMethod("cdr", 1, isArray = false)
+      case "cons" =>
+        callMethod("cons", 2, isArray = false)
+      case "display" =>
+        callMethod("display", 1, isArray = false)
+      case "eq?" =>
+        callMethod("areEq", 2, isArray = false)
       case "list" =>
         callMethod("toList", 1, isArray = true)
+      case "newline" =>
+        callMethod("newline", 0, isArray = false)
+      case "not" =>
+        callMethod("not", 1, isArray = false)
+      case "null?" =>
+        callMethod("isNull", 1, isArray = false)
+      case "zero?" =>
+        callMethod("isZero", 1, isArray = false)
       case _ =>
         throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
     }

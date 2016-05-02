@@ -13,7 +13,9 @@ public class CTPair extends CTObject {
 
     @Override
     public boolean equals(Object obj) {
-        if (obj instanceof CTPair) {
+        if (obj == this) {
+            return true;
+        } else if (obj instanceof CTPair) {
             CTPair other = (CTPair)obj;
             return other.car.equals(this.car) && other.cdr.equals(this.cdr);
         } else {
