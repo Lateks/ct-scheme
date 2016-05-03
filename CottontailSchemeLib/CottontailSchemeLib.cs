@@ -19,7 +19,7 @@ namespace CottontailSchemeLib
 
     public class InvalidNumberOfArgsError : CottontailSchemeException
     {
-        public InvalidNumberOfArgsError(string functionName, int expectedArgs, int receivedArgs)
+        public InvalidNumberOfArgsError(string functionName, string expectedArgs, int receivedArgs)
             : base(string.Format("{0}: contract violation:\n\tinvalid number of arguments\n\texpected: {1}\n\tgiven:    {2}", functionName, expectedArgs, receivedArgs))
         { }
     }
@@ -153,6 +153,14 @@ namespace CottontailSchemeLib
             return Constants.ToCTBool(v.GetType() == typeof(CTEmptyList));
         }
 
+        private static void AssertParameterCountAtLeast(string functionName, int n, CTObject[] args)
+        {
+            if (args.Length < n)
+            {
+                throw new InvalidNumberOfArgsError(functionName, "at least " + n, args.Length);
+            }
+        }
+
         private static void AssertNumber(string functionName, CTObject arg)
         {
             if (arg.GetType() != typeof(CTNumber))
@@ -187,6 +195,7 @@ namespace CottontailSchemeLib
         public static CTNumber Minus(CTObject[] args)
         {
             CheckArgs(MinusFunctionName, args);
+            AssertParameterCountAtLeast(MinusFunctionName, 1, args);
 
             double result = 0;
             if (args.Length == 1)
@@ -202,6 +211,7 @@ namespace CottontailSchemeLib
         public static CTNumber Div(CTObject[] args)
         {
             CheckArgs(DivFunctionName, args);
+            AssertParameterCountAtLeast(DivFunctionName, 1, args);
 
             double result = 0;
             if (args.Length == 1)
@@ -257,12 +267,14 @@ namespace CottontailSchemeLib
         public static CTObject LessThan(CTObject[] args)
         {
             CheckArgs(LessThanFunctionName, args);
+            AssertParameterCountAtLeast(LessThanFunctionName, 1, args);
             return ComparePairs(args, (a, b) => a < b);
         }
 
         public static CTObject GreaterThan(CTObject[] args)
         {
             CheckArgs(GreaterThanFunctionName, args);
+            AssertParameterCountAtLeast(GreaterThanFunctionName, 1, args);
             return ComparePairs(args, (a, b) => a > b);
         }
     }
@@ -640,44 +652,44 @@ namespace CottontailSchemeLib
             if (arity != numArgs)
             {
                 Console.WriteLine("\nFailing number of args match");
-                throw new InvalidNumberOfArgsError(GetName(), arity, numArgs);
+                throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), numArgs);
             }
         }
 
         public virtual CTObject funcall0()
         {
-            throw new InvalidNumberOfArgsError(GetName(), arity, 0);
+            throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), 0);
         }
 
         public virtual CTObject funcall1(CTObject a1)
         {
             Console.WriteLine("\nCalling default funcall1");
-            throw new InvalidNumberOfArgsError(GetName(), arity, 1);
+            throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), 1);
         }
 
         public virtual CTObject funcall2(CTObject a1, CTObject a2)
         {
-            throw new InvalidNumberOfArgsError(GetName(), arity, 2);
+            throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), 2);
         }
 
         public virtual CTObject funcall3(CTObject a1, CTObject a2, CTObject a3)
         {
-            throw new InvalidNumberOfArgsError(GetName(), arity, 3);
+            throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), 3);
         }
 
         public virtual CTObject funcall4(CTObject a1, CTObject a2, CTObject a3, CTObject a4)
         {
-            throw new InvalidNumberOfArgsError(GetName(), arity, 4);
+            throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), 4);
         }
 
         public virtual CTObject funcall5(CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5)
         {
-            throw new InvalidNumberOfArgsError(GetName(), arity, 5);
+            throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), 5);
         }
 
         public virtual CTObject funcallVarargs(CTObject[] args)
         {
-            throw new InvalidNumberOfArgsError(GetName(), arity, args.Length);
+            throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), args.Length);
         }
 
         public override CTObject apply0()
