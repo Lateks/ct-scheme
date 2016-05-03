@@ -15,7 +15,14 @@ class DebugClassWriter(debug : Boolean, pw : PrintWriter) extends ClassVisitor(A
     cw
   }
 
-  var className: Option[String] = None
+  private var className: Option[String] = None
+
+  def getName: String = {
+    className match {
+      case Some(x) => x
+      case None => null
+    }
+  }
 
   def declareClass(className : String, parentClass : String): Unit = {
     this.className = Some(className)

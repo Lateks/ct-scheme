@@ -11,6 +11,11 @@ import org.objectweb.asm.Opcodes._
 
 object CodeGenerator {
 
+  abstract class Variable
+  case class StaticField(name : String) extends Variable
+
+  case class ProgramState(mainClass : DebugClassWriter, scope : Map[String, Variable])
+
   val debug = true
   val stdout = new PrintWriter(System.out)
 
@@ -125,21 +130,21 @@ object CodeGenerator {
     method.emitInvokeStatic(builtInsClass, convertedProcedureName, methodDescriptor)
   }
 
-  def pushBuiltInProcedureArgs(method : SimpleMethodVisitor, procedureName : String, args : List[Expression]): Unit = {
+  def pushBuiltInProcedureArgs(method : SimpleMethodVisitor, state : ProgramState, procedureName : String, args : List[Expression]): Unit = {
     if (builtInProceduresTakingArrayParam.contains(procedureName)) {
-      createArray(method, args, (elem : Expression) => pushExpressionResultToStack(method, elem))
+      createArray(method, args, (elem : Expression) => pushExpressionResultToStack(method, state, elem))
     } else {
       for (arg <- args) {
-        pushExpressionResultToStack(method, arg)
+        pushExpressionResultToStack(method, state, arg)
       }
     }
   }
 
-  def emitProcedureCall(method : SimpleMethodVisitor, procedure : Expression, args : List[Expression]): Unit = {
+  def emitProcedureCall(method : SimpleMethodVisitor, state : ProgramState, procedure : Expression, args : List[Expression]): Unit = {
     procedure match {
       case VariableReference(id) =>
         if (builtInProcedures.contains(id.uniqueName)) {
-          pushBuiltInProcedureArgs(method, id.uniqueName, args)
+          pushBuiltInProcedureArgs(method, state, id.uniqueName, args)
           emitBuiltInProcedureCall(method, id.uniqueName)
         } else {
           throw new CodeGenException("Not implemented yet: procedure call to " + id.uniqueName)
@@ -154,34 +159,34 @@ object CodeGenerator {
     method.emitInvokeStatic(getInternalName(classOf[BuiltIns]), "toBoolean", booleanConverterDescriptor)
   }
 
-  def emitConditional(method : SimpleMethodVisitor, cond : Expression, thenBranch : Expression, elseBranch : Expression): Unit = {
+  def emitConditional(method : SimpleMethodVisitor, state : ProgramState, cond : Expression, thenBranch : Expression, elseBranch : Expression): Unit = {
     val thenLabel = new Label()
     val exitLabel = new Label()
 
-    pushExpressionResultToStack(method, cond)
+    pushExpressionResultToStack(method, state, cond)
     emitBooleanConversion(method)
     method.visitJumpInsn(IFNE, thenLabel)
 
-    pushExpressionResultToStack(method, elseBranch)
+    pushExpressionResultToStack(method, state, elseBranch)
     method.visitJumpInsn(GOTO, exitLabel)
 
     method.visitLabel(thenLabel)
 
-    pushExpressionResultToStack(method, thenBranch)
+    pushExpressionResultToStack(method, state, thenBranch)
 
     method.visitLabel(exitLabel)
   }
 
-  def emitBeginSequence(method : SimpleMethodVisitor, exprs : List[Expression]): Unit = {
+  def emitBeginSequence(method : SimpleMethodVisitor, state : ProgramState, exprs : List[Expression]): Unit = {
     val nonTailExprs = exprs.init
     val tailExpr = exprs.last
     for (expr <- nonTailExprs) {
-      generateExpression(method, expr, keepResultOnStack = false)
+      generateExpression(method, state, expr, keepResultOnStack = false)
     }
-    generateExpression(method, tailExpr, keepResultOnStack = true)
+    generateExpression(method, state, tailExpr, keepResultOnStack = true)
   }
 
-  def emitBooleanSequence(method : SimpleMethodVisitor, exprs : List[Expression], breakValue : Boolean): Unit = {
+  def emitBooleanSequence(method : SimpleMethodVisitor, state : ProgramState, exprs : List[Expression], breakValue : Boolean): Unit = {
     if (exprs.isEmpty) {
       loadBoolean(method, !breakValue)
     } else {
@@ -191,7 +196,7 @@ object CodeGenerator {
       val comparison = if (breakValue) IFNE else IFEQ
 
       for (expr <- nonTailExprs) {
-        generateExpression(method, expr, keepResultOnStack = true)
+        generateExpression(method, state, expr, keepResultOnStack = true)
 
         method.dup()
 
@@ -200,34 +205,66 @@ object CodeGenerator {
         method.popStack()
       }
 
-      generateExpression(method, tailExpr, keepResultOnStack = true)
+      generateExpression(method, state, tailExpr, keepResultOnStack = true)
 
       method.visitLabel(exitLabel)
     }
   }
 
-  def emitSequenceExpression(method : SimpleMethodVisitor, seqType : SequenceType, exprs : List[Expression]): Unit = {
+  def emitSequenceExpression(method : SimpleMethodVisitor, state : ProgramState, seqType : SequenceType, exprs : List[Expression]): Unit = {
     seqType match {
-      case SequenceType.BeginSequence => emitBeginSequence(method, exprs)
-      case SequenceType.AndSequence => emitBooleanSequence(method, exprs, breakValue = false)
-      case SequenceType.OrSequence => emitBooleanSequence(method, exprs, breakValue = true)
+      case SequenceType.BeginSequence => emitBeginSequence(method, state, exprs)
+      case SequenceType.AndSequence => emitBooleanSequence(method, state, exprs, breakValue = false)
+      case SequenceType.OrSequence => emitBooleanSequence(method, state, exprs, breakValue = true)
     }
   }
 
-  def generateExpression(method : SimpleMethodVisitor, expression : Expression, keepResultOnStack : Boolean): Unit = {
+  def emitVariableReference(method : SimpleMethodVisitor, state : ProgramState, id : Identifier): Unit = {
+    state.scope.get(id.uniqueName) match {
+      case None =>
+        throw new CodeGenException("Unknown variable " + id.uniqueName)
+      case Some(v) =>
+        v match {
+          case StaticField(n) =>
+            method.emitGetStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
+          case _ =>
+            throw new CodeGenException("Unknown field type " + v)
+        }
+    }
+  }
+
+  def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, expression: Expression): Unit = {
+    state.scope.get(id.uniqueName) match {
+      case None =>
+        throw new CodeGenException("Unknown variable " + id.uniqueName)
+      case Some(v) =>
+        pushExpressionResultToStack(method, state, expression)
+
+        v match {
+          case StaticField(n) =>
+            method.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
+          case _ =>
+            throw new CodeGenException("Unknown field type " + v)
+        }
+
+        loadUndefined(method)
+    }
+  }
+
+  def generateExpression(method : SimpleMethodVisitor, state : ProgramState, expression : Expression, keepResultOnStack : Boolean): Unit = {
     expression match {
       case ProcedureCall(proc, args, tc) => // TODO: Not handling tail calls yet
-        emitProcedureCall(method, proc, args)
+        emitProcedureCall(method, state, proc, args)
       case ValueExpression(lit) =>
         loadLiteral(method, lit)
       case Conditional(cond, thenBranch, elseBranch) =>
-        emitConditional(method, cond, thenBranch, elseBranch)
+        emitConditional(method, state, cond, thenBranch, elseBranch)
       case SequenceExpression(sequenceType, exprs) =>
-        emitSequenceExpression(method, sequenceType, exprs)
+        emitSequenceExpression(method, state, sequenceType, exprs)
       case Assignment(id, expr) =>
-        throw new CodeGenException("Expression type not implemented yet: assignment expression")
+        emitVariableAssignment(method, state, id, expr)
       case VariableReference(id) =>
-        throw new CodeGenException("Expression type not implemented yet: variable reference expression")
+        emitVariableReference(method, state, id)
       case Closure(id) =>
         throw new CodeGenException("Expression type not implemented yet: closure")
       case UndefinedValue() =>
@@ -238,22 +275,22 @@ object CodeGenerator {
       method.popStack()
   }
 
-  def pushExpressionResultToStack(method : SimpleMethodVisitor, expression : Expression): Unit = {
-    generateExpression(method, expression, true)
+  def pushExpressionResultToStack(method : SimpleMethodVisitor, state : ProgramState, expression : Expression): Unit = {
+    generateExpression(method, state, expression, true)
   }
 
-  def generateTopLevelExpression(method : SimpleMethodVisitor, expression: Expression): Unit = {
-    generateExpression(method, expression, false)
+  def generateTopLevelExpression(method : SimpleMethodVisitor, state : ProgramState, expression: Expression): Unit = {
+    generateExpression(method, state, expression, false)
   }
 
-  def generateTopLevelModule(program: ProgramSyntaxTree, mainMethod : SimpleMethodVisitor): Unit = {
+  def generateTopLevelModule(program: ProgramSyntaxTree, mainMethod : SimpleMethodVisitor, state : ProgramState): Unit = {
     // TODO: variable declarations
     // TODO: procedure definitions
 
     mainMethod.visitCode()
 
     for (expr <- program.expressions) {
-      generateTopLevelExpression(mainMethod, expr)
+      generateTopLevelExpression(mainMethod, state, expr)
     }
 
     mainMethod.emitReturn()
@@ -262,13 +299,24 @@ object CodeGenerator {
     mainMethod.visitEnd()
   }
 
+  def introduceVariables(program : ProgramSyntaxTree, mainClass : DebugClassWriter): Map[String, Variable] = {
+    def introduceVariable(v : VariableDeclaration) = {
+      mainClass.visitField(ACC_PRIVATE | ACC_STATIC, v.id.uniqueName, getDescriptor(classOf[Object]), null, null).visitEnd()
+      (v.id.uniqueName, StaticField(v.id.uniqueName))
+    }
+
+    program.variableDeclarations.map(introduceVariable).toMap
+  }
+
   def generateCodeFor(program : ProgramSyntaxTree) : Unit = {
     val mainClass = declareClass(program.programName, getInternalName(classOf[Object]))
+    val scope = introduceVariables(program, mainClass)
+    val state = ProgramState(mainClass, scope)
 
     val mainMethodDescriptor = "([" + getDescriptor(classOf[String]) + ")" + Type.VOID_TYPE.getDescriptor
     val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor)
 
-    generateTopLevelModule(program, mainMethod)
+    generateTopLevelModule(program, mainMethod, state)
 
     mainClass.visitEnd()
     mainClass.writeToDisk()

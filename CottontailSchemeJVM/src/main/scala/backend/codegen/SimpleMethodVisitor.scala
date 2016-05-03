@@ -10,6 +10,10 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
     methodVisitor.visitFieldInsn(GETSTATIC, className, fieldName, fieldType)
   }
 
+  def emitPutStatic(className : String, fieldName : String, fieldType : String): Unit = {
+    methodVisitor.visitFieldInsn(PUTSTATIC, className, fieldName, fieldType)
+  }
+
   def emitInvokeVirtual(ownerType : String, methodName : String, methodType : String, onInterface : Boolean): Unit = {
     methodVisitor.visitMethodInsn(INVOKEVIRTUAL, ownerType, methodName, methodType, onInterface)
   }
