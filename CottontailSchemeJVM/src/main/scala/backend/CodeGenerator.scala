@@ -284,7 +284,6 @@ object CodeGenerator {
   }
 
   def generateTopLevelModule(program: ProgramSyntaxTree, mainMethod : SimpleMethodVisitor, state : ProgramState): Unit = {
-    // TODO: variable declarations
     // TODO: procedure definitions
 
     mainMethod.visitCode()

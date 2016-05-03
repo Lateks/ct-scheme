@@ -12,6 +12,11 @@ public class BuiltIns {
         }
     }
 
+    private static void assertParameterCountAtLeast(String procedureName, int n, Object[] args) {
+        if (args.length < n)
+            throw new ArityMismatchError(procedureName, "at least " + n, args.length);
+    }
+
     private static void assertNumber(String procedureName, Object n) {
         if (!(n instanceof CTNumber)) {
             String typeName = getTypeName(n);
@@ -95,6 +100,7 @@ public class BuiltIns {
         for (Object arg : args) {
             assertNumber("-", arg);
         }
+        assertParameterCountAtLeast("-", 1, args);
 
         double result = 0;
         if (args.length == 1) {
@@ -123,6 +129,7 @@ public class BuiltIns {
         for (Object arg : args) {
             assertNumber("/", arg);
         }
+        assertParameterCountAtLeast("/", 1, args);
 
         double result = 0;
         if (args.length == 1) {
@@ -141,6 +148,7 @@ public class BuiltIns {
         for (Object arg : args) {
             assertNumber("<", arg);
         }
+        assertParameterCountAtLeast("<", 1, args);
 
         return comparePairs(args, Comparator.naturalOrder());
     }
@@ -149,6 +157,7 @@ public class BuiltIns {
         for (Object arg : args) {
             assertNumber(">", arg);
         }
+        assertParameterCountAtLeast(">", 1, args);
 
         return comparePairs(args, Comparator.reverseOrder());
     }
