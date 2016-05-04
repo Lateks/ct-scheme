@@ -1,7 +1,6 @@
 package backend
 
 import java.io.PrintWriter
-import java.lang.invoke.MethodHandle
 
 import backend.ast.SequenceType.SequenceType
 import backend.ast._
@@ -142,18 +141,22 @@ object CodeGenerator {
     }
   }
 
+  def pushArrayArgs(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression]): Unit = {
+    createArray(method, args, (elem : Expression) => pushExpressionResultToStack(method, state, elem))
+  }
+
   def pushBuiltInProcedureArgs(method : SimpleMethodVisitor, state : ProgramState, procedureName : String, args : List[Expression]): Unit = {
     if (builtInProceduresTakingArrayParam.contains(procedureName)) {
-      createArray(method, args, (elem : Expression) => pushExpressionResultToStack(method, state, elem))
+      pushArrayArgs(method, state, args)
     } else {
       pushArgs(method, state, args)
     }
   }
 
   def emitFirstClassProcedureCallToObjectOnStack(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression]): Unit = {
-    method.visitTypeInsn(CHECKCAST, getInternalName(classOf[MethodHandle]))
-    pushArgs(method, state, args)
-    method.visitMethodInsn(INVOKEVIRTUAL, getInternalName(classOf[MethodHandle]), "invoke", makeObjectMethodDescriptor(args.length, false), false)
+    method.visitTypeInsn(CHECKCAST, getInternalName(classOf[CTProcedure]))
+    pushArrayArgs(method, state, args)
+    method.visitMethodInsn(INVOKEINTERFACE, getInternalName(classOf[CTProcedure]), "apply", makeObjectMethodDescriptor(1, isArray = true), onInterface = true)
   }
 
   def emitProcedureCall(method : SimpleMethodVisitor, state : ProgramState, procedure : Expression, args : List[Expression]): Unit = {
@@ -248,7 +251,7 @@ object CodeGenerator {
       case None =>
         if (builtInProcedures.contains(id.uniqueName)) {
           val builtInName = convertBuiltInProcedureName(id.uniqueName)
-          method.emitGetStatic(getInternalName(classOf[BuiltInProcObjects]), builtInName, getDescriptor(classOf[MethodHandle]))
+          method.emitGetStatic(getInternalName(classOf[BuiltInProcObjects]), builtInName, getDescriptor(classOf[CTProcedure]))
         } else {
           throw new CodeGenException("Unknown variable " + id.name)
         }
@@ -391,6 +394,7 @@ object CodeGenerator {
     newState
   }
 
+  /*
   def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodName : String, closure : ClosureDefinition): Unit = {
     def loadMethodType () = {
       method.visitLdcInsn(Type.getType(classOf[Object])) // load return type
@@ -469,6 +473,7 @@ object CodeGenerator {
     initializer.visitMaxs(0, 0)
     initializer.visitEnd()
   }
+  */
 
   def generateCodeFor(program : ProgramSyntaxTree) : Unit = {
     val mainClass = declareClass(program.programName, getInternalName(classOf[Object]))
@@ -482,7 +487,7 @@ object CodeGenerator {
 
     generateProcedureBody(mainMethod, newState, program.expressions, isMainMethod = true)
 
-    makeInitializer(program, newState)
+    // makeInitializer(program, newState)
 
     mainClass.visitEnd()
     mainClass.writeToDisk()

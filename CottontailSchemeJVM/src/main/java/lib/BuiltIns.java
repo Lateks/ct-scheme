@@ -1,6 +1,5 @@
 package lib;
 
-import java.lang.invoke.MethodHandle;
 import java.util.Comparator;
 
 public class BuiltIns {
@@ -50,7 +49,7 @@ public class BuiltIns {
     }
 
     public static Object display(Object obj) {
-        if (obj instanceof MethodHandle) {
+        if (obj instanceof CTProcedure) {
             System.out.print("<#procedure>");
         } else {
             System.out.print(obj);

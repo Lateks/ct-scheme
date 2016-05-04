@@ -1,56 +1,43 @@
 package lib;
 
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-
 public class ProcedureHelpers {
-
-    public static Object matchArity(String procedureName, Integer arity, MethodHandle m, Object[] args) {
-        if (args.length != arity)
-            throw new ArityMismatchError(procedureName, arity, args.length);
-
-        try {
-            return m.asSpreader(Object[].class, arity).invoke(args);
-        } catch (Throwable t) {
-            throw new InternalError(t);
-        }
+    private static void checkArgs(String procedureName, int expectedArity, Object[] args) {
+        if (args.length != expectedArity)
+            throw new ArityMismatchError(procedureName, expectedArity, args.length);
     }
 
-    public static Object convertVarargs(MethodHandle m, Object[] args) {
-        try {
-            return m.invoke(BuiltIns.toList(args));
-        } catch (Throwable t) {
-            throw new InternalError(t);
-        }
+    public static Object match0(String procedureName, CTProcedure0 proc, Object[] args) {
+        checkArgs(procedureName, 0, args);
+        return proc.apply();
     }
 
-    public static MethodHandle getArityMatcher(MethodHandle m, String procedureName, int arity) {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
-        MethodType mt = MethodType.methodType(Object.class, String.class, Integer.class, MethodHandle.class, Object[].class);
-
-        try {
-            MethodHandle mh = lookup.findStatic(ProcedureHelpers.class, "matchArity", mt);
-            return mh.bindTo(procedureName).bindTo(arity).bindTo(m).asVarargsCollector(Object[].class);
-        } catch (NoSuchMethodException | IllegalAccessException e) {
-            throw new InternalError(e);
-        }
+    public static Object match1(String procedureName, CTProcedure1 proc, Object[] args) {
+        checkArgs(procedureName, 1, args);
+        return proc.apply(args[0]);
     }
 
-    public static MethodHandle getVarargsMatcher(MethodHandle m) {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
-        MethodType mt = MethodType.methodType(Object.class, MethodHandle.class, Object[].class);
-
-        try {
-            MethodHandle mh = lookup.findStatic(ProcedureHelpers.class, "convertVarargs", mt);
-            return mh.bindTo(m).asVarargsCollector(Object[].class);
-        } catch (NoSuchMethodException | IllegalAccessException e) {
-            throw new InternalError(e);
-        }
+    public static Object match2(String procedureName, CTProcedure2 proc, Object[] args) {
+        checkArgs(procedureName, 2, args);
+        return proc.apply(args[0], args[1]);
     }
 
-    public static MethodHandle getBuiltInVarargsMatcher(MethodHandle m) {
-        return m.asVarargsCollector(Object[].class);
+    public static Object match3(String procedureName, CTProcedure3 proc, Object[] args) {
+        checkArgs(procedureName, 3, args);
+        return proc.apply(args[0], args[1], args[2]);
+    }
+
+    public static Object match4(String procedureName, CTProcedure4 proc, Object[] args) {
+        checkArgs(procedureName, 4, args);
+        return proc.apply(args[0], args[1], args[2], args[3]);
+    }
+
+    public static Object match5(String procedureName, CTProcedure5 proc, Object[] args) {
+        checkArgs(procedureName, 5, args);
+        return proc.apply(args[0], args[1], args[2], args[3], args[4]);
+    }
+
+    public static Object matchVarargs(CTProcedure1 proc, Object[] args) {
+        return proc.apply(BuiltIns.toList(args));
     }
 
 }

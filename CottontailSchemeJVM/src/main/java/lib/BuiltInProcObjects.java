@@ -1,53 +1,39 @@
 package lib;
 
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-
 public class BuiltInProcObjects {
-    public static final MethodHandle car;
-    public static final MethodHandle cdr;
-    public static final MethodHandle cons;
-    public static final MethodHandle display;
-    public static final MethodHandle areEq;
-    public static final MethodHandle toList;
-    public static final MethodHandle newline;
-    public static final MethodHandle not;
-    public static final MethodHandle isNull;
-    public static final MethodHandle isZero;
-    public static final MethodHandle plus;
-    public static final MethodHandle minus;
-    public static final MethodHandle mult;
-    public static final MethodHandle div;
-    public static final MethodHandle lessThan;
-    public static final MethodHandle greaterThan;
+    public static final CTProcedure car;
+    public static final CTProcedure cdr;
+    public static final CTProcedure cons;
+    public static final CTProcedure display;
+    public static final CTProcedure areEq;
+    public static final CTProcedure toList;
+    public static final CTProcedure newline;
+    public static final CTProcedure not;
+    public static final CTProcedure isNull;
+    public static final CTProcedure isZero;
+    public static final CTProcedure plus;
+    public static final CTProcedure minus;
+    public static final CTProcedure mult;
+    public static final CTProcedure div;
+    public static final CTProcedure lessThan;
+    public static final CTProcedure greaterThan;
 
     static {
-        MethodHandles.Lookup lookup = MethodHandles.lookup();
-        MethodType nullaryMethodType = MethodType.methodType(Object.class);
-        MethodType unaryMethodType = MethodType.methodType(Object.class, Object.class);
-        MethodType binaryMethodType = MethodType.methodType(Object.class, Object.class, Object.class);
-        MethodType varargsMethodType = MethodType.methodType(Object.class, Object[].class);
-
-        try {
-            car = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "car", unaryMethodType), BuiltIns.procNameCar, 1);
-            cdr = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "cdr", unaryMethodType), BuiltIns.procNameCdr, 1);
-            cons = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "cons", binaryMethodType), BuiltIns.procNameCons, 2);
-            display = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "display", unaryMethodType), BuiltIns.procNameDisplay, 1);
-            areEq = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "areEq", binaryMethodType), BuiltIns.procNameEq, 2);
-            toList = ProcedureHelpers.getVarargsMatcher(lookup.findStatic(BuiltIns.class, "toList", varargsMethodType));
-            newline = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "newline", nullaryMethodType), BuiltIns.procNameNewline, 0);
-            not = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "not", unaryMethodType), BuiltIns.procNameNot, 1);
-            isNull = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "isNull", unaryMethodType), BuiltIns.procNameNull, 1);
-            isZero = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "isZero", unaryMethodType), BuiltIns.procNameZero, 1);
-            plus = ProcedureHelpers.getBuiltInVarargsMatcher(lookup.findStatic(BuiltIns.class, "plus", varargsMethodType));
-            minus = ProcedureHelpers.getBuiltInVarargsMatcher(lookup.findStatic(BuiltIns.class, "minus", varargsMethodType));
-            mult = ProcedureHelpers.getBuiltInVarargsMatcher(lookup.findStatic(BuiltIns.class, "mult", varargsMethodType));
-            div = ProcedureHelpers.getBuiltInVarargsMatcher(lookup.findStatic(BuiltIns.class, "div", varargsMethodType));
-            lessThan = ProcedureHelpers.getBuiltInVarargsMatcher(lookup.findStatic(BuiltIns.class, "lessThan", varargsMethodType));
-            greaterThan = ProcedureHelpers.getBuiltInVarargsMatcher(lookup.findStatic(BuiltIns.class, "greaterThan", varargsMethodType));
-        } catch (NoSuchMethodException | IllegalAccessException e) {
-            throw new InternalError(e);
-        }
+        car = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameCar, BuiltIns::car, args);
+        cdr = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameCdr, BuiltIns::cdr, args);
+        cons = (Object[] args) -> ProcedureHelpers.match2(BuiltIns.procNameCons, BuiltIns::cons, args);
+        display = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameDisplay, BuiltIns::display, args);
+        areEq = (Object[] args) -> ProcedureHelpers.match2(BuiltIns.procNameEq, BuiltIns::areEq, args);
+        toList = BuiltIns::toList;
+        newline = (Object[] args) -> ProcedureHelpers.match0(BuiltIns.procNameNewline, BuiltIns::newline, args);
+        not = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameNot, BuiltIns::not, args);
+        isNull = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameNull, BuiltIns::isNull, args);
+        isZero = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameZero, BuiltIns::isZero, args);
+        plus = BuiltIns::plus;
+        minus = BuiltIns::minus;
+        mult = BuiltIns::mult;
+        div = BuiltIns::div;
+        lessThan = BuiltIns::lessThan;
+        greaterThan = BuiltIns::greaterThan;
     }
 }
