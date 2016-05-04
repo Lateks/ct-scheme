@@ -30,16 +30,16 @@ public class BuiltInProcObjects {
         MethodType varargsMethodType = MethodType.methodType(Object.class, Object[].class);
 
         try {
-            car = ProcedureHelpers.getArityMatcher(BuiltIns.procNameCar, 1, lookup.findStatic(BuiltIns.class, "car", unaryMethodType));
-            cdr = ProcedureHelpers.getArityMatcher(BuiltIns.procNameCdr, 1, lookup.findStatic(BuiltIns.class, "cdr", unaryMethodType));
-            cons = ProcedureHelpers.getArityMatcher(BuiltIns.procNameCons, 2, lookup.findStatic(BuiltIns.class, "cons", binaryMethodType));
-            display = ProcedureHelpers.getArityMatcher(BuiltIns.procNameDisplay, 1, lookup.findStatic(BuiltIns.class, "display", unaryMethodType));
-            areEq = ProcedureHelpers.getArityMatcher(BuiltIns.procNameEq, 2, lookup.findStatic(BuiltIns.class, "areEq", binaryMethodType));
+            car = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "car", unaryMethodType), BuiltIns.procNameCar, 1);
+            cdr = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "cdr", unaryMethodType), BuiltIns.procNameCdr, 1);
+            cons = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "cons", binaryMethodType), BuiltIns.procNameCons, 2);
+            display = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "display", unaryMethodType), BuiltIns.procNameDisplay, 1);
+            areEq = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "areEq", binaryMethodType), BuiltIns.procNameEq, 2);
             toList = ProcedureHelpers.getVarargsMatcher(lookup.findStatic(BuiltIns.class, "toList", varargsMethodType));
-            newline = ProcedureHelpers.getArityMatcher(BuiltIns.procNameNewline, 0, lookup.findStatic(BuiltIns.class, "newline", nullaryMethodType));
-            not = ProcedureHelpers.getArityMatcher(BuiltIns.procNameNot, 1, lookup.findStatic(BuiltIns.class, "not", unaryMethodType));
-            isNull = ProcedureHelpers.getArityMatcher(BuiltIns.procNameNull, 1, lookup.findStatic(BuiltIns.class, "isNull", unaryMethodType));
-            isZero = ProcedureHelpers.getArityMatcher(BuiltIns.procNameZero, 1, lookup.findStatic(BuiltIns.class, "isZero", unaryMethodType));
+            newline = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "newline", nullaryMethodType), BuiltIns.procNameNewline, 0);
+            not = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "not", unaryMethodType), BuiltIns.procNameNot, 1);
+            isNull = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "isNull", unaryMethodType), BuiltIns.procNameNull, 1);
+            isZero = ProcedureHelpers.getArityMatcher(lookup.findStatic(BuiltIns.class, "isZero", unaryMethodType), BuiltIns.procNameZero, 1);
             plus = ProcedureHelpers.getBuiltInVarargsMatcher(lookup.findStatic(BuiltIns.class, "plus", varargsMethodType));
             minus = ProcedureHelpers.getBuiltInVarargsMatcher(lookup.findStatic(BuiltIns.class, "minus", varargsMethodType));
             mult = ProcedureHelpers.getBuiltInVarargsMatcher(lookup.findStatic(BuiltIns.class, "mult", varargsMethodType));

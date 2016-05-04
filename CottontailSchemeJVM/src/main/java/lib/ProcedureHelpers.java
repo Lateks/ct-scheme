@@ -25,7 +25,7 @@ public class ProcedureHelpers {
         }
     }
 
-    public static MethodHandle getArityMatcher(String procedureName, int arity, MethodHandle m) {
+    public static MethodHandle getArityMatcher(MethodHandle m, String procedureName, int arity) {
         MethodHandles.Lookup lookup = MethodHandles.lookup();
         MethodType mt = MethodType.methodType(Object.class, String.class, Integer.class, MethodHandle.class, Object[].class);
 

@@ -173,7 +173,8 @@ object CodeGenerator {
           throw new CodeGenException("Unknown procedure " + id.name)
         }
       case e =>
-        throw new CodeGenException("Not implemented yet: first class procedure call")
+        pushExpressionResultToStack(method, state, e)
+        emitFirstClassProcedureCallToObjectOnStack(method, state, args)
     }
   }
 
@@ -338,13 +339,17 @@ object CodeGenerator {
   }
 
   def introduceVariables(program : ProgramSyntaxTree, mainClass : DebugClassWriter): Map[String, Variable] = {
-    def introduceVariable(v : VariableDeclaration) = {
-      mainClass.visitField(ACC_PRIVATE | ACC_STATIC, v.id.uniqueName, getDescriptor(classOf[Object]), null, null).visitEnd()
-      (v.id.uniqueName, StaticField(v.id.uniqueName))
+    def introduceVariable(name : String) = {
+      mainClass.visitField(ACC_PRIVATE | ACC_STATIC, name, getDescriptor(classOf[Object]), null, null).visitEnd()
+      (name, StaticField(name))
     }
 
-    // TODO: variables for procedures that are set!
-    program.variableDeclarations.map(introduceVariable).toMap
+    val topLevelVariables = program.variableDeclarations.map((v) => introduceVariable(v.id.uniqueName))
+    val procedureObjectVariables = program.procedureDefinitions
+      .filter((p) => p.closure.isUsedAsFirstClassValue || p.closure.isReassigned)
+      .map((p) => introduceVariable(p.id.uniqueName))
+
+    (topLevelVariables ::: procedureObjectVariables).toMap
   }
 
   def generateTopLevelProcedures(program : ProgramSyntaxTree, state : ProgramState, mainClass : DebugClassWriter) = {
@@ -362,7 +367,6 @@ object CodeGenerator {
         case None =>
           throw new CodeGenException("Internal error: could not find procedure " + p.id.uniqueName)
         case Some(mv) =>
-          // TODO: local procedures?
           val argIds = p.closure.formals match {
             case SingleArgFormals(id) => List(id.uniqueName)
             case MultiArgFormals(ids) => ids.map((id) => id.uniqueName)
@@ -387,6 +391,85 @@ object CodeGenerator {
     newState
   }
 
+  def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodName : String, closure : ClosureDefinition): Unit = {
+    def loadMethodType () = {
+      method.visitLdcInsn(Type.getType(classOf[Object])) // load return type
+
+      val methodTypeType = getInternalName(classOf[java.lang.invoke.MethodType])
+      val methodTypeMethodName = "methodType"
+      closure.formals match {
+        case SingleArgFormals(id) =>
+          method.visitLdcInsn(Type.getType(classOf[Object]))
+          method.emitInvokeStatic(methodTypeType, methodTypeMethodName, "(Ljava/lang/Class;Ljava/lang/Class;)Ljava/lang/invoke/MethodType;")
+        case MultiArgFormals(ids) =>
+          if (ids.isEmpty) {
+            method.emitInvokeStatic(methodTypeType, methodTypeMethodName, "(Ljava/lang/Class;)Ljava/lang/invoke/MethodType;")
+          } else if (ids.length == 1) {
+            method.visitLdcInsn(Type.getType(classOf[Object]))
+            method.emitInvokeStatic(methodTypeType, methodTypeMethodName, "(Ljava/lang/Class;Ljava/lang/Class;)Ljava/lang/invoke/MethodType;")
+          } else {
+            method.visitLdcInsn(Type.getType(classOf[Object]))
+            method.visitLdcInsn(ids.tail.length.asInstanceOf[java.lang.Integer])
+            method.visitTypeInsn(ANEWARRAY, "java/lang/Class")
+            for ((_, i) <- ids.tail.zipWithIndex) {
+              method.dup()
+              method.visitLdcInsn(i.asInstanceOf[java.lang.Integer])
+              method.visitLdcInsn(Type.getType(classOf[Object]))
+              method.storeInArray()
+            }
+            method.emitInvokeStatic(methodTypeType, methodTypeMethodName, "(Ljava/lang/Class;Ljava/lang/Class;[Ljava/lang/Class;)Ljava/lang/invoke/MethodType;")
+          }
+      }
+    }
+
+    method.emitInvokeStatic("java/lang/invoke/MethodHandles", "lookup", "()Ljava/lang/invoke/MethodHandles$Lookup;")
+
+    method.visitLdcInsn(Type.getType("L" + state.mainClass.getName + ";"))
+    method.visitLdcInsn(methodName)
+
+    loadMethodType()
+
+    method.emitInvokeVirtual("java/lang/invoke/MethodHandles$Lookup", "findStatic", "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;", onInterface = false)
+  }
+
+  def attachArgumentHandler(method : SimpleMethodVisitor, methodName : String, closure : ClosureDefinition): Unit = {
+    closure.formals match {
+      case SingleArgFormals(id) =>
+        method.emitInvokeStatic(getInternalName(classOf[lib.ProcedureHelpers]), "getVarargsMatcher", "(Ljava/lang/invoke/MethodHandle;)Ljava/lang/invoke/MethodHandle;")
+      case MultiArgFormals(ids) =>
+        method.visitLdcInsn(methodName)
+        method.visitLdcInsn(ids.length.asInstanceOf[java.lang.Integer])
+        method.emitInvokeStatic(getInternalName(classOf[lib.ProcedureHelpers]), "getArityMatcher", "(Ljava/lang/invoke/MethodHandle;Ljava/lang/String;I)Ljava/lang/invoke/MethodHandle;")
+    }
+  }
+
+  def makeInitializer(program : ProgramSyntaxTree, state : ProgramState) = {
+    val initializer = new SimpleMethodVisitor(state.mainClass, ACC_STATIC, "<clinit>", "()V")
+    initializer.visitCode()
+
+    val firstClassProcs = program.procedureDefinitions
+      .filter((p) => p.closure.isUsedAsFirstClassValue || p.closure.isReassigned)
+
+    for (p <- firstClassProcs) {
+      state.scope.get(p.id.uniqueName) match {
+        case None => throw new CodeGenException("Internal error: field " + p.id.uniqueName + " has not been declared.")
+        case Some(v) =>
+          v match {
+            case StaticField(n) =>
+              loadProcedureObject(initializer, state, p.id.uniqueName, p.closure)
+              attachArgumentHandler(initializer, p.id.name, p.closure)
+              initializer.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
+            case e =>
+              throw new CodeGenException("Internal error: Unexpected field type for " + p.id.uniqueName + ": " + e)
+          }
+      }
+    }
+
+    initializer.emitReturn()
+    initializer.visitMaxs(0, 0)
+    initializer.visitEnd()
+  }
+
   def generateCodeFor(program : ProgramSyntaxTree) : Unit = {
     val mainClass = declareClass(program.programName, getInternalName(classOf[Object]))
     val scope = introduceVariables(program, mainClass)
@@ -398,6 +481,8 @@ object CodeGenerator {
     val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor)
 
     generateProcedureBody(mainMethod, newState, program.expressions, isMainMethod = true)
+
+    makeInitializer(program, newState)
 
     mainClass.visitEnd()
     mainClass.writeToDisk()

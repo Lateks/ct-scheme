@@ -38,4 +38,4 @@ type Program =
     | ValidProgram of ProgramStructure
     | ProgramAnalysisError of string
 
-val analyse: ASTBuilder.Expression list -> string -> Program
+val analyse: ASTBuilder.Expression list -> string -> bool -> Program

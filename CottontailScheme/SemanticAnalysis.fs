@@ -789,9 +789,7 @@ let rebindTopLevelFirstClassProcedureReferences (procs, vars, exprs) =
 // Performs several passes through the AST (passes documented
 // above) producing a Program value (either ValidProgram or
 // ProgramAnalysisError).
-//
-// TODO: prevent attempts to set constants (for simplicity)
-let analyse exprs programName =
+let analyse exprs programName rebind =
     try
         let builtInNames = Map.toList IdentifierHelpers.builtIns
                            |> List.map (fun (k, v) -> k)
@@ -806,7 +804,10 @@ let analyse exprs programName =
 
         let procs, vars, exprs = moduleBody
                                  |> convertModuleOrProcedureBody
-                                 |> rebindTopLevelFirstClassProcedureReferences
+                                 |> fun converted -> if rebind then
+                                                        rebindTopLevelFirstClassProcedureReferences converted
+                                                     else
+                                                        converted
 
         ValidProgram { programName = programName;
                        procedureDefinitions = procs;

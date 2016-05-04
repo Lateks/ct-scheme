@@ -56,6 +56,7 @@ let main args =
                           | e -> let err = sprintf "Error reading file %s:\n%A" args.[fileNamePosition] e
                                  displayError err
                                  None
+        let rebindTopLevelNames = !outputType = Exe
 
         try
             match programCode with
@@ -64,7 +65,7 @@ let main args =
                 | Success(result, _, _)
                     -> match buildAST result with
                         | ASTBuildSuccess exprs
-                           -> match analyse exprs programName with
+                           -> match analyse exprs programName rebindTopLevelNames with
                               | ValidProgram p -> match !outputType with
                                                   | Json -> outputJson p
                                                   | Exe -> generateCode p

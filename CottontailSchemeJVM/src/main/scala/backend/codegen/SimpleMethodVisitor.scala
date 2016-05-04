@@ -15,6 +15,14 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
     methodVisitor.visitFieldInsn(PUTSTATIC, className, fieldName, fieldType)
   }
 
+  def emitGetLocal(index : Int): Unit = {
+    methodVisitor.visitVarInsn(ALOAD, index)
+  }
+
+  def emitStoreLocal(index : Int): Unit = {
+    methodVisitor.visitVarInsn(ASTORE, index)
+  }
+
   def emitInvokeVirtual(ownerType : String, methodName : String, methodType : String, onInterface : Boolean): Unit = {
     methodVisitor.visitMethodInsn(INVOKEVIRTUAL, ownerType, methodName, methodType, onInterface)
   }
