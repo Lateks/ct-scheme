@@ -14,8 +14,9 @@ object CodeGenerator {
 
   abstract class Variable
   case class StaticField(name : String) extends Variable
+  case class ProcedureArgument(name : String, index : Int) extends Variable
 
-  case class ProgramState(mainClass : DebugClassWriter, scope : Map[String, Variable])
+  case class ProgramState(mainClass : DebugClassWriter, scope : Map[String, Variable], methods : Map[String, SimpleMethodVisitor])
 
   val debug = true
   val stdout = new PrintWriter(System.out)
@@ -161,9 +162,15 @@ object CodeGenerator {
         if (builtInProcedures.contains(id.uniqueName)) {
           pushBuiltInProcedureArgs(method, state, id.uniqueName, args)
           emitBuiltInProcedureCall(method, id.uniqueName)
-        } else {
+        } else if (state.scope.get(id.uniqueName).isDefined) {
           emitVariableReference(method, state, id)
           emitFirstClassProcedureCallToObjectOnStack(method, state, args)
+        } else if (state.methods.get(id.uniqueName).isDefined) {
+          val m = state.methods.get(id.uniqueName).get
+          pushArgs(method, state, args)
+          method.emitInvokeStatic(state.mainClass.getName, id.uniqueName, m.descriptor)
+        } else {
+          throw new CodeGenException("Unknown procedure " + id.name)
         }
       case e =>
         throw new CodeGenException("Not implemented yet: first class procedure call")
@@ -248,6 +255,8 @@ object CodeGenerator {
         v match {
           case StaticField(n) =>
             method.emitGetStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
+          case ProcedureArgument(n, i) =>
+            method.visitVarInsn(ALOAD, i)
           case _ =>
             throw new CodeGenException("Unknown field type " + v)
         }
@@ -264,6 +273,8 @@ object CodeGenerator {
         v match {
           case StaticField(n) =>
             method.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
+          case ProcedureArgument(n, i) =>
+            method.visitVarInsn(ASTORE, i)
           case _ =>
             throw new CodeGenException("Unknown field type " + v)
         }
@@ -304,19 +315,26 @@ object CodeGenerator {
     generateExpression(method, state, expression, false)
   }
 
-  def generateTopLevelModule(program: ProgramSyntaxTree, mainMethod : SimpleMethodVisitor, state : ProgramState): Unit = {
-    // TODO: procedure definitions
+  def generateProcedureBody(method : SimpleMethodVisitor, state : ProgramState, expressions : List[Expression], isMainMethod : Boolean): Unit = {
+    method.visitCode()
 
-    mainMethod.visitCode()
+    if (isMainMethod) {
+      for (expr <- expressions) {
+        generateTopLevelExpression(method, state, expr)
+      }
 
-    for (expr <- program.expressions) {
-      generateTopLevelExpression(mainMethod, state, expr)
+      method.emitReturn()
+    } else {
+      for (expr <- expressions.init) {
+        generateTopLevelExpression(method, state, expr)
+      }
+
+      pushExpressionResultToStack(method, state, expressions.last)
+      method.emitObjectReturn()
     }
 
-    mainMethod.emitReturn()
-
-    mainMethod.setMaxs()
-    mainMethod.visitEnd()
+    method.setMaxs()
+    method.visitEnd()
   }
 
   def introduceVariables(program : ProgramSyntaxTree, mainClass : DebugClassWriter): Map[String, Variable] = {
@@ -325,18 +343,59 @@ object CodeGenerator {
       (v.id.uniqueName, StaticField(v.id.uniqueName))
     }
 
+    // TODO: variables for procedures that are set!
     program.variableDeclarations.map(introduceVariable).toMap
+  }
+
+  def generateTopLevelProcedures(program : ProgramSyntaxTree, state : ProgramState, mainClass : DebugClassWriter) = {
+    def generateProcedure(p : ProcedureDefinition) = {
+      val descriptor = p.closure.formals match {
+        case SingleArgFormals(id) => makeObjectMethodDescriptor(1, isArray = false)
+        case MultiArgFormals(ids) => makeObjectMethodDescriptor(ids.length, isArray = false)
+      }
+      val m = new SimpleMethodVisitor(mainClass, ACC_PRIVATE + ACC_STATIC, p.id.uniqueName, descriptor)
+      (p.id.uniqueName, m)
+    }
+
+    def procedureBody(p : ProcedureDefinition, state : ProgramState) = {
+      state.methods.get(p.id.uniqueName) match {
+        case None =>
+          throw new CodeGenException("Internal error: could not find procedure " + p.id.uniqueName)
+        case Some(mv) =>
+          // TODO: variable declarations and procedures?
+          val args = p.closure.formals match {
+            case SingleArgFormals(id) => List((id.uniqueName, ProcedureArgument(id.uniqueName, 0)))
+            case MultiArgFormals(ids) =>
+              ids.map((id) => id.uniqueName)
+                .zipWithIndex.map((i) => (i._1, ProcedureArgument(i._1, i._2)))
+          }
+          val newScope = args.foldLeft(state.scope)((scope : Map[String, Variable], v) => scope.updated(v._1, v._2))
+          val newState = state.copy(scope = newScope)
+          generateProcedureBody(mv, newState, p.closure.body, isMainMethod = false)
+      }
+    }
+
+    val methods = program.procedureDefinitions.map(generateProcedure).toMap
+    val newState = state.copy(methods = methods)
+
+    for (pd <- program.procedureDefinitions) {
+      procedureBody(pd, newState)
+    }
+
+    newState
   }
 
   def generateCodeFor(program : ProgramSyntaxTree) : Unit = {
     val mainClass = declareClass(program.programName, getInternalName(classOf[Object]))
     val scope = introduceVariables(program, mainClass)
-    val state = ProgramState(mainClass, scope)
+    val state = ProgramState(mainClass, scope, Map.empty)
+
+    val newState = generateTopLevelProcedures(program, state, mainClass)
 
     val mainMethodDescriptor = "([" + getDescriptor(classOf[String]) + ")" + Type.VOID_TYPE.getDescriptor
     val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor)
 
-    generateTopLevelModule(program, mainMethod, state)
+    generateProcedureBody(mainMethod, newState, program.expressions, isMainMethod = true)
 
     mainClass.visitEnd()
     mainClass.writeToDisk()

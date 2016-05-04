@@ -5,6 +5,7 @@ import org.objectweb.asm.Opcodes._
 
 class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : String, signature : String) extends MethodVisitor(ASM5) {
   val methodVisitor = cv.visitMethod(visibilityFlags, name, signature, null, new Array[String](0))
+  val descriptor = signature
 
   def emitGetStatic(className : String, fieldName : String, fieldType : String): Unit = {
     methodVisitor.visitFieldInsn(GETSTATIC, className, fieldName, fieldType)
