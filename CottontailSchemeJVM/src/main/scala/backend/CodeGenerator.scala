@@ -14,7 +14,7 @@ object CodeGenerator {
 
   abstract class Variable
   case class StaticField(name : String) extends Variable
-  case class ProcedureArgument(name : String, index : Int) extends Variable
+  case class LocalVariable(name : String, index : Int) extends Variable
 
   case class ProgramState(mainClass : DebugClassWriter, scope : Map[String, Variable], methods : Map[String, SimpleMethodVisitor])
 
@@ -255,7 +255,7 @@ object CodeGenerator {
         v match {
           case StaticField(n) =>
             method.emitGetStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
-          case ProcedureArgument(n, i) =>
+          case LocalVariable(n, i) =>
             method.visitVarInsn(ALOAD, i)
           case _ =>
             throw new CodeGenException("Unknown field type " + v)
@@ -273,7 +273,7 @@ object CodeGenerator {
         v match {
           case StaticField(n) =>
             method.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
-          case ProcedureArgument(n, i) =>
+          case LocalVariable(n, i) =>
             method.visitVarInsn(ASTORE, i)
           case _ =>
             throw new CodeGenException("Unknown field type " + v)
@@ -362,15 +362,17 @@ object CodeGenerator {
         case None =>
           throw new CodeGenException("Internal error: could not find procedure " + p.id.uniqueName)
         case Some(mv) =>
-          // TODO: variable declarations and procedures?
-          val args = p.closure.formals match {
-            case SingleArgFormals(id) => List((id.uniqueName, ProcedureArgument(id.uniqueName, 0)))
-            case MultiArgFormals(ids) =>
-              ids.map((id) => id.uniqueName)
-                .zipWithIndex.map((i) => (i._1, ProcedureArgument(i._1, i._2)))
+          // TODO: local procedures?
+          val argIds = p.closure.formals match {
+            case SingleArgFormals(id) => List(id.uniqueName)
+            case MultiArgFormals(ids) => ids.map((id) => id.uniqueName)
           }
-          val newScope = args.foldLeft(state.scope)((scope : Map[String, Variable], v) => scope.updated(v._1, v._2))
+          val localIds = p.closure.variableDeclarations.map((v) => v.id.uniqueName)
+          val locals = (argIds ::: localIds).zipWithIndex.map((i) => (i._1, LocalVariable(i._1, i._2)))
+
+          val newScope = locals.foldLeft(state.scope)((scope : Map[String, Variable], v) => scope.updated(v._1, v._2))
           val newState = state.copy(scope = newScope)
+
           generateProcedureBody(mv, newState, p.closure.body, isMainMethod = false)
       }
     }
