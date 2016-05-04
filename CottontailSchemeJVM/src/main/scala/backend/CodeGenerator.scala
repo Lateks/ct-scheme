@@ -1,6 +1,7 @@
 package backend
 
 import java.io.PrintWriter
+import java.lang.invoke.MethodHandle
 
 import backend.ast.SequenceType.SequenceType
 import backend.ast._
@@ -88,34 +89,38 @@ object CodeGenerator {
   val builtInProcedures = List("car", "cdr", "cons", "display", "eq?", "list", "newline", "not", "null?", "zero?", "+", "-", "*", "/", "<", ">")
   val builtInProceduresTakingArrayParam = List("list", "+", "-", "*", "/", "<", ">")
 
-  def emitBuiltInProcedureCall(method : SimpleMethodVisitor, procedureName : String): Unit = {
-    def makeBuiltInMethodDescriptor(numParams : Int, isArray : Boolean): String = {
-      val objectDescriptor = getDescriptor(classOf[Object])
-      val paramTypes = List.range(0, numParams).map((_) => objectDescriptor).mkString("")
-      val paramDesc = if (isArray) {
-        "[" + paramTypes
-      } else {
-        paramTypes
-      }
-
-      "(" + paramDesc + ")" + objectDescriptor
+  def makeObjectMethodDescriptor(numParams : Int, isArray : Boolean): String = {
+    val objectDescriptor = getDescriptor(classOf[Object])
+    val paramTypes = List.range(0, numParams).map((_) => objectDescriptor).mkString("")
+    val paramDesc = if (isArray) {
+      "[" + paramTypes
+    } else {
+      paramTypes
     }
 
-    val convertedProcedureName =
-      procedureName match {
-        case "eq?" => "areEq"
-        case "list" => "toList"
-        case "null?" => "isNull"
-        case "zero?" => "isZero"
-        case "+" => "plus"
-        case "-" => "minus"
-        case "*" => "mult"
-        case "/" => "div"
-        case "<" => "lessThan"
-        case ">" => "greaterThan"
-        case "car" | "cdr" | "cons" | "display" | "newline" | "not" => procedureName
-        case _ => throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
-      }
+    "(" + paramDesc + ")" + objectDescriptor
+  }
+
+  def convertBuiltInProcedureName(procedureName : String): String = {
+    procedureName match {
+      case "eq?" => "areEq"
+      case "list" => "toList"
+      case "null?" => "isNull"
+      case "zero?" => "isZero"
+      case "+" => "plus"
+      case "-" => "minus"
+      case "*" => "mult"
+      case "/" => "div"
+      case "<" => "lessThan"
+      case ">" => "greaterThan"
+      case "car" | "cdr" | "cons" | "display" | "newline" | "not" => procedureName
+      case _ => throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
+    }
+  }
+
+  def emitBuiltInProcedureCall(method : SimpleMethodVisitor, procedureName : String): Unit = {
+
+    val convertedProcedureName = convertBuiltInProcedureName(procedureName)
 
     val paramCount =
       procedureName match {
@@ -126,18 +131,28 @@ object CodeGenerator {
 
     val builtInsClass = getInternalName(classOf[BuiltIns])
     val isArray = builtInProceduresTakingArrayParam.contains(procedureName)
-    val methodDescriptor = makeBuiltInMethodDescriptor(paramCount, isArray)
+    val methodDescriptor = makeObjectMethodDescriptor(paramCount, isArray)
     method.emitInvokeStatic(builtInsClass, convertedProcedureName, methodDescriptor)
+  }
+
+  def pushArgs(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression]): Unit = {
+    for (arg <- args) {
+      pushExpressionResultToStack(method, state, arg)
+    }
   }
 
   def pushBuiltInProcedureArgs(method : SimpleMethodVisitor, state : ProgramState, procedureName : String, args : List[Expression]): Unit = {
     if (builtInProceduresTakingArrayParam.contains(procedureName)) {
       createArray(method, args, (elem : Expression) => pushExpressionResultToStack(method, state, elem))
     } else {
-      for (arg <- args) {
-        pushExpressionResultToStack(method, state, arg)
-      }
+      pushArgs(method, state, args)
     }
+  }
+
+  def emitFirstClassProcedureCallToObjectOnStack(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression]): Unit = {
+    method.visitTypeInsn(CHECKCAST, getInternalName(classOf[MethodHandle]))
+    pushArgs(method, state, args)
+    method.visitMethodInsn(INVOKEVIRTUAL, getInternalName(classOf[MethodHandle]), "invoke", makeObjectMethodDescriptor(args.length, false), false)
   }
 
   def emitProcedureCall(method : SimpleMethodVisitor, state : ProgramState, procedure : Expression, args : List[Expression]): Unit = {
@@ -147,7 +162,8 @@ object CodeGenerator {
           pushBuiltInProcedureArgs(method, state, id.uniqueName, args)
           emitBuiltInProcedureCall(method, id.uniqueName)
         } else {
-          throw new CodeGenException("Not implemented yet: procedure call to " + id.uniqueName)
+          emitVariableReference(method, state, id)
+          emitFirstClassProcedureCallToObjectOnStack(method, state, args)
         }
       case e =>
         throw new CodeGenException("Not implemented yet: first class procedure call")
@@ -222,7 +238,12 @@ object CodeGenerator {
   def emitVariableReference(method : SimpleMethodVisitor, state : ProgramState, id : Identifier): Unit = {
     state.scope.get(id.uniqueName) match {
       case None =>
-        throw new CodeGenException("Unknown variable " + id.uniqueName)
+        if (builtInProcedures.contains(id.uniqueName)) {
+          val builtInName = convertBuiltInProcedureName(id.uniqueName)
+          method.emitGetStatic(getInternalName(classOf[BuiltInProcObjects]), builtInName, getDescriptor(classOf[MethodHandle]))
+        } else {
+          throw new CodeGenException("Unknown variable " + id.name)
+        }
       case Some(v) =>
         v match {
           case StaticField(n) =>
@@ -236,7 +257,7 @@ object CodeGenerator {
   def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, expression: Expression): Unit = {
     state.scope.get(id.uniqueName) match {
       case None =>
-        throw new CodeGenException("Unknown variable " + id.uniqueName)
+        throw new CodeGenException("Unknown variable " + id.name)
       case Some(v) =>
         pushExpressionResultToStack(method, state, expression)
 

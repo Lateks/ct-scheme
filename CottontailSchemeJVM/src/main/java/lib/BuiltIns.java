@@ -1,8 +1,26 @@
 package lib;
 
+import java.lang.invoke.MethodHandle;
 import java.util.Comparator;
 
 public class BuiltIns {
+    public static final String procNameCar = "car";
+    public static final String procNameCdr = "cdr";
+    public static final String procNameCons = "cons";
+    public static final String procNameDisplay = "display";
+    public static final String procNameEq = "eq?";
+    public static final String procNameList = "list";
+    public static final String procNameNewline = "newline";
+    public static final String procNameNot = "not";
+    public static final String procNameNull = "null?";
+    public static final String procNameZero = "zero?";
+    public static final String procNamePlus = "+";
+    public static final String procNameMinus = "-";
+    public static final String procNameMult = "*";
+    public static final String procNameDiv = "/";
+    public static final String procNameLessThan = "<";
+    public static final String procNameGreaterThan = ">";
+
     private static String getTypeName(Object n) {
         if (n instanceof CTObject) {
             CTObject param = (CTObject)n;
@@ -32,7 +50,11 @@ public class BuiltIns {
     }
 
     public static Object display(Object obj) {
-        System.out.print(obj);
+        if (obj instanceof MethodHandle) {
+            System.out.print("<#procedure>");
+        } else {
+            System.out.print(obj);
+        }
         return CTUndefined.instance;
     }
 
@@ -54,13 +76,13 @@ public class BuiltIns {
     }
 
     public static Object car(Object a) {
-        assertPair("car", a);
+        assertPair(procNameCar, a);
         CTPair p = (CTPair) a;
         return p.getCar();
     }
 
     public static Object cdr(Object a) {
-        assertPair("cdr", a);
+        assertPair(procNameCdr, a);
         CTPair p = (CTPair) a;
         return p.getCdr();
     }
@@ -70,7 +92,7 @@ public class BuiltIns {
     }
 
     public static Object isZero(Object a) {
-        assertNumber("zero?", a);
+        assertNumber(procNameZero, a);
         CTNumber n = (CTNumber)a;
         return CTBool.toCTBool(n.getValue() == 0);
     }
@@ -90,7 +112,7 @@ public class BuiltIns {
     public static Object plus(Object[] args) {
         double sum = 0;
         for (Object arg : args) {
-            assertNumber("+", arg);
+            assertNumber(procNamePlus, arg);
             sum += getNumberValue(arg);
         }
         return new CTNumber(sum);
@@ -98,9 +120,9 @@ public class BuiltIns {
 
     public static Object minus(Object[] args) {
         for (Object arg : args) {
-            assertNumber("-", arg);
+            assertNumber(procNameMinus, arg);
         }
-        assertParameterCountAtLeast("-", 1, args);
+        assertParameterCountAtLeast(procNameMinus, 1, args);
 
         double result = 0;
         if (args.length == 1) {
@@ -118,7 +140,7 @@ public class BuiltIns {
         double result = 1;
 
         for (Object arg : args) {
-            assertNumber("*", arg);
+            assertNumber(procNameMult, arg);
             result *= getNumberValue(arg);
         }
 
@@ -127,9 +149,9 @@ public class BuiltIns {
 
     public static Object div(Object[] args) {
         for (Object arg : args) {
-            assertNumber("/", arg);
+            assertNumber(procNameDiv, arg);
         }
-        assertParameterCountAtLeast("/", 1, args);
+        assertParameterCountAtLeast(procNameDiv, 1, args);
 
         double result = 0;
         if (args.length == 1) {
@@ -146,18 +168,18 @@ public class BuiltIns {
 
     public static Object lessThan(Object[] args) {
         for (Object arg : args) {
-            assertNumber("<", arg);
+            assertNumber(procNameLessThan, arg);
         }
-        assertParameterCountAtLeast("<", 1, args);
+        assertParameterCountAtLeast(procNameLessThan, 1, args);
 
         return comparePairs(args, Comparator.naturalOrder());
     }
 
     public static Object greaterThan(Object[] args) {
         for (Object arg : args) {
-            assertNumber(">", arg);
+            assertNumber(procNameGreaterThan, arg);
         }
-        assertParameterCountAtLeast(">", 1, args);
+        assertParameterCountAtLeast(procNameGreaterThan, 1, args);
 
         return comparePairs(args, Comparator.reverseOrder());
     }
@@ -178,4 +200,5 @@ public class BuiltIns {
     private static double getNumberValue(Object o) {
         return ((CTNumber) o).getValue();
     }
+
 }
