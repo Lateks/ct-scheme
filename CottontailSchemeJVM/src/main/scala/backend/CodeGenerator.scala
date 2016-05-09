@@ -154,6 +154,7 @@ object CodeGenerator {
   }
 
   def emitFirstClassProcedureCallToObjectOnStack(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression]): Unit = {
+    // TODO: handle cast failure
     method.visitTypeInsn(CHECKCAST, getInternalName(classOf[CTProcedure]))
     pushArrayArgs(method, state, args)
     method.visitMethodInsn(INVOKEINTERFACE, getInternalName(classOf[CTProcedure]), "apply", makeObjectMethodDescriptor(1, isArray = true), onInterface = true)
@@ -267,13 +268,11 @@ object CodeGenerator {
     }
   }
 
-  def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, expression: Expression): Unit = {
+  def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier): Unit = {
     state.scope.get(id.uniqueName) match {
       case None =>
         throw new CodeGenException("Unknown variable " + id.name)
       case Some(v) =>
-        pushExpressionResultToStack(method, state, expression)
-
         v match {
           case StaticField(n) =>
             method.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
@@ -282,9 +281,13 @@ object CodeGenerator {
           case _ =>
             throw new CodeGenException("Unknown field type " + v)
         }
-
-        loadUndefined(method)
     }
+  }
+
+  def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, expression: Expression): Unit = {
+    pushExpressionResultToStack(method, state, expression)
+    emitVariableAssignment(method, state, id)
+    loadUndefined(method)
   }
 
   def generateExpression(method : SimpleMethodVisitor, state : ProgramState, expression : Expression, keepResultOnStack : Boolean): Unit = {
@@ -319,8 +322,13 @@ object CodeGenerator {
     generateExpression(method, state, expression, keepResultOnStack = false)
   }
 
-  def generateProcedureBody(method : SimpleMethodVisitor, state : ProgramState, expressions : List[Expression], isMainMethod : Boolean): Unit = {
+  def generateProcedureBody(method : SimpleMethodVisitor, state : ProgramState, expressions : List[Expression], isMainMethod : Boolean, emitPreamble : Option[SimpleMethodVisitor => Unit]): Unit = {
     method.visitCode()
+
+    emitPreamble match {
+      case None => ()
+      case Some(f) => f(method)
+    }
 
     if (isMainMethod) {
       for (expr <- expressions) {
@@ -355,6 +363,10 @@ object CodeGenerator {
     (topLevelVariables ::: procedureObjectVariables).toMap
   }
 
+  def isUsedAsFirstClassProcedure(procedureDefinition : ProcedureDefinition): Boolean = {
+    procedureDefinition.closure.isReassigned || procedureDefinition.closure.isUsedAsFirstClassValue
+  }
+
   def generateProcedures(procedureDefinitions : List[ProcedureDefinition], state : ProgramState): ProgramState = {
     def generateProcedure(p : ProcedureDefinition) = {
       val descriptor = buildMethodDescriptor(p.closure)
@@ -369,18 +381,27 @@ object CodeGenerator {
         case Some(mv) =>
           println("Generating code for method " + p.id.uniqueName + ", scope has the following methods: " + state.methods)
           val stateWithNestedMethods = generateProcedures(p.closure.procedureDefinitions, state)
+          val firstClassProcedures = p.closure.procedureDefinitions.filter(isUsedAsFirstClassProcedure)
 
           val argIds = p.closure.formals match {
             case SingleArgFormals(id) => List(id.uniqueName)
             case MultiArgFormals(ids) => ids.map((id) => id.uniqueName)
           }
           val localIds = p.closure.variableDeclarations.map((v) => v.id.uniqueName)
-          val localsAndArgs = (argIds ::: localIds).zipWithIndex.map((i) => (i._1, LocalVariable(i._1, i._2)))
+          val localProcIds = firstClassProcedures.map((p) => p.id.uniqueName)
+          val localsAndArgs = (argIds ::: localIds ::: localProcIds).zipWithIndex.map((i) => (i._1, LocalVariable(i._1, i._2)))
 
           val newScope = localsAndArgs.foldLeft(stateWithNestedMethods.scope)((scope : Map[String, Variable], v) => scope.updated(v._1, v._2))
           val procedureBodyState = stateWithNestedMethods.copy(scope = newScope)
 
-          generateProcedureBody(mv, procedureBodyState, p.closure.body, isMainMethod = false)
+          def emitPreamble (methodVisitor : SimpleMethodVisitor) = {
+            for (p <- firstClassProcedures) {
+              loadNonCapturingProcedure(methodVisitor, procedureBodyState, p)
+              emitVariableAssignment(methodVisitor, procedureBodyState, p.id)
+            }
+          }
+
+          generateProcedureBody(mv, procedureBodyState, p.closure.body, isMainMethod = false, Some(emitPreamble))
       }
     }
 
@@ -508,14 +529,18 @@ object CodeGenerator {
     }
   }
 
+  def loadNonCapturingProcedure(method : SimpleMethodVisitor, state : ProgramState, p : ProcedureDefinition): Unit = {
+    loadProcedureObject(method, state, p.id.uniqueName, p.closure)
+    attachArgumentHandler(method, p.id.name, p.closure)
+  }
+
   def makeInitializer(program : ProgramSyntaxTree, state : ProgramState) = {
     println("Generating initializer")
 
     val initializer = new SimpleMethodVisitor(state.mainClass, ACC_STATIC, "<clinit>", "()V")
     initializer.visitCode()
 
-    val firstClassProcs = program.procedureDefinitions
-      .filter((p) => p.closure.isUsedAsFirstClassValue || p.closure.isReassigned)
+    val firstClassProcs = program.procedureDefinitions.filter(isUsedAsFirstClassProcedure)
 
     for (p <- firstClassProcs) {
       println("Found first class procedure " + p + ", storing it in a static field")
@@ -524,8 +549,7 @@ object CodeGenerator {
         case Some(v) =>
           v match {
             case StaticField(n) =>
-              loadProcedureObject(initializer, state, p.id.uniqueName, p.closure)
-              attachArgumentHandler(initializer, p.id.name, p.closure)
+              loadNonCapturingProcedure(initializer, state, p)
               initializer.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
             case e =>
               throw new CodeGenException("Internal error: Unexpected field type for " + p.id.uniqueName + ": " + e)
@@ -558,7 +582,7 @@ object CodeGenerator {
     println("Adding class references")
     addInnerClassReferences(mainClass)
 
-    generateProcedureBody(mainMethod, newState, program.expressions, isMainMethod = true)
+    generateProcedureBody(mainMethod, newState, program.expressions, isMainMethod = true, None)
 
     println("Calling initializer generator")
     makeInitializer(program, newState)

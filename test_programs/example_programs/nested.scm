@@ -1,5 +1,5 @@
-(define is-even?
-  (lambda (n)
+(define get-even
+  (lambda ()
     (define even?
 	  (lambda (n)
 	    (if (zero? n)
@@ -10,9 +10,9 @@
 	    (if (zero? n)
 		    #f
 			(even? (- n 1)))))
-	(even? n)))
+	even?))
 
-(display (is-even? 20)) ; #t
+(display ((get-even) 20)) ; #t
 (newline)
-(display (is-even? 19)) ; #f
+(display ((get-even) 19)) ; #f
 (newline)
