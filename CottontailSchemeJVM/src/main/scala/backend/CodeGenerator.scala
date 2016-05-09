@@ -355,13 +355,10 @@ object CodeGenerator {
     (topLevelVariables ::: procedureObjectVariables).toMap
   }
 
-  def generateTopLevelProcedures(program : ProgramSyntaxTree, state : ProgramState, mainClass : DebugClassWriter) = {
+  def generateProcedures(procedureDefinitions : List[ProcedureDefinition], state : ProgramState): ProgramState = {
     def generateProcedure(p : ProcedureDefinition) = {
-      val descriptor = p.closure.formals match {
-        case SingleArgFormals(id) => makeObjectMethodDescriptor(1, isArray = false)
-        case MultiArgFormals(ids) => makeObjectMethodDescriptor(ids.length, isArray = false)
-      }
-      val m = new SimpleMethodVisitor(mainClass, ACC_PRIVATE + ACC_STATIC, p.id.uniqueName, descriptor)
+      val descriptor = buildMethodDescriptor(p.closure)
+      val m = new SimpleMethodVisitor(state.mainClass, ACC_PRIVATE + ACC_STATIC, p.id.uniqueName, descriptor)
       (p.id.uniqueName, m)
     }
 
@@ -370,28 +367,37 @@ object CodeGenerator {
         case None =>
           throw new CodeGenException("Internal error: could not find procedure " + p.id.uniqueName)
         case Some(mv) =>
+          println("Generating code for method " + p.id.uniqueName + ", scope has the following methods: " + state.methods)
+          val stateWithNestedMethods = generateProcedures(p.closure.procedureDefinitions, state)
+
           val argIds = p.closure.formals match {
             case SingleArgFormals(id) => List(id.uniqueName)
             case MultiArgFormals(ids) => ids.map((id) => id.uniqueName)
           }
           val localIds = p.closure.variableDeclarations.map((v) => v.id.uniqueName)
-          val locals = (argIds ::: localIds).zipWithIndex.map((i) => (i._1, LocalVariable(i._1, i._2)))
+          val localsAndArgs = (argIds ::: localIds).zipWithIndex.map((i) => (i._1, LocalVariable(i._1, i._2)))
 
-          val newScope = locals.foldLeft(state.scope)((scope : Map[String, Variable], v) => scope.updated(v._1, v._2))
-          val newState = state.copy(scope = newScope)
+          val newScope = localsAndArgs.foldLeft(stateWithNestedMethods.scope)((scope : Map[String, Variable], v) => scope.updated(v._1, v._2))
+          val procedureBodyState = stateWithNestedMethods.copy(scope = newScope)
 
-          generateProcedureBody(mv, newState, p.closure.body, isMainMethod = false)
+          generateProcedureBody(mv, procedureBodyState, p.closure.body, isMainMethod = false)
       }
     }
 
-    val methods = program.procedureDefinitions.map(generateProcedure).toMap
-    val newState = state.copy(methods = methods)
+    // TODO: add arguments for captured variables
+    val methods = procedureDefinitions.map(generateProcedure).toMap
+    val updatedMethods = state.methods ++ methods
+    val newState = state.copy(methods = updatedMethods)
 
-    for (pd <- program.procedureDefinitions) {
+    for (pd <- procedureDefinitions) {
       procedureBody(pd, newState)
     }
 
     newState
+  }
+
+  def generateTopLevelProcedures(program : ProgramSyntaxTree, state : ProgramState) = {
+    generateProcedures(program.procedureDefinitions, state)
   }
 
   def buildMethodDescriptor(closure : ClosureDefinition): String = {
@@ -544,7 +550,7 @@ object CodeGenerator {
     val scope = introduceVariables(program, mainClass)
     val state = ProgramState(mainClass, scope, Map.empty)
 
-    val newState = generateTopLevelProcedures(program, state, mainClass)
+    val newState = generateTopLevelProcedures(program, state)
 
     val mainMethodDescriptor = "([" + getDescriptor(classOf[String]) + ")" + Type.VOID_TYPE.getDescriptor
     val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor)
