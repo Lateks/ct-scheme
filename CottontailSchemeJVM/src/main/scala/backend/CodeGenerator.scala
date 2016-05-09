@@ -6,7 +6,7 @@ import backend.ast.SequenceType.SequenceType
 import backend.ast._
 import backend.codegen.{CodeGenException, DebugClassWriter, SimpleMethodVisitor}
 import lib._
-import org.objectweb.asm.{Label, Type}
+import org.objectweb.asm.{Label, Type, Handle}
 import org.objectweb.asm.Opcodes._
 
 object CodeGenerator {
@@ -312,11 +312,11 @@ object CodeGenerator {
   }
 
   def pushExpressionResultToStack(method : SimpleMethodVisitor, state : ProgramState, expression : Expression): Unit = {
-    generateExpression(method, state, expression, true)
+    generateExpression(method, state, expression, keepResultOnStack = true)
   }
 
   def generateTopLevelExpression(method : SimpleMethodVisitor, state : ProgramState, expression: Expression): Unit = {
-    generateExpression(method, state, expression, false)
+    generateExpression(method, state, expression, keepResultOnStack = false)
   }
 
   def generateProcedureBody(method : SimpleMethodVisitor, state : ProgramState, expressions : List[Expression], isMainMethod : Boolean): Unit = {
@@ -394,60 +394,117 @@ object CodeGenerator {
     newState
   }
 
-  /*
-  def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodName : String, closure : ClosureDefinition): Unit = {
-    def loadMethodType () = {
-      method.visitLdcInsn(Type.getType(classOf[Object])) // load return type
-
-      val methodTypeType = getInternalName(classOf[java.lang.invoke.MethodType])
-      val methodTypeMethodName = "methodType"
-      closure.formals match {
-        case SingleArgFormals(id) =>
-          method.visitLdcInsn(Type.getType(classOf[Object]))
-          method.emitInvokeStatic(methodTypeType, methodTypeMethodName, "(Ljava/lang/Class;Ljava/lang/Class;)Ljava/lang/invoke/MethodType;")
-        case MultiArgFormals(ids) =>
-          if (ids.isEmpty) {
-            method.emitInvokeStatic(methodTypeType, methodTypeMethodName, "(Ljava/lang/Class;)Ljava/lang/invoke/MethodType;")
-          } else if (ids.length == 1) {
-            method.visitLdcInsn(Type.getType(classOf[Object]))
-            method.emitInvokeStatic(methodTypeType, methodTypeMethodName, "(Ljava/lang/Class;Ljava/lang/Class;)Ljava/lang/invoke/MethodType;")
-          } else {
-            method.visitLdcInsn(Type.getType(classOf[Object]))
-            method.visitLdcInsn(ids.tail.length.asInstanceOf[java.lang.Integer])
-            method.visitTypeInsn(ANEWARRAY, "java/lang/Class")
-            for ((_, i) <- ids.tail.zipWithIndex) {
-              method.dup()
-              method.visitLdcInsn(i.asInstanceOf[java.lang.Integer])
-              method.visitLdcInsn(Type.getType(classOf[Object]))
-              method.storeInArray()
-            }
-            method.emitInvokeStatic(methodTypeType, methodTypeMethodName, "(Ljava/lang/Class;Ljava/lang/Class;[Ljava/lang/Class;)Ljava/lang/invoke/MethodType;")
-          }
-      }
+  def buildMethodDescriptor(closure : ClosureDefinition): String = {
+    val sb = new StringBuilder("(")
+    val objectDescriptor = getDescriptor(classOf[Object])
+    closure.formals match {
+      case SingleArgFormals(id) =>
+        sb.append(objectDescriptor)
+      case MultiArgFormals(ids) =>
+        for (id <- ids) {
+          sb.append(objectDescriptor)
+        }
     }
 
-    method.emitInvokeStatic("java/lang/invoke/MethodHandles", "lookup", "()Ljava/lang/invoke/MethodHandles$Lookup;")
+    sb.append(")").append(objectDescriptor).toString
+  }
 
-    method.visitLdcInsn(Type.getType("L" + state.mainClass.getName + ";"))
-    method.visitLdcInsn(methodName)
+  def buildProcedureObjectDescriptor(closure : ClosureDefinition): String = {
+    closure.formals match {
+      case SingleArgFormals(id) =>
+        getDescriptor(classOf[CTProcedure1])
+      case MultiArgFormals(ids) =>
+        ids.length match {
+          case 0 =>
+            getDescriptor(classOf[CTProcedure0])
+          case 1 =>
+            getDescriptor(classOf[CTProcedure1])
+          case 2 =>
+            getDescriptor(classOf[CTProcedure2])
+          case 3 =>
+            getDescriptor(classOf[CTProcedure3])
+          case 4 =>
+            getDescriptor(classOf[CTProcedure4])
+          case 5 =>
+            getDescriptor(classOf[CTProcedure5])
+          case _ =>
+            throw new CodeGenException("Internal error: procedures with more than 5 parameters are not supported")
+        }
+    }
+  }
 
-    loadMethodType()
+  def lambdaMetafactoryHandle() = {
+    new Handle(H_INVOKESTATIC,
+      "java/lang/invoke/LambdaMetafactory",
+      "metafactory",
+      "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+      false)
+  }
 
-    method.emitInvokeVirtual("java/lang/invoke/MethodHandles$Lookup", "findStatic", "(Ljava/lang/Class;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/MethodHandle;", onInterface = false)
+  def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodName : String, closure : ClosureDefinition): Unit = {
+    val lambdaMetaFactoryHandle = lambdaMetafactoryHandle()
+
+    val methodOnInterface = false
+    val methodDescriptor = buildMethodDescriptor(closure)
+    val methodHandle = new Handle(H_INVOKESTATIC, state.mainClass.getName, methodName, methodDescriptor, methodOnInterface)
+    val procedureObjectDescriptor = buildProcedureObjectDescriptor(closure)
+    val applyMethodDescriptor = "()" + procedureObjectDescriptor // No captures, so parentheses are empty
+
+    println("Loading procedure object for method " + methodName)
+    println("Method descriptor is: " + methodDescriptor)
+    println("Procedure object descriptor is: " + procedureObjectDescriptor)
+    println("Method type: " + Type.getType(methodDescriptor))
+    println("Apply method descriptor: " + applyMethodDescriptor)
+    println("Method handle: " + methodHandle)
+
+    method.visitInvokeDynamicInsn("apply",
+      applyMethodDescriptor,
+      lambdaMetaFactoryHandle,
+      Type.getType(methodDescriptor),
+      methodHandle,
+      Type.getType(methodDescriptor))
   }
 
   def attachArgumentHandler(method : SimpleMethodVisitor, methodName : String, closure : ClosureDefinition): Unit = {
+    val lambdaMetaFactoryHandle = lambdaMetafactoryHandle()
+    val procedureObjectDescriptor = getDescriptor(classOf[CTProcedure])
+    val arrayMethodDescriptor = "(" + getDescriptor(classOf[Array[Object]]) + ")" + getDescriptor(classOf[Object])
+
     closure.formals match {
       case SingleArgFormals(id) =>
-        method.emitInvokeStatic(getInternalName(classOf[lib.ProcedureHelpers]), "getVarargsMatcher", "(Ljava/lang/invoke/MethodHandle;)Ljava/lang/invoke/MethodHandle;")
+        val applyMethodTypeDescriptor = "(" + getDescriptor(classOf[CTProcedure1]) + ")" + procedureObjectDescriptor
+        val matcherDescriptor = "(" + getDescriptor(classOf[CTProcedure1]) + getDescriptor(classOf[Array[Object]]) + ")" + getDescriptor(classOf[Object])
+        val matcherHandle = new Handle(H_INVOKESTATIC, getInternalName(classOf[ProcedureHelpers]), "matchVarargs", matcherDescriptor, false)
+        method.visitInvokeDynamicInsn("apply",
+          applyMethodTypeDescriptor,
+          lambdaMetaFactoryHandle,
+          Type.getType(arrayMethodDescriptor),
+          matcherHandle,
+          Type.getType(arrayMethodDescriptor)
+        )
       case MultiArgFormals(ids) =>
         method.visitLdcInsn(methodName)
-        method.visitLdcInsn(ids.length.asInstanceOf[java.lang.Integer])
-        method.emitInvokeStatic(getInternalName(classOf[lib.ProcedureHelpers]), "getArityMatcher", "(Ljava/lang/invoke/MethodHandle;Ljava/lang/String;I)Ljava/lang/invoke/MethodHandle;")
+        val wrappedObjectDescriptor = buildProcedureObjectDescriptor(closure)
+        val applyMethodTypeDescriptor = "(" + wrappedObjectDescriptor + getDescriptor(classOf[String]) + ")" + procedureObjectDescriptor
+        val matcherDescriptor = "(" + wrappedObjectDescriptor + getDescriptor(classOf[String]) + getDescriptor(classOf[Array[Object]]) + ")" + getDescriptor(classOf[Object])
+        val matchMethodName = "match" + (closure.formals match {
+          case SingleArgFormals(id) => 1
+          case MultiArgFormals(idList) => idList.length
+        })
+        val matcherHandle = new Handle(H_INVOKESTATIC, getInternalName(classOf[ProcedureHelpers]), matchMethodName, matcherDescriptor, false)
+        method.visitInvokeDynamicInsn("apply",
+          applyMethodTypeDescriptor,
+          lambdaMetaFactoryHandle,
+          Type.getType(arrayMethodDescriptor),
+          matcherHandle,
+          Type.getType(arrayMethodDescriptor)
+        )
     }
   }
 
   def makeInitializer(program : ProgramSyntaxTree, state : ProgramState) = {
+    println("Generating initializer")
+
     val initializer = new SimpleMethodVisitor(state.mainClass, ACC_STATIC, "<clinit>", "()V")
     initializer.visitCode()
 
@@ -455,6 +512,7 @@ object CodeGenerator {
       .filter((p) => p.closure.isUsedAsFirstClassValue || p.closure.isReassigned)
 
     for (p <- firstClassProcs) {
+      println("Found first class procedure " + p + ", storing it in a static field")
       state.scope.get(p.id.uniqueName) match {
         case None => throw new CodeGenException("Internal error: field " + p.id.uniqueName + " has not been declared.")
         case Some(v) =>
@@ -472,10 +530,16 @@ object CodeGenerator {
     initializer.emitReturn()
     initializer.visitMaxs(0, 0)
     initializer.visitEnd()
+    println("Finished generating initializer")
   }
-  */
+
+  def addInnerClassReferences(mainClass : DebugClassWriter): Unit = {
+    mainClass.visitInnerClass("java/lang/invoke/MethodHandles$Lookup", "java/lang/invoke/MethodHandles", "Lookup", ACC_PUBLIC + ACC_FINAL + ACC_STATIC);
+  }
 
   def generateCodeFor(program : ProgramSyntaxTree) : Unit = {
+    println("Generating code")
+
     val mainClass = declareClass(program.programName, getInternalName(classOf[Object]))
     val scope = introduceVariables(program, mainClass)
     val state = ProgramState(mainClass, scope, Map.empty)
@@ -485,9 +549,13 @@ object CodeGenerator {
     val mainMethodDescriptor = "([" + getDescriptor(classOf[String]) + ")" + Type.VOID_TYPE.getDescriptor
     val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor)
 
+    println("Adding class references")
+    addInnerClassReferences(mainClass)
+
     generateProcedureBody(mainMethod, newState, program.expressions, isMainMethod = true)
 
-    // makeInitializer(program, newState)
+    println("Calling initializer generator")
+    makeInitializer(program, newState)
 
     mainClass.visitEnd()
     mainClass.writeToDisk()

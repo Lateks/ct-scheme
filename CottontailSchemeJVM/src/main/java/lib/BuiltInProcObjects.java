@@ -19,16 +19,16 @@ public class BuiltInProcObjects {
     public static final CTProcedure greaterThan;
 
     static {
-        car = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameCar, BuiltIns::car, args);
-        cdr = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameCdr, BuiltIns::cdr, args);
-        cons = (Object[] args) -> ProcedureHelpers.match2(BuiltIns.procNameCons, BuiltIns::cons, args);
-        display = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameDisplay, BuiltIns::display, args);
-        areEq = (Object[] args) -> ProcedureHelpers.match2(BuiltIns.procNameEq, BuiltIns::areEq, args);
+        car = (Object[] args) -> ProcedureHelpers.match1(BuiltIns::car, BuiltIns.procNameCar, args);
+        cdr = (Object[] args) -> ProcedureHelpers.match1(BuiltIns::cdr, BuiltIns.procNameCdr, args);
+        cons = (Object[] args) -> ProcedureHelpers.match2(BuiltIns::cons, BuiltIns.procNameCons, args);
+        display = (Object[] args) -> ProcedureHelpers.match1(BuiltIns::display, BuiltIns.procNameDisplay, args);
+        areEq = (Object[] args) -> ProcedureHelpers.match2(BuiltIns::areEq, BuiltIns.procNameEq, args);
         toList = BuiltIns::toList;
-        newline = (Object[] args) -> ProcedureHelpers.match0(BuiltIns.procNameNewline, BuiltIns::newline, args);
-        not = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameNot, BuiltIns::not, args);
-        isNull = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameNull, BuiltIns::isNull, args);
-        isZero = (Object[] args) -> ProcedureHelpers.match1(BuiltIns.procNameZero, BuiltIns::isZero, args);
+        newline = (Object[] args) -> ProcedureHelpers.match0(BuiltIns::newline, BuiltIns.procNameNewline, args);
+        not = (Object[] args) -> ProcedureHelpers.match1(BuiltIns::not, BuiltIns.procNameNot, args);
+        isNull = (Object[] args) -> ProcedureHelpers.match1(BuiltIns::isNull, BuiltIns.procNameNull, args);
+        isZero = (Object[] args) -> ProcedureHelpers.match1(BuiltIns::isZero, BuiltIns.procNameZero, args);
         plus = BuiltIns::plus;
         minus = BuiltIns::minus;
         mult = BuiltIns::mult;
