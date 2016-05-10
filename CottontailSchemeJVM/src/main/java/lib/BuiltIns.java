@@ -24,6 +24,8 @@ public class BuiltIns {
         if (n instanceof CTObject) {
             CTObject param = (CTObject)n;
             return param.getTypeName();
+        } else if (n == null) {
+            return CTUndefined.typeName;
         } else {
             return "procedure";
         }
@@ -37,7 +39,9 @@ public class BuiltIns {
     private static void assertNumber(String procedureName, Object n) {
         if (!(n instanceof CTNumber)) {
             String typeName = getTypeName(n);
-            throw new TypeError(procedureName, CTNumber.typeName, typeName);
+            if (typeName != null) {
+                throw new TypeError(procedureName, CTNumber.typeName, typeName);
+            }
         }
     }
 
