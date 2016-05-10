@@ -395,6 +395,13 @@ object CodeGenerator {
     method.invokeConstructor(classTypeName)
   }
 
+  def loadReferenceCellWithLocalVariable(method : SimpleMethodVisitor, localVarIndex : Int): Unit = {
+    val classTypeName = getInternalName(classOf[CTReferenceCell])
+    method.createAndDupObject(classTypeName)
+    method.visitVarInsn(ALOAD, localVarIndex)
+    method.invokeConstructor(classTypeName, getDescriptor(classOf[Object]))
+  }
+
   def generateProcedures(procedureDefinitions : List[ProcedureDefinition], state : ProgramState): ProgramState = {
     def generateProcedure(p : ProcedureDefinition) = {
       val descriptor = buildMethodDescriptor(p.closure)
@@ -449,15 +456,22 @@ object CodeGenerator {
           def emitPreamble (methodVisitor : SimpleMethodVisitor) = {
             for (capture <- escapingVariables) {
               println("Setting up captured variable " + capture)
-              loadEmptyReferenceCell(methodVisitor)
-              procedureBodyState.scope.get(capture.uniqueName) match {
-                case Some(LocalReferenceVariable(n, i)) =>
-                  methodVisitor.visitVarInsn(ASTORE, i)
+
+              val localVarIndex = procedureBodyState.scope.get(capture.uniqueName) match {
+                case Some(LocalReferenceVariable(_, i)) => i
                 case None =>
                   throw new CodeGenException("Internal error: could not find local variable " + capture.uniqueName)
                 case Some(v) =>
                   throw new CodeGenException("Internal error: unexpected variable type for variable " + capture.uniqueName + ": " + v)
               }
+
+              if (argIds.contains(capture.uniqueName)) {
+                loadReferenceCellWithLocalVariable(methodVisitor, localVarIndex)
+              } else {
+                loadEmptyReferenceCell(methodVisitor)
+              }
+
+              methodVisitor.visitVarInsn(ASTORE, localVarIndex)
             }
 
             for (p <- firstClassAndCapturingProcedures) {
