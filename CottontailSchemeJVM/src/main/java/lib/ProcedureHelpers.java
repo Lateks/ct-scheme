@@ -40,4 +40,31 @@ public class ProcedureHelpers {
         return proc.apply(BuiltIns.toList(args));
     }
 
+    public static CTProcedure match0(CTProcedure0 proc, String procedureName) {
+        return (Object[] args) -> match0(proc, procedureName, args);
+    }
+
+    public static CTProcedure match1(CTProcedure1 proc, String procedureName) {
+        return (Object[] args) -> match1(proc, procedureName, args);
+    }
+
+    public static CTProcedure match2(CTProcedure2 proc, String procedureName) {
+        return (Object[] args) -> match2(proc, procedureName, args);
+    }
+
+    public static CTProcedure match3(CTProcedure3 proc, String procedureName) {
+        return (Object[] args) -> match3(proc, procedureName, args);
+    }
+
+    public static CTProcedure match4(CTProcedure4 proc, String procedureName) {
+        return (Object[] args) -> match4(proc, procedureName, args);
+    }
+
+    public static CTProcedure match5(CTProcedure5 proc, String procedureName) {
+        return (Object[] args) -> match5(proc, procedureName, args);
+    }
+
+    public static CTProcedure matchVarargs(CTProcedure1 proc) {
+        return (Object[] args) -> matchVarargs(proc, args);
+    }
 }

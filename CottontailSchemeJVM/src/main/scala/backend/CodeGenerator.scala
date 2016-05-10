@@ -642,40 +642,20 @@ object CodeGenerator {
   }
 
   def attachArgumentHandler(method : SimpleMethodVisitor, methodName : String, closure : ClosureDefinition): Unit = {
-    val lambdaMetaFactoryHandle = lambdaMetafactoryHandle()
-    val procedureObjectDescriptor = getDescriptor(classOf[CTProcedure])
-    val arrayMethodDescriptor = "(" + getDescriptor(classOf[Array[Object]]) + ")" + getDescriptor(classOf[Object])
-
-    closure.formals match {
-      case SingleArgFormals(id) =>
-        val applyMethodTypeDescriptor = "(" + getDescriptor(classOf[CTProcedure1]) + ")" + procedureObjectDescriptor
-        val matcherDescriptor = "(" + getDescriptor(classOf[CTProcedure1]) + getDescriptor(classOf[Array[Object]]) + ")" + getDescriptor(classOf[Object])
-        val matcherHandle = new Handle(H_INVOKESTATIC, getInternalName(classOf[ProcedureHelpers]), "matchVarargs", matcherDescriptor, false)
-        method.visitInvokeDynamicInsn("apply",
-          applyMethodTypeDescriptor,
-          lambdaMetaFactoryHandle,
-          Type.getType(arrayMethodDescriptor),
-          matcherHandle,
-          Type.getType(arrayMethodDescriptor)
-        )
+    val ctProcDescriptor = getDescriptor(classOf[CTProcedure])
+    val (matchMethodName, matchMethodType) = closure.formals match {
+      case SingleArgFormals(_) =>
+        ("matchVarargs", "(" + getDescriptor(classOf[CTProcedure1]) + ")" + ctProcDescriptor)
       case MultiArgFormals(ids) =>
-        method.visitLdcInsn(methodName)
-        val wrappedObjectDescriptor = buildProcedureObjectDescriptor(closure)
-        val applyMethodTypeDescriptor = "(" + wrappedObjectDescriptor + getDescriptor(classOf[String]) + ")" + procedureObjectDescriptor
-        val matcherDescriptor = "(" + wrappedObjectDescriptor + getDescriptor(classOf[String]) + getDescriptor(classOf[Array[Object]]) + ")" + getDescriptor(classOf[Object])
-        val matchMethodName = "match" + (closure.formals match {
-          case SingleArgFormals(id) => 1
-          case MultiArgFormals(idList) => idList.length
-        })
-        val matcherHandle = new Handle(H_INVOKESTATIC, getInternalName(classOf[ProcedureHelpers]), matchMethodName, matcherDescriptor, false)
-        method.visitInvokeDynamicInsn("apply",
-          applyMethodTypeDescriptor,
-          lambdaMetaFactoryHandle,
-          Type.getType(arrayMethodDescriptor),
-          matcherHandle,
-          Type.getType(arrayMethodDescriptor)
-        )
+        val procedureObjectDescriptor = buildProcedureObjectDescriptor(closure)
+        ("match" + ids.length, "(" +procedureObjectDescriptor + getDescriptor(classOf[String]) + ")" + ctProcDescriptor)
     }
+    closure.formals match {
+      case MultiArgFormals(_) =>
+        method.visitLdcInsn(methodName)
+      case _ => ()
+    }
+    method.emitInvokeStatic(getInternalName(classOf[ProcedureHelpers]), matchMethodName, matchMethodType)
   }
 
   def loadFirstClassProcedure(method : SimpleMethodVisitor, state : ProgramState, c : ClosureDefinition): Unit = {
