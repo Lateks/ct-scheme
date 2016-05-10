@@ -322,8 +322,8 @@ object CodeGenerator {
         emitVariableAssignment(method, state, id, expr)
       case VariableReference(id) =>
         emitVariableReference(method, state, id)
-      case Closure(id) =>
-        throw new CodeGenException("Expression type not implemented yet: closure")
+      case Closure(c) =>
+        loadFirstClassProcedure(method, state, c)
       case UndefinedValue() =>
         loadUndefined(method)
     }
@@ -402,11 +402,11 @@ object CodeGenerator {
     method.invokeConstructor(classTypeName, getDescriptor(classOf[Object]))
   }
 
-  def generateProcedures(procedureDefinitions : List[ProcedureDefinition], state : ProgramState): ProgramState = {
-    def generateProcedure(p : ProcedureDefinition) = {
-      val descriptor = buildMethodDescriptor(p.closure)
-      val m = new SimpleMethodVisitor(state.mainClass, ACC_PRIVATE + ACC_STATIC, p.id.uniqueName, descriptor)
-      (p.id.uniqueName, m)
+  def generateProcedures(procedures : List[ClosureDefinition], state : ProgramState): ProgramState = {
+    def generateProcedure(c : ClosureDefinition) = {
+      val descriptor = buildMethodDescriptor(c)
+      val m = new SimpleMethodVisitor(state.mainClass, ACC_PRIVATE + ACC_STATIC, c.functionName.uniqueName, descriptor)
+      (c.functionName.uniqueName, m)
     }
 
     def makeLocalVariable(name : String, index : Int, storedAsReference : List[String]): Variable = {
@@ -417,30 +417,53 @@ object CodeGenerator {
       }
     }
 
-    def procedureBody(p : ProcedureDefinition, state : ProgramState) = {
-      state.methods.get(p.id.uniqueName) match {
+    def findClosuresInScope(expressions : List[Expression]): List[ClosureDefinition] = {
+      def findClosuresInExpression(expr : Expression): List[ClosureDefinition] = {
+        expr match {
+          case ProcedureCall(proc, args, _) =>
+            findClosuresInExpression(proc) ::: findClosuresInScope(args)
+          case Conditional(cond, thenBranch, elseBranch) =>
+            findClosuresInExpression(cond) ::: findClosuresInExpression(thenBranch) ::: findClosuresInExpression(elseBranch)
+          case SequenceExpression(_, exprs) =>
+            findClosuresInScope(exprs)
+          case Assignment(_, e) =>
+            findClosuresInExpression(e)
+          case Closure(c) =>
+            List(c)
+          case UndefinedValue() | ValueExpression(_) | VariableReference(_) =>
+            List()
+        }
+      }
+
+      expressions.flatMap(findClosuresInExpression)
+    }
+
+    def procedureBody(c : ClosureDefinition, state : ProgramState) = {
+      val procName = c.functionName.uniqueName
+      state.methods.get(procName) match {
         case None =>
-          throw new CodeGenException("Internal error: could not find procedure " + p.id.uniqueName)
+          throw new CodeGenException("Internal error: could not find procedure " + procName)
         case Some(mv) =>
-          println("Generating code for method " + p.id.uniqueName + ", scope has the following methods: " + state.methods)
-          val stateWithNestedMethods = generateProcedures(p.closure.procedureDefinitions, state)
-          val firstClassAndCapturingProcedures = p.closure.procedureDefinitions
+          println("Generating code for method " + procName + ", scope has the following methods: " + state.methods)
+          val anonymousProcedures = findClosuresInScope(c.body)
+          val nestedProcedures = anonymousProcedures ::: c.procedureDefinitions.map((p) => p.closure)
+          val stateWithNestedMethods = generateProcedures(nestedProcedures, state)
+          val firstClassAndCapturingProcedures = c.procedureDefinitions
             .filter((p) => isUsedAsFirstClassProcedure(p) || capturesVariables(p))
 
           // Find all ids we need to introduce local variables for
-          val captureIds = p.closure.environment.map((capture) => capture.uniqueName)
-          val argIds = p.closure.formals match {
+          val captureIds = c.environment.map((capture) => capture.uniqueName)
+          val argIds = c.formals match {
             case SingleArgFormals(id) => List(id.uniqueName)
             case MultiArgFormals(ids) => ids.map((id) => id.uniqueName)
           }
-          val localIds = p.closure.variableDeclarations.map((v) => v.id.uniqueName)
+          val localIds = c.variableDeclarations.map((v) => v.id.uniqueName)
           val localProcIds = firstClassAndCapturingProcedures.map((p) => p.id.uniqueName)
           val localVariableIds = captureIds ::: argIds ::: localIds ::: localProcIds
 
           // Find escaping variables (captured by any first class procedure in scope)
-          // -> TODO: this should include variables captured by anonymous procedures as well
-          val escapingVariables = firstClassAndCapturingProcedures
-            .flatMap((p) => p.closure.environment)
+          val escapingVariables = (anonymousProcedures ::: firstClassAndCapturingProcedures.map((p) => p.closure))
+            .flatMap((c) => c.environment)
             .distinct
           val escapingVariableNames = escapingVariables.map((id) => id.uniqueName)
 
@@ -456,8 +479,10 @@ object CodeGenerator {
           val procedureBodyState = stateWithNestedMethods.copy(scope = newScope)
 
           def emitPreamble (methodVisitor : SimpleMethodVisitor) = {
-            for (capture <- escapingVariables) {
-              println("Setting up captured variable " + capture)
+            val newCaptures = escapingVariables.filter((v) => !captureIds.contains(v.uniqueName))
+
+            for (capture <- newCaptures) {
+              println("Setting up escaping variable " + capture)
 
               val localVarIndex = procedureBodyState.scope.get(capture.uniqueName) match {
                 case Some(LocalReferenceVariable(_, i)) => i
@@ -477,28 +502,28 @@ object CodeGenerator {
             }
 
             for (p <- firstClassAndCapturingProcedures) {
-              val loader = (m : SimpleMethodVisitor, s : ProgramState) => loadFirstClassProcedure(m, s, p)
+              val loader = (m : SimpleMethodVisitor, s : ProgramState) => loadFirstClassProcedure(m, s, p.closure)
               emitVariableAssignment(methodVisitor, procedureBodyState, p.id, loader)
             }
           }
 
-          generateProcedureBody(mv, procedureBodyState, p.closure.body, isMainMethod = false, Some(emitPreamble))
+          generateProcedureBody(mv, procedureBodyState, c.body, isMainMethod = false, Some(emitPreamble))
       }
     }
 
-    val methods = procedureDefinitions.map(generateProcedure).toMap
+    val methods = procedures.map(generateProcedure).toMap
     val updatedMethods = state.methods ++ methods
     val newState = state.copy(methods = updatedMethods)
 
-    for (pd <- procedureDefinitions) {
-      procedureBody(pd, newState)
+    for (c <- procedures) {
+      procedureBody(c, newState)
     }
 
     newState
   }
 
   def generateTopLevelProcedures(program : ProgramSyntaxTree, state : ProgramState) = {
-    generateProcedures(program.procedureDefinitions, state)
+    generateProcedures(program.procedureDefinitions.map((p) => p.closure), state)
   }
 
   def buildMethodDescriptor(closure : ClosureDefinition, withCaptures : Boolean): String = {
@@ -632,9 +657,9 @@ object CodeGenerator {
     }
   }
 
-  def loadFirstClassProcedure(method : SimpleMethodVisitor, state : ProgramState, p : ProcedureDefinition): Unit = {
-    loadProcedureObject(method, state, p.id.uniqueName, p.closure)
-    attachArgumentHandler(method, p.id.name, p.closure)
+  def loadFirstClassProcedure(method : SimpleMethodVisitor, state : ProgramState, c : ClosureDefinition): Unit = {
+    loadProcedureObject(method, state, c.functionName.uniqueName, c)
+    attachArgumentHandler(method, c.functionName.name, c)
   }
 
   def makeInitializer(program : ProgramSyntaxTree, state : ProgramState) = {
@@ -652,7 +677,7 @@ object CodeGenerator {
         case Some(v) =>
           v match {
             case StaticField(n) =>
-              loadFirstClassProcedure(initializer, state, p)
+              loadFirstClassProcedure(initializer, state, p.closure)
               initializer.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
             case e =>
               throw new CodeGenException("Internal error: Unexpected field type for " + p.id.uniqueName + ": " + e)
