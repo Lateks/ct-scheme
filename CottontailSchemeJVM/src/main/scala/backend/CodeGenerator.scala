@@ -159,10 +159,12 @@ object CodeGenerator {
   }
 
   def emitFirstClassProcedureCallToObjectOnStack(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression]): Unit = {
-    // TODO: handle cast failure
-    method.visitTypeInsn(CHECKCAST, getInternalName(classOf[CTProcedure]))
     pushArrayArgs(method, state, args)
-    method.visitMethodInsn(INVOKEINTERFACE, getInternalName(classOf[CTProcedure]), "apply", makeObjectMethodDescriptor(1, isArray = true), onInterface = true)
+    method.visitMethodInsn(INVOKESTATIC,
+      getInternalName(classOf[ProcedureHelpers]),
+      "callProcedure",
+      "(" + getDescriptor(classOf[Object]) + getDescriptor(classOf[Array[Object]]) + ")" + getDescriptor(classOf[Object]),
+      onInterface = false)
   }
 
   def emitProcedureCall(method : SimpleMethodVisitor, state : ProgramState, procedure : Expression, args : List[Expression]): Unit = {

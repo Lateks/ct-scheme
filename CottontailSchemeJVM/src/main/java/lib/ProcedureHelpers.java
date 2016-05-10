@@ -67,4 +67,12 @@ public class ProcedureHelpers {
     public static CTProcedure matchVarargs(CTProcedure1 proc) {
         return (Object[] args) -> matchVarargs(proc, args);
     }
+
+    public static Object callProcedure(Object p, Object[] args) {
+        if (p instanceof CTProcedure) {
+            return ((CTProcedure) p).apply(args);
+        } else {
+            throw new NotAProcedureError(p);
+        }
+    }
 }
