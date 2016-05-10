@@ -60,6 +60,10 @@ object CodeGenerator {
     }
   }
 
+  def emitListConversion(method : SimpleMethodVisitor): Unit = {
+    method.emitInvokeStatic(getInternalName(classOf[BuiltIns]), "toList", "([" + getDescriptor(classOf[Object]) + ")" + getDescriptor(classOf[Object]))
+  }
+
   def loadLiteral(method : SimpleMethodVisitor, literalValue: LiteralValue): Unit = {
     def initializeObjectWithString(classTypeName : String, param : String): Unit = {
       method.createAndDupObject(classTypeName)
@@ -83,7 +87,7 @@ object CodeGenerator {
         method.invokeConstructor(classTypeName, getDescriptor(classOf[Double]))
       case LiteralList(l) =>
         createArray(method, l, (elem : LiteralValue) => loadLiteral(method, elem))
-        method.emitInvokeStatic(getInternalName(classOf[BuiltIns]), "toList", "([" + getDescriptor(classOf[Object]) + ")" + getDescriptor(classOf[Object]))
+        emitListConversion(method)
     }
   }
 
@@ -172,7 +176,12 @@ object CodeGenerator {
           emitFirstClassProcedureCallToObjectOnStack(method, state, args)
         } else if (state.methods.get(id.uniqueName).isDefined) {
           val m = state.methods.get(id.uniqueName).get
-          pushArgs(method, state, args)
+          if (m.isVarargs) {
+            pushArrayArgs(method, state, args)
+            emitListConversion(method)
+          } else {
+            pushArgs(method, state, args)
+          }
           method.emitInvokeStatic(state.mainClass.getName, id.uniqueName, m.descriptor)
         } else {
           throw new CodeGenException("Unknown procedure " + id.name)
@@ -426,7 +435,11 @@ object CodeGenerator {
   def generateProcedures(procedures : List[ClosureDefinition], state : ProgramState): ProgramState = {
     def generateProcedure(c : ClosureDefinition) = {
       val descriptor = buildMethodDescriptor(c)
-      val m = new SimpleMethodVisitor(state.mainClass, ACC_PRIVATE + ACC_STATIC, c.functionName.uniqueName, descriptor)
+      val isVarargs = c.formals match {
+        case SingleArgFormals(_) => true
+        case MultiArgFormals(_) => false
+      }
+      val m = new SimpleMethodVisitor(state.mainClass, ACC_PRIVATE + ACC_STATIC, c.functionName.uniqueName, descriptor, isVarargs)
       (c.functionName.uniqueName, m)
     }
 
@@ -673,7 +686,7 @@ object CodeGenerator {
   def makeInitializer(program : ProgramSyntaxTree, state : ProgramState) = {
     println("Generating initializer")
 
-    val initializer = new SimpleMethodVisitor(state.mainClass, ACC_STATIC, "<clinit>", "()V")
+    val initializer = new SimpleMethodVisitor(state.mainClass, ACC_STATIC, "<clinit>", "()V", false)
     initializer.visitCode()
 
     val firstClassProcs = program.procedureDefinitions.filter(isUsedAsFirstClassProcedure)
@@ -713,7 +726,7 @@ object CodeGenerator {
     val newState = generateTopLevelProcedures(program, state)
 
     val mainMethodDescriptor = "([" + getDescriptor(classOf[String]) + ")" + Type.VOID_TYPE.getDescriptor
-    val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor)
+    val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor, false)
 
     println("Adding class references")
     addInnerClassReferences(mainClass)
