@@ -282,7 +282,7 @@ object CodeGenerator {
   def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, loadValue : (SimpleMethodVisitor, ProgramState) => Unit): Unit = {
     state.scope.get(id.uniqueName) match {
       case None =>
-        throw new CodeGenException("Unknown variable " + id.name)
+        throw new CodeGenException("Trying to set unknown variable " + id.name)
       case Some(v) =>
         v match {
           case StaticField(n) =>
@@ -451,6 +451,15 @@ object CodeGenerator {
           val firstClassAndCapturingProcedures = c.procedureDefinitions
             .filter((p) => isUsedAsFirstClassProcedure(p) || capturesVariables(p))
 
+          // Find escaping variables (captured by any first class procedure in scope)
+          val escapingVariables = (anonymousProcedures ::: firstClassAndCapturingProcedures.map((p) => p.closure))
+            .flatMap((c) => c.environment)
+            .distinct
+          val escapingVariableNames = escapingVariables.map((id) => id.uniqueName)
+          val capturedProcedures = c.procedureDefinitions.filter((p) => escapingVariableNames.contains(p.id.uniqueName))
+
+          val localProcedureObjects = (firstClassAndCapturingProcedures ::: capturedProcedures).distinct
+
           // Find all ids we need to introduce local variables for
           val captureIds = c.environment.map((capture) => capture.uniqueName)
           val argIds = c.formals match {
@@ -458,14 +467,8 @@ object CodeGenerator {
             case MultiArgFormals(ids) => ids.map((id) => id.uniqueName)
           }
           val localIds = c.variableDeclarations.map((v) => v.id.uniqueName)
-          val localProcIds = firstClassAndCapturingProcedures.map((p) => p.id.uniqueName)
+          val localProcIds = localProcedureObjects.map((p) => p.id.uniqueName)
           val localVariableIds = captureIds ::: argIds ::: localIds ::: localProcIds
-
-          // Find escaping variables (captured by any first class procedure in scope)
-          val escapingVariables = (anonymousProcedures ::: firstClassAndCapturingProcedures.map((p) => p.closure))
-            .flatMap((c) => c.environment)
-            .distinct
-          val escapingVariableNames = escapingVariables.map((id) => id.uniqueName)
 
           // Variables captured from surrounding scopes as well
           // as variables escaping from this scope are represented
@@ -479,7 +482,10 @@ object CodeGenerator {
           val procedureBodyState = stateWithNestedMethods.copy(scope = newScope)
 
           def emitPreamble (methodVisitor : SimpleMethodVisitor) = {
-            val newCaptures = escapingVariables.filter((v) => !captureIds.contains(v.uniqueName))
+            val newCaptures = escapingVariables
+              .filter((v) => !captureIds.contains(v.uniqueName))
+
+            println("Setting up escaping variables for method " + c.functionName.uniqueName + ", scope is " + procedureBodyState.scope)
 
             for (capture <- newCaptures) {
               println("Setting up escaping variable " + capture)
@@ -501,7 +507,7 @@ object CodeGenerator {
               methodVisitor.visitVarInsn(ASTORE, localVarIndex)
             }
 
-            for (p <- firstClassAndCapturingProcedures) {
+            for (p <- localProcedureObjects) {
               val loader = (m : SimpleMethodVisitor, s : ProgramState) => loadFirstClassProcedure(m, s, p.closure)
               emitVariableAssignment(methodVisitor, procedureBodyState, p.id, loader)
             }
