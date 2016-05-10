@@ -48,6 +48,10 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
     methodVisitor.visitMethodInsn(INVOKESPECIAL, objectType, "<init>", "(" + paramTypeDescriptor + ")V", false)
   }
 
+  def invokeConstructor(objectType : String): Unit = {
+    invokeConstructor(objectType, "")
+  }
+
   def loadConstant(obj : AnyRef): Unit = {
     methodVisitor.visitLdcInsn(obj)
   }

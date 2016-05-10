@@ -14,6 +14,7 @@ object CodeGenerator {
   abstract class Variable
   case class StaticField(name : String) extends Variable
   case class LocalVariable(name : String, index : Int) extends Variable
+  case class LocalReferenceVariable(name : String, index : Int) extends Variable
 
   case class ProgramState(mainClass : DebugClassWriter, scope : Map[String, Variable], methods : Map[String, SimpleMethodVisitor])
 
@@ -247,7 +248,7 @@ object CodeGenerator {
     }
   }
 
-  def emitVariableReference(method : SimpleMethodVisitor, state : ProgramState, id : Identifier): Unit = {
+  def emitVariableReference(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, rawReferences : Boolean): Unit = {
     state.scope.get(id.uniqueName) match {
       case None =>
         if (builtInProcedures.contains(id.uniqueName)) {
@@ -262,22 +263,39 @@ object CodeGenerator {
             method.emitGetStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
           case LocalVariable(n, i) =>
             method.visitVarInsn(ALOAD, i)
+          case LocalReferenceVariable(n, i) =>
+            method.visitVarInsn(ALOAD, i)
+            if (!rawReferences) {
+              method.visitTypeInsn(CHECKCAST, getInternalName(classOf[CTReferenceCell]))
+              method.visitMethodInsn(INVOKEVIRTUAL, getInternalName(classOf[CTReferenceCell]), "get", makeObjectMethodDescriptor(0, isArray = false), onInterface = false)
+            }
           case _ =>
             throw new CodeGenException("Unknown field type " + v)
         }
     }
   }
 
-  def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier): Unit = {
+  def emitVariableReference(method : SimpleMethodVisitor, state : ProgramState, id : Identifier): Unit = {
+    emitVariableReference(method, state, id, rawReferences = false)
+  }
+
+  def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, loadValue : (SimpleMethodVisitor, ProgramState) => Unit): Unit = {
     state.scope.get(id.uniqueName) match {
       case None =>
         throw new CodeGenException("Unknown variable " + id.name)
       case Some(v) =>
         v match {
           case StaticField(n) =>
+            loadValue(method, state)
             method.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
           case LocalVariable(n, i) =>
+            loadValue(method, state)
             method.visitVarInsn(ASTORE, i)
+          case LocalReferenceVariable(n, i) =>
+            method.visitVarInsn(ALOAD, i)
+            method.visitTypeInsn(CHECKCAST, getInternalName(classOf[CTReferenceCell]))
+            loadValue(method, state)
+            method.visitMethodInsn(INVOKEVIRTUAL, getInternalName(classOf[CTReferenceCell]), "set", "(" + getDescriptor(classOf[Object]) + ")V", onInterface = false)
           case _ =>
             throw new CodeGenException("Unknown field type " + v)
         }
@@ -285,8 +303,8 @@ object CodeGenerator {
   }
 
   def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, expression: Expression): Unit = {
-    pushExpressionResultToStack(method, state, expression)
-    emitVariableAssignment(method, state, id)
+    val loader = (m : SimpleMethodVisitor, s : ProgramState) => pushExpressionResultToStack(m, s, expression)
+    emitVariableAssignment(method, state, id, loader)
     loadUndefined(method)
   }
 
@@ -367,11 +385,25 @@ object CodeGenerator {
     procedureDefinition.closure.isReassigned || procedureDefinition.closure.isUsedAsFirstClassValue
   }
 
+  def loadEmptyReferenceCell(method: SimpleMethodVisitor): Unit = {
+    val classTypeName = getInternalName(classOf[CTReferenceCell])
+    method.createAndDupObject(classTypeName)
+    method.invokeConstructor(classTypeName)
+  }
+
   def generateProcedures(procedureDefinitions : List[ProcedureDefinition], state : ProgramState): ProgramState = {
     def generateProcedure(p : ProcedureDefinition) = {
       val descriptor = buildMethodDescriptor(p.closure)
       val m = new SimpleMethodVisitor(state.mainClass, ACC_PRIVATE + ACC_STATIC, p.id.uniqueName, descriptor)
       (p.id.uniqueName, m)
+    }
+
+    def makeLocalVariable(name : String, index : Int, storedAsReference : List[String]): Variable = {
+      if (storedAsReference.contains(name)) {
+        LocalReferenceVariable(name, index)
+      } else {
+        LocalVariable(name, index)
+      }
     }
 
     def procedureBody(p : ProcedureDefinition, state : ProgramState) = {
@@ -383,21 +415,50 @@ object CodeGenerator {
           val stateWithNestedMethods = generateProcedures(p.closure.procedureDefinitions, state)
           val firstClassProcedures = p.closure.procedureDefinitions.filter(isUsedAsFirstClassProcedure)
 
+          // Find all ids we need to introduce local variables for
+          val captureIds = p.closure.environment.map((capture) => capture.uniqueName)
           val argIds = p.closure.formals match {
             case SingleArgFormals(id) => List(id.uniqueName)
             case MultiArgFormals(ids) => ids.map((id) => id.uniqueName)
           }
           val localIds = p.closure.variableDeclarations.map((v) => v.id.uniqueName)
           val localProcIds = firstClassProcedures.map((p) => p.id.uniqueName)
-          val localsAndArgs = (argIds ::: localIds ::: localProcIds).zipWithIndex.map((i) => (i._1, LocalVariable(i._1, i._2)))
+
+          // Find escaping variables (captured by any first class procedure in scope)
+          // -> TODO: this should include variables captured by anonymous procedures as well
+          // -> TODO: what about local variables referenced by non-first-class nested procedures
+          val escapingVariables = firstClassProcedures
+            .flatMap((p) => p.closure.environment)
+            .distinct
+          val escapingVariableNames = escapingVariables.map((id) => id.uniqueName)
+
+          // Variables captured from surrounding scopes as well
+          // as variables escaping from this scope are represented
+          // as reference cells.
+          val localsAndArgs = (captureIds ::: argIds ::: localIds ::: localProcIds)
+            .zipWithIndex
+            .map((i) => (i._1, makeLocalVariable(i._1, i._2, (escapingVariableNames ::: captureIds).distinct)))
 
           val newScope = localsAndArgs.foldLeft(stateWithNestedMethods.scope)((scope : Map[String, Variable], v) => scope.updated(v._1, v._2))
           val procedureBodyState = stateWithNestedMethods.copy(scope = newScope)
 
           def emitPreamble (methodVisitor : SimpleMethodVisitor) = {
+            for (capture <- escapingVariables) {
+              println("Setting up captured variable " + capture)
+              loadEmptyReferenceCell(methodVisitor)
+              procedureBodyState.scope.get(capture.uniqueName) match {
+                case Some(LocalReferenceVariable(n, i)) =>
+                  methodVisitor.visitVarInsn(ASTORE, i)
+                case None =>
+                  throw new CodeGenException("Internal error: could not find local variable " + capture.uniqueName)
+                case Some(v) =>
+                  throw new CodeGenException("Internal error: unexpected variable type for variable " + capture.uniqueName + ": " + v)
+              }
+            }
+
             for (p <- firstClassProcedures) {
-              loadNonCapturingProcedure(methodVisitor, procedureBodyState, p)
-              emitVariableAssignment(methodVisitor, procedureBodyState, p.id)
+              val loader = (m : SimpleMethodVisitor, s : ProgramState) => loadFirstClassProcedure(m, s, p)
+              emitVariableAssignment(methodVisitor, procedureBodyState, p.id, loader)
             }
           }
 
@@ -405,7 +466,6 @@ object CodeGenerator {
       }
     }
 
-    // TODO: add arguments for captured variables
     val methods = procedureDefinitions.map(generateProcedure).toMap
     val updatedMethods = state.methods ++ methods
     val newState = state.copy(methods = updatedMethods)
@@ -421,9 +481,17 @@ object CodeGenerator {
     generateProcedures(program.procedureDefinitions, state)
   }
 
-  def buildMethodDescriptor(closure : ClosureDefinition): String = {
+  def buildMethodDescriptor(closure : ClosureDefinition, withCaptures : Boolean): String = {
     val sb = new StringBuilder("(")
     val objectDescriptor = getDescriptor(classOf[Object])
+
+    if (withCaptures) {
+      for (capture <- closure.environment) {
+        println("Building method descriptor for closure " + closure.functionName.uniqueName + ", adding parameter for capture " + capture)
+        sb.append(objectDescriptor)
+      }
+    }
+
     closure.formals match {
       case SingleArgFormals(id) =>
         sb.append(objectDescriptor)
@@ -434,6 +502,10 @@ object CodeGenerator {
     }
 
     sb.append(")").append(objectDescriptor).toString
+  }
+
+  def buildMethodDescriptor(closure : ClosureDefinition): String = {
+    buildMethodDescriptor(closure, withCaptures = true)
   }
 
   def buildProcedureObjectDescriptor(closure : ClosureDefinition): String = {
@@ -475,21 +547,32 @@ object CodeGenerator {
     val methodDescriptor = buildMethodDescriptor(closure)
     val methodHandle = new Handle(H_INVOKESTATIC, state.mainClass.getName, methodName, methodDescriptor, methodOnInterface)
     val procedureObjectDescriptor = buildProcedureObjectDescriptor(closure)
-    val applyMethodDescriptor = "()" + procedureObjectDescriptor // No captures, so parentheses are empty
+    val implementedMethodDescriptor = buildMethodDescriptor(closure, withCaptures = false)
 
+    val objectDescriptor = getDescriptor(classOf[Object])
+    val captureDescriptors = closure.environment.map((_) => objectDescriptor).mkString("")
+    val applyMethodDescriptor = "(" + captureDescriptors + ")" + procedureObjectDescriptor
+
+    println("\n*****")
     println("Loading procedure object for method " + methodName)
     println("Method descriptor is: " + methodDescriptor)
     println("Procedure object descriptor is: " + procedureObjectDescriptor)
-    println("Method type: " + Type.getType(methodDescriptor))
+    println("Implemented method descriptor: " + implementedMethodDescriptor)
+    println("Implemented method type: " + Type.getType(implementedMethodDescriptor))
     println("Apply method descriptor: " + applyMethodDescriptor)
     println("Method handle: " + methodHandle)
+    println("*****\n")
+
+    for (capture <- closure.environment) {
+      emitVariableReference(method, state, capture, rawReferences = true)
+    }
 
     method.visitInvokeDynamicInsn("apply",
       applyMethodDescriptor,
       lambdaMetaFactoryHandle,
-      Type.getType(methodDescriptor),
+      Type.getType(implementedMethodDescriptor),
       methodHandle,
-      Type.getType(methodDescriptor))
+      Type.getType(implementedMethodDescriptor))
   }
 
   def attachArgumentHandler(method : SimpleMethodVisitor, methodName : String, closure : ClosureDefinition): Unit = {
@@ -529,7 +612,7 @@ object CodeGenerator {
     }
   }
 
-  def loadNonCapturingProcedure(method : SimpleMethodVisitor, state : ProgramState, p : ProcedureDefinition): Unit = {
+  def loadFirstClassProcedure(method : SimpleMethodVisitor, state : ProgramState, p : ProcedureDefinition): Unit = {
     loadProcedureObject(method, state, p.id.uniqueName, p.closure)
     attachArgumentHandler(method, p.id.name, p.closure)
   }
@@ -549,7 +632,7 @@ object CodeGenerator {
         case Some(v) =>
           v match {
             case StaticField(n) =>
-              loadNonCapturingProcedure(initializer, state, p)
+              loadFirstClassProcedure(initializer, state, p)
               initializer.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
             case e =>
               throw new CodeGenException("Internal error: Unexpected field type for " + p.id.uniqueName + ": " + e)
