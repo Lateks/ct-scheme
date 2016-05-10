@@ -402,6 +402,27 @@ object CodeGenerator {
     method.invokeConstructor(classTypeName, getDescriptor(classOf[Object]))
   }
 
+  def findClosuresInScope(expressions : List[Expression]): List[ClosureDefinition] = {
+    def findClosuresInExpression(expr : Expression): List[ClosureDefinition] = {
+      expr match {
+        case ProcedureCall(proc, args, _) =>
+          findClosuresInExpression(proc) ::: findClosuresInScope(args)
+        case Conditional(cond, thenBranch, elseBranch) =>
+          findClosuresInExpression(cond) ::: findClosuresInExpression(thenBranch) ::: findClosuresInExpression(elseBranch)
+        case SequenceExpression(_, exprs) =>
+          findClosuresInScope(exprs)
+        case Assignment(_, e) =>
+          findClosuresInExpression(e)
+        case Closure(c) =>
+          List(c)
+        case UndefinedValue() | ValueExpression(_) | VariableReference(_) =>
+          List()
+      }
+    }
+
+    expressions.flatMap(findClosuresInExpression)
+  }
+
   def generateProcedures(procedures : List[ClosureDefinition], state : ProgramState): ProgramState = {
     def generateProcedure(c : ClosureDefinition) = {
       val descriptor = buildMethodDescriptor(c)
@@ -415,27 +436,6 @@ object CodeGenerator {
       } else {
         LocalVariable(name, index)
       }
-    }
-
-    def findClosuresInScope(expressions : List[Expression]): List[ClosureDefinition] = {
-      def findClosuresInExpression(expr : Expression): List[ClosureDefinition] = {
-        expr match {
-          case ProcedureCall(proc, args, _) =>
-            findClosuresInExpression(proc) ::: findClosuresInScope(args)
-          case Conditional(cond, thenBranch, elseBranch) =>
-            findClosuresInExpression(cond) ::: findClosuresInExpression(thenBranch) ::: findClosuresInExpression(elseBranch)
-          case SequenceExpression(_, exprs) =>
-            findClosuresInScope(exprs)
-          case Assignment(_, e) =>
-            findClosuresInExpression(e)
-          case Closure(c) =>
-            List(c)
-          case UndefinedValue() | ValueExpression(_) | VariableReference(_) =>
-            List()
-        }
-      }
-
-      expressions.flatMap(findClosuresInExpression)
     }
 
     def procedureBody(c : ClosureDefinition, state : ProgramState) = {
@@ -523,7 +523,9 @@ object CodeGenerator {
   }
 
   def generateTopLevelProcedures(program : ProgramSyntaxTree, state : ProgramState) = {
-    generateProcedures(program.procedureDefinitions.map((p) => p.closure), state)
+    val closuresInTopLevelScope = findClosuresInScope(program.expressions)
+    val namedProcedures = program.procedureDefinitions.map((p) => p.closure)
+    generateProcedures(namedProcedures ::: closuresInTopLevelScope, state)
   }
 
   def buildMethodDescriptor(closure : ClosureDefinition, withCaptures : Boolean): String = {
