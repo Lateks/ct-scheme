@@ -395,7 +395,7 @@ object CodeGenerator {
     method.invokeConstructor(classTypeName)
   }
 
-  def loadReferenceCellWithLocalVariable(method : SimpleMethodVisitor, localVarIndex : Int): Unit = {
+  def loadReferenceCellWithLocalVariableValue(method : SimpleMethodVisitor, localVarIndex : Int): Unit = {
     val classTypeName = getInternalName(classOf[CTReferenceCell])
     method.createAndDupObject(classTypeName)
     method.visitVarInsn(ALOAD, localVarIndex)
@@ -435,6 +435,7 @@ object CodeGenerator {
           }
           val localIds = p.closure.variableDeclarations.map((v) => v.id.uniqueName)
           val localProcIds = firstClassAndCapturingProcedures.map((p) => p.id.uniqueName)
+          val localVariableIds = captureIds ::: argIds ::: localIds ::: localProcIds
 
           // Find escaping variables (captured by any first class procedure in scope)
           // -> TODO: this should include variables captured by anonymous procedures as well
@@ -446,9 +447,10 @@ object CodeGenerator {
           // Variables captured from surrounding scopes as well
           // as variables escaping from this scope are represented
           // as reference cells.
-          val localsAndArgs = (captureIds ::: argIds ::: localIds ::: localProcIds)
+          val localReferenceVariables = (escapingVariableNames ::: captureIds).distinct
+          val localsAndArgs = localVariableIds
             .zipWithIndex
-            .map((i) => (i._1, makeLocalVariable(i._1, i._2, (escapingVariableNames ::: captureIds).distinct)))
+            .map((i) => (i._1, makeLocalVariable(i._1, i._2, localReferenceVariables)))
 
           val newScope = localsAndArgs.foldLeft(stateWithNestedMethods.scope)((scope : Map[String, Variable], v) => scope.updated(v._1, v._2))
           val procedureBodyState = stateWithNestedMethods.copy(scope = newScope)
@@ -466,7 +468,7 @@ object CodeGenerator {
               }
 
               if (argIds.contains(capture.uniqueName)) {
-                loadReferenceCellWithLocalVariable(methodVisitor, localVarIndex)
+                loadReferenceCellWithLocalVariableValue(methodVisitor, localVarIndex)
               } else {
                 loadEmptyReferenceCell(methodVisitor)
               }
