@@ -6,5 +6,5 @@
 	(inc)
 	n))
 
-(display (test 5))
+(display (test 5)) ; 6
 (newline)

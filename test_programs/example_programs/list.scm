@@ -1,3 +1,6 @@
 (display (list))
+(newline)
 (display (list 1 2 3))
+(newline)
 (display (list 1 2 (list "foo" "bar" "baz")))
+(newline)

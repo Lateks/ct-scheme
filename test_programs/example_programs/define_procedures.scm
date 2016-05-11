@@ -20,17 +20,17 @@
 		(begin (display "y is smaller\n")
 			   y))))
 			   
-(println "Hello, world!")
+(println "Hello, world!") ; Hello, world!
 
-(display (test2 5 4))
+(display (test2 5 4)) ; 9
 (newline)
 
-(display (by-value-and #t #f))
+(display (by-value-and #t #f)) ; #f
 (newline)
 
-(display (min 5 4))
+(display (min 5 4)) ; y is smaller\n4
 (newline)
-(display (min 2 3))
+(display (min 2 3)) ; x is smaller\n2
 (newline)
 
 (define accepted-id 5)
@@ -40,9 +40,9 @@
     (if (eq? id accepted-id)
 	    "access granted")))
 
-(display (get-access 1))
+(display (get-access 1)) ; empty line (undefined)
 (newline)
-(display (get-access 5))
+(display (get-access 5)) ; "access granted"
 
 (define assignment-test
    (lambda (x y)

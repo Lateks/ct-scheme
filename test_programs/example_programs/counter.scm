@@ -15,12 +15,12 @@
 (define inc (car (cdr ctr)))
 (define comb (car (cdr (cdr ctr))))
 
-(display (getter))
+(display (getter)) ; 1
 (newline)
 (inc)
 (inc)
 (inc)
-(display (getter))
+(display (getter)) ; 4
 (newline)
-(display (comb))
+(display (comb)) ; 5
 (newline)

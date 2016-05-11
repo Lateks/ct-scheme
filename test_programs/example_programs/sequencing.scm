@@ -21,7 +21,7 @@
 (newline)
 (display (and)) ; #t
 (newline)
-(display (or (display "hello") (display "world")))
+(display (or (display "hello") (display "world"))) ; hello (because undefined is a truthy value)
 (newline)
 (display (or #f #t)) ; #t
 (newline)

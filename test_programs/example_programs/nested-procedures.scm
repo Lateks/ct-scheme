@@ -16,11 +16,11 @@
     (lambda (y)
 	  (+ x y))))
 	  
-(display ((add 5) 10))
+(display ((add 5) 10)) ; 15
 (newline)
 
 (define add5 (add 5))
-(display (add5 10))
+(display (add5 10)) ; 15
 (newline)
 
 (define add3
@@ -32,7 +32,7 @@
 (define expected (+ 1 2 3))
 (define got (((add3 1) 2) 3))
 (if (eq? expected got)
-    (display "add3 ok\n")
+    (display "add3 ok\n") ; add3 ok
 	(begin (display "add3 is wrong\n")
 	       (display "expected ")
 		   (display expected)

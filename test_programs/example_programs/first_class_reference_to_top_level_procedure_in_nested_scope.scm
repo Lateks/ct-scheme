@@ -13,13 +13,13 @@
 
 (define other-thing thing)
 
-(other-thing "Laura")	
+(other-thing "Laura") ; "Hello, Laura"
 
-((get-thing) "Laura")
+((get-thing) "Laura") ; "Hello, Laura"
 
 (define to-lister to-list)
 
-(display (to-lister 1 2 3 4 5))
+(display (to-lister 1 2 3 4 5)) ; (1 2 3 4 5)
 (newline)
 
-(other-thing)
+(other-thing) ; arity mismatch error

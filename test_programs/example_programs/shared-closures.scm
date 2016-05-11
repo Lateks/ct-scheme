@@ -22,9 +22,9 @@
 	inc))
 
 (define ctr (get-counter))
-(display (ctr))
+(display (ctr)) ; 1
 (newline)
-(display (ctr))
+(display (ctr)) ; 2
 (newline)
 
 (define increment #f)
@@ -35,7 +35,7 @@
     (define c 0)
     (set! increment (lambda () (set! c (+ c 1))))
     (set! get (lambda () c))
-	;(set! inc-and-get (lambda () (increment) (get)))
+	(set! inc-and-get (lambda () (increment) (get)))
 	#t))
 
 (setup)
@@ -46,16 +46,18 @@
 (increment)
 (display (get)) ; 3
 (newline)
+(display (inc-and-get)) ; 4
+(newline)
 
-; (define counter
-;   (lambda ()
-;     (define c 0)
-;     (lambda ()
-;       (set! (+ c 1))
-;       c)))
-;
-; (define increment-counter (counter))
-; (display (increment-counter))
-; (newline)
-; (display (increment-counter))
-; (newline)
+(define counter
+  (lambda ()
+    (define c 0)
+    (lambda ()
+      (set! c (+ c 1))
+      c)))
+
+(define increment-counter (counter))
+(display (increment-counter)) ; 1
+(newline)
+(display (increment-counter)) ; 2
+(newline)
