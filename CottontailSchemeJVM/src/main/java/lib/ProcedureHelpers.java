@@ -75,4 +75,12 @@ public class ProcedureHelpers {
             throw new NotAProcedureError(p);
         }
     }
+
+    public static Object trampoline(Object v) {
+        Object currentValue = v;
+        while (currentValue instanceof CTTailContinuation) {
+            currentValue = ((CTTailContinuation) currentValue).value.apply();
+        }
+        return currentValue;
+    }
 }
