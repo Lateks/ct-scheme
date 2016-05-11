@@ -167,16 +167,30 @@ object CodeGenerator {
       onInterface = false)
   }
 
-  def emitProcedureCall(method : SimpleMethodVisitor, state : ProgramState, procedure : Expression, args : List[Expression]): Unit = {
+  def emitProcedureCall(method : SimpleMethodVisitor, state : ProgramState, procedure : Expression, args : List[Expression], tailCall : Boolean): Unit = {
     procedure match {
       case VariableReference(id) =>
         if (builtInProcedures.contains(id.uniqueName)) {
+          // No tail call handling for built-in procedures
+          // because they never result in further tail calls.
           pushBuiltInProcedureArgs(method, state, id.uniqueName, args)
           emitBuiltInProcedureCall(method, id.uniqueName)
         } else if (state.scope.get(id.uniqueName).isDefined) {
+          // TODO: if in tail position, build CTTailContinuation value:
+          // - create CTTailContinuation object
+          // - create CTProcedure0 object, binding args
+          // - initialize CTTailContinuation object
+          // TODO: if not in tail position, add call to ProcedureHelpers.trampoline
           emitVariableReference(method, state, id)
           emitFirstClassProcedureCallToObjectOnStack(method, state, args)
         } else if (state.methods.get(id.uniqueName).isDefined) {
+          // TODO: the same tail call handling as above
+          // Note: this call should have had its arguments checked
+          // during semantic analysis, so no need to attach a matcher
+          // to the procedure object.
+          // However, if the called procedure is variable arity,
+          // the argument list should be built here while binding
+          // args to make the CTProcedure0 object.
           val m = state.methods.get(id.uniqueName).get
           if (m.isVarargs) {
             pushArrayArgs(method, state, args)
@@ -189,6 +203,7 @@ object CodeGenerator {
           throw new CodeGenException("Unknown procedure " + id.name)
         }
       case e =>
+        // TODO: the same tail call handling as above
         pushExpressionResultToStack(method, state, e)
         emitFirstClassProcedureCallToObjectOnStack(method, state, args)
     }
@@ -321,8 +336,8 @@ object CodeGenerator {
 
   def generateExpression(method : SimpleMethodVisitor, state : ProgramState, expression : Expression, keepResultOnStack : Boolean): Unit = {
     expression match {
-      case ProcedureCall(proc, args, tc) => // TODO: Not handling tail calls yet
-        emitProcedureCall(method, state, proc, args)
+      case ProcedureCall(proc, args, isTailCall) =>
+        emitProcedureCall(method, state, proc, args, isTailCall)
       case ValueExpression(lit) =>
         loadLiteral(method, lit)
       case Conditional(cond, thenBranch, elseBranch) =>
