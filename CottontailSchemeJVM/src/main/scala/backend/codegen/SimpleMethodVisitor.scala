@@ -7,6 +7,7 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : Strin
   val methodVisitor = cv.visitMethod(visibilityFlags, name, signature, null, new Array[String](0))
   val descriptor = signature
   val isVarargs = varargs
+  val methodName = name
 
   def emitGetStatic(className : String, fieldName : String, fieldType : String): Unit = {
     methodVisitor.visitFieldInsn(GETSTATIC, className, fieldName, fieldType)

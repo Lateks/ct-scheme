@@ -19,6 +19,7 @@ object CodeGenerator {
   case class ProgramState(mainClass : DebugClassWriter, scope : Map[String, Variable], methods : Map[String, SimpleMethodVisitor])
 
   val debug = true
+  val optimizeTailCalls = true
   val stdout = new PrintWriter(System.out)
 
   def getInternalName(c : Class [_]): String = {
@@ -167,45 +168,77 @@ object CodeGenerator {
       onInterface = false)
   }
 
+  def emitTrampolineCall(method : SimpleMethodVisitor): Unit = {
+    method.emitInvokeStatic(getInternalName(classOf[ProcedureHelpers]),
+      "trampoline",
+      "(" + getDescriptor(classOf[Object]) + ")" + getDescriptor(classOf[Object]))
+  }
+
+  def makeTailCallToFirstClassObject(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression], loadProcedure : (SimpleMethodVisitor, ProgramState) => Unit): Unit = {
+    method.createAndDupObject(getInternalName(classOf[CTTailContinuation]))
+
+    loadProcedure(method, state)
+    pushArrayArgs(method, state, args)
+    method.emitInvokeStatic(getInternalName(classOf[ProcedureHelpers]),
+      "bindArgs",
+      "(" + getDescriptor(classOf[Object]) + getDescriptor(classOf[Array[Object]]) + ")" + getDescriptor(classOf[CTProcedure0]))
+
+    method.invokeConstructor(getInternalName(classOf[CTTailContinuation]), getDescriptor(classOf[CTProcedure0]))
+  }
+
+  def pushArgsForMethod(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression], calledMethod : SimpleMethodVisitor): Unit = {
+    if (calledMethod.isVarargs) {
+      pushArrayArgs(method, state, args)
+      emitListConversion(method)
+    } else {
+      pushArgs(method, state, args)
+    }
+  }
+
   def emitProcedureCall(method : SimpleMethodVisitor, state : ProgramState, procedure : Expression, args : List[Expression], tailCall : Boolean): Unit = {
     procedure match {
       case VariableReference(id) =>
         if (builtInProcedures.contains(id.uniqueName)) {
-          // No tail call handling for built-in procedures
-          // because they never result in further tail calls.
+          // No tail call handling required for built-in procedures
+          // because they never result in further (tail) calls.
           pushBuiltInProcedureArgs(method, state, id.uniqueName, args)
           emitBuiltInProcedureCall(method, id.uniqueName)
         } else if (state.scope.get(id.uniqueName).isDefined) {
-          // TODO: if in tail position, build CTTailContinuation value:
-          // - create CTTailContinuation object
-          // - create CTProcedure0 object, binding args
-          // - initialize CTTailContinuation object
-          // TODO: if not in tail position, add call to ProcedureHelpers.trampoline
-          emitVariableReference(method, state, id)
-          emitFirstClassProcedureCallToObjectOnStack(method, state, args)
-        } else if (state.methods.get(id.uniqueName).isDefined) {
-          // TODO: the same tail call handling as above
-          // Note: this call should have had its arguments checked
-          // during semantic analysis, so no need to attach a matcher
-          // to the procedure object.
-          // However, if the called procedure is variable arity,
-          // the argument list should be built here while binding
-          // args to make the CTProcedure0 object.
-          val m = state.methods.get(id.uniqueName).get
-          if (m.isVarargs) {
-            pushArrayArgs(method, state, args)
-            emitListConversion(method)
+          if (optimizeTailCalls && tailCall) {
+            makeTailCallToFirstClassObject(method, state, args,
+              (m : SimpleMethodVisitor, s : ProgramState) => emitVariableReference(method, state, id))
           } else {
-            pushArgs(method, state, args)
+            emitVariableReference(method, state, id)
+            emitFirstClassProcedureCallToObjectOnStack(method, state, args)
+            if (optimizeTailCalls)
+              emitTrampolineCall(method)
           }
-          method.emitInvokeStatic(state.mainClass.getName, id.uniqueName, m.descriptor)
+        } else if (state.methods.get(id.uniqueName).isDefined) {
+          val m = state.methods.get(id.uniqueName).get
+
+          if (optimizeTailCalls && tailCall) {
+            method.createAndDupObject(getInternalName(classOf[CTTailContinuation]))
+            loadProcedureObject(method, state, m, args)
+            method.invokeConstructor(getInternalName(classOf[CTTailContinuation]), getDescriptor(classOf[CTProcedure0]))
+          } else {
+            pushArgsForMethod(method, state, args, m)
+            method.emitInvokeStatic(state.mainClass.getName, id.uniqueName, m.descriptor)
+            if (optimizeTailCalls)
+              emitTrampolineCall(method)
+          }
         } else {
           throw new CodeGenException("Unknown procedure " + id.name)
         }
       case e =>
-        // TODO: the same tail call handling as above
-        pushExpressionResultToStack(method, state, e)
-        emitFirstClassProcedureCallToObjectOnStack(method, state, args)
+        if (optimizeTailCalls && tailCall) {
+          makeTailCallToFirstClassObject(method, state, args,
+            (m : SimpleMethodVisitor, s : ProgramState) => pushExpressionResultToStack(method, state, e))
+        } else {
+          pushExpressionResultToStack(method, state, e)
+          emitFirstClassProcedureCallToObjectOnStack(method, state, args)
+          if (optimizeTailCalls)
+            emitTrampolineCall(method)
+        }
     }
   }
 
@@ -623,17 +656,17 @@ object CodeGenerator {
       false)
   }
 
-  def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodName : String, closure : ClosureDefinition): Unit = {
+  def loadProcedureObject(method : SimpleMethodVisitor,
+                          state : ProgramState,
+                          methodName : String,
+                          methodDescriptor : String,
+                          implementedMethodDescriptor : String,
+                          procedureObjectDescriptor : String,
+                          captureDescriptors : String
+                         ): Unit = {
     val lambdaMetaFactoryHandle = lambdaMetafactoryHandle()
-
     val methodOnInterface = false
-    val methodDescriptor = buildMethodDescriptor(closure)
     val methodHandle = new Handle(H_INVOKESTATIC, state.mainClass.getName, methodName, methodDescriptor, methodOnInterface)
-    val procedureObjectDescriptor = buildProcedureObjectDescriptor(closure)
-    val implementedMethodDescriptor = buildMethodDescriptor(closure, withCaptures = false)
-
-    val objectDescriptor = getDescriptor(classOf[Object])
-    val captureDescriptors = closure.environment.map((_) => objectDescriptor).mkString("")
     val applyMethodDescriptor = "(" + captureDescriptors + ")" + procedureObjectDescriptor
 
     println("\n*****")
@@ -646,16 +679,36 @@ object CodeGenerator {
     println("Method handle: " + methodHandle)
     println("*****\n")
 
-    for (capture <- closure.environment) {
-      emitVariableReference(method, state, capture, rawReferences = true)
-    }
-
     method.visitInvokeDynamicInsn("apply",
       applyMethodDescriptor,
       lambdaMetaFactoryHandle,
       Type.getType(implementedMethodDescriptor),
       methodHandle,
       Type.getType(implementedMethodDescriptor))
+  }
+
+  def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodToLoad : SimpleMethodVisitor, args : List[Expression]): Unit = {
+    val methodDescriptor = methodToLoad.descriptor
+    val procedureObjectDescriptor = getDescriptor(classOf[CTProcedure0])
+    val implementedMethodDescriptor = "()" + getDescriptor(classOf[Object])
+    val captureDescriptors = methodDescriptor.split(Array('(', ')'))(1)
+
+    pushArgsForMethod(method, state, args, methodToLoad)
+
+    loadProcedureObject(method, state, methodToLoad.methodName, methodDescriptor, implementedMethodDescriptor, procedureObjectDescriptor, captureDescriptors)
+  }
+
+  def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodName : String, closure : ClosureDefinition): Unit = {
+    val methodDescriptor = buildMethodDescriptor(closure)
+    val procedureObjectDescriptor = buildProcedureObjectDescriptor(closure)
+    val implementedMethodDescriptor = buildMethodDescriptor(closure, withCaptures = false)
+    val captureDescriptors = closure.environment.map((_) => getDescriptor(classOf[Object])).mkString("")
+
+    for (capture <- closure.environment) {
+      emitVariableReference(method, state, capture, rawReferences = true)
+    }
+
+    loadProcedureObject(method, state, methodName, methodDescriptor, implementedMethodDescriptor, procedureObjectDescriptor, captureDescriptors)
   }
 
   def attachArgumentHandler(method : SimpleMethodVisitor, methodName : String, closure : ClosureDefinition): Unit = {

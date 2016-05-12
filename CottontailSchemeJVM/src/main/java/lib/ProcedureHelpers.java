@@ -83,4 +83,13 @@ public class ProcedureHelpers {
         }
         return currentValue;
     }
+
+    public static CTProcedure0 bindArgs(Object proc, Object[] args) {
+        if (proc instanceof CTProcedure) {
+            CTProcedure p = (CTProcedure) proc;
+            return () -> p.apply(args);
+        } else {
+            throw new NotAProcedureError(proc);
+        }
+    }
 }
