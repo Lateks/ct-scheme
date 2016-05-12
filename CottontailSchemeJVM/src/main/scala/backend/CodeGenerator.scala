@@ -507,7 +507,6 @@ object CodeGenerator {
         case None =>
           throw new CodeGenException("Internal error: could not find procedure " + procName)
         case Some(mv) =>
-          println("Generating code for method " + procName + ", scope has the following methods: " + state.methods)
           val anonymousProcedures = findClosuresInScope(c.body)
           val nestedProcedures = anonymousProcedures ::: c.procedureDefinitions.map((p) => p.closure)
           val stateWithNestedMethods = generateProcedures(nestedProcedures, state)
@@ -547,12 +546,7 @@ object CodeGenerator {
           def emitPreamble (methodVisitor : SimpleMethodVisitor) = {
             val newCaptures = escapingVariables
               .filter((v) => !captureIds.contains(v.uniqueName))
-
-            println("Setting up escaping variables for method " + c.functionName.uniqueName + ", scope is " + procedureBodyState.scope)
-
             for (capture <- newCaptures) {
-              println("Setting up escaping variable " + capture)
-
               val localVarIndex = procedureBodyState.scope.get(capture.uniqueName) match {
                 case Some(LocalReferenceVariable(_, i)) => i
                 case None =>
@@ -603,7 +597,6 @@ object CodeGenerator {
 
     if (withCaptures) {
       for (capture <- closure.environment) {
-        println("Building method descriptor for closure " + closure.functionName.uniqueName + ", adding parameter for capture " + capture)
         sb.append(objectDescriptor)
       }
     }
@@ -669,16 +662,6 @@ object CodeGenerator {
     val methodHandle = new Handle(H_INVOKESTATIC, state.mainClass.getName, methodName, methodDescriptor, methodOnInterface)
     val applyMethodDescriptor = "(" + captureDescriptors + ")" + procedureObjectDescriptor
 
-    println("\n*****")
-    println("Loading procedure object for method " + methodName)
-    println("Method descriptor is: " + methodDescriptor)
-    println("Procedure object descriptor is: " + procedureObjectDescriptor)
-    println("Implemented method descriptor: " + implementedMethodDescriptor)
-    println("Implemented method type: " + Type.getType(implementedMethodDescriptor))
-    println("Apply method descriptor: " + applyMethodDescriptor)
-    println("Method handle: " + methodHandle)
-    println("*****\n")
-
     method.visitInvokeDynamicInsn("apply",
       applyMethodDescriptor,
       lambdaMetaFactoryHandle,
@@ -734,15 +717,12 @@ object CodeGenerator {
   }
 
   def makeInitializer(program : ProgramSyntaxTree, state : ProgramState) = {
-    println("Generating initializer")
-
     val initializer = new SimpleMethodVisitor(state.mainClass, ACC_STATIC, "<clinit>", "()V", false)
     initializer.visitCode()
 
     val firstClassProcs = program.procedureDefinitions.filter(isUsedAsFirstClassProcedure)
 
     for (p <- firstClassProcs) {
-      println("Found first class procedure " + p + ", storing it in a static field")
       state.scope.get(p.id.uniqueName) match {
         case None => throw new CodeGenException("Internal error: field " + p.id.uniqueName + " has not been declared.")
         case Some(v) =>
@@ -759,7 +739,6 @@ object CodeGenerator {
     initializer.emitReturn()
     initializer.visitMaxs(0, 0)
     initializer.visitEnd()
-    println("Finished generating initializer")
   }
 
   def addInnerClassReferences(mainClass : DebugClassWriter): Unit = {
@@ -767,8 +746,6 @@ object CodeGenerator {
   }
 
   def generateCodeFor(program : ProgramSyntaxTree) : Unit = {
-    println("Generating code")
-
     val mainClass = declareClass(program.programName, getInternalName(classOf[Object]))
     val scope = introduceVariables(program, mainClass)
     val state = ProgramState(mainClass, scope, Map.empty)
@@ -778,12 +755,10 @@ object CodeGenerator {
     val mainMethodDescriptor = "([" + getDescriptor(classOf[String]) + ")" + Type.VOID_TYPE.getDescriptor
     val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor, false)
 
-    println("Adding class references")
     addInnerClassReferences(mainClass)
 
     generateProcedureBody(mainMethod, newState, program.expressions, isMainMethod = true, None)
 
-    println("Calling initializer generator")
     makeInitializer(program, newState)
 
     mainClass.visitEnd()
