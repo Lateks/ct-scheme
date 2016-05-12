@@ -1,21 +1,45 @@
 package backend
 
-import backend.ast.{ReadError, ReadFailure, ReadSuccess, Reader}
+import backend.ast._
 
 import scala.io.Source
+import scala.language.postfixOps
+import scala.sys.process._
 
 object Program {
   def main(args: Array[String]): Unit = {
     var debug = false
     var optimizeTailCalls = true
+    var fileName: String = null
+    var inDevelopmentEnvironment = false
     for (arg <- args) {
       arg match {
-        case "--notc" | "-t" => optimizeTailCalls = false
-        case "--debug" | "-d" => debug = true
+        case "--notc" | "-t" =>
+          optimizeTailCalls = false
+        case "--debug" | "-d" =>
+          debug = true
+        case "--dev" =>
+          inDevelopmentEnvironment = true
+        case s =>
+          if (fileName == null) {
+            fileName = s
+          } else {
+            println("Unrecognized flag " + s)
+          }
       }
     }
 
-    val input = Source.stdin.getLines
+    val input = if (fileName == null) {
+      Source.stdin.getLines.mkString("\n")
+    } else {
+      val dotnetPath = if (inDevelopmentEnvironment) {
+        ".\\CottontailScheme\\bin\\Debug\\CottontailScheme.exe"
+      } else {
+        "CottontailScheme.exe"
+      }
+      val command = dotnetPath + " -json " + fileName
+      command !!
+    }
 
     Reader.readAST(input) match {
       case ReadSuccess(program) =>

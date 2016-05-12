@@ -231,14 +231,9 @@ object Reader {
     }
   }
 
-  def readAST(input : Iterator[String]) : ReadResult = {
-    if (input.isEmpty) {
-      ReadFailure("No input")
-    } else {
-      val rawJson = input.mkString("\n")
-      val json = parse(rawJson)
-      convertToAST(json)
-    }
+  def readAST(input : String) : ReadResult = {
+    val json = parse(input)
+    convertToAST(json)
   }
 
 }
