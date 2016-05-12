@@ -18,8 +18,8 @@ object CodeGenerator {
 
   case class ProgramState(mainClass : DebugClassWriter, scope : Map[String, Variable], methods : Map[String, SimpleMethodVisitor])
 
-  val debug = true
-  val optimizeTailCalls = true
+  var debug = true
+  var optimizeTailCalls = true
   val stdout = new PrintWriter(System.out)
 
   def getInternalName(c : Class [_]): String = {
@@ -745,7 +745,10 @@ object CodeGenerator {
     mainClass.visitInnerClass("java/lang/invoke/MethodHandles$Lookup", "java/lang/invoke/MethodHandles", "Lookup", ACC_PUBLIC + ACC_FINAL + ACC_STATIC);
   }
 
-  def generateCodeFor(program : ProgramSyntaxTree) : Unit = {
+  def generateCodeFor(program : ProgramSyntaxTree, debugMode : Boolean, optimizeTC : Boolean) : Unit = {
+    debug = debugMode
+    optimizeTailCalls = optimizeTC
+
     val mainClass = declareClass(program.programName, getInternalName(classOf[Object]))
     val scope = introduceVariables(program, mainClass)
     val state = ProgramState(mainClass, scope, Map.empty)
