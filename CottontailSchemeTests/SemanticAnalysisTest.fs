@@ -11,7 +11,7 @@ open CottontailScheme.SemanticAnalysis
 let parseAndBuild str = match run CottontailScheme.Parsing.parseProgram str with
                         | Success(result, _, _)
                             -> match buildAST result with
-                               | ASTBuildSuccess exprs -> analyse exprs "PlaceholderName"
+                               | ASTBuildSuccess exprs -> analyse exprs "PlaceholderName" true
                                | ASTBuildFailure errs -> failwithf "AST building failed with errors: %A" errs
                         | Failure(errorMsg, _, _) -> failwithf "Parsing failed: %A" errorMsg
 

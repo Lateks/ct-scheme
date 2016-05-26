@@ -651,7 +651,6 @@ namespace CottontailSchemeLib
         {
             if (arity != numArgs)
             {
-                Console.WriteLine("\nFailing number of args match");
                 throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), numArgs);
             }
         }
@@ -663,7 +662,6 @@ namespace CottontailSchemeLib
 
         public virtual CTObject funcall1(CTObject a1)
         {
-            Console.WriteLine("\nCalling default funcall1");
             throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), 1);
         }
 
