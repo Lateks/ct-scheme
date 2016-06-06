@@ -12,6 +12,7 @@ object Program {
     var optimizeTailCalls = true
     var fileName: String = null
     var inDevelopmentEnvironment = false
+    var useMono = false
     for (arg <- args) {
       arg match {
         case "--notc" | "-t" =>
@@ -20,6 +21,8 @@ object Program {
           debug = true
         case "--dev" =>
           inDevelopmentEnvironment = true
+        case "--mono" =>
+          useMono = true
         case s =>
           if (fileName == null) {
             fileName = s
@@ -32,11 +35,14 @@ object Program {
     val input = if (fileName == null) {
       Source.stdin.getLines.mkString("\n")
     } else {
-      val dotnetPath = if (inDevelopmentEnvironment) {
-        ".\\CottontailScheme\\bin\\Debug\\CottontailScheme.exe"
-      } else {
-        "CottontailScheme.exe"
-      }
+      val dotnetPath =
+        if (useMono) {
+            "mono CottontailScheme.exe"
+        } else if (inDevelopmentEnvironment) {
+            ".\\CottontailScheme\\bin\\Debug\\CottontailScheme.exe"
+        } else {
+          "CottontailScheme.exe"
+        }
       val command = dotnetPath + " -json " + fileName
       command !!
     }
