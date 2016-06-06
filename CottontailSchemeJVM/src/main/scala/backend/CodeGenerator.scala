@@ -325,7 +325,6 @@ object CodeGenerator {
           case LocalReferenceVariable(n, i) =>
             method.visitVarInsn(ALOAD, i)
             if (!rawReferences) {
-              method.visitTypeInsn(CHECKCAST, getInternalName(classOf[CTReferenceCell]))
               method.visitMethodInsn(INVOKEVIRTUAL, getInternalName(classOf[CTReferenceCell]), "get", makeObjectMethodDescriptor(0, isArray = false), onInterface = false)
             }
           case _ =>
@@ -352,7 +351,6 @@ object CodeGenerator {
             method.visitVarInsn(ASTORE, i)
           case LocalReferenceVariable(n, i) =>
             method.visitVarInsn(ALOAD, i)
-            method.visitTypeInsn(CHECKCAST, getInternalName(classOf[CTReferenceCell]))
             loadValue(method, state)
             method.visitMethodInsn(INVOKEVIRTUAL, getInternalName(classOf[CTReferenceCell]), "set", "(" + getDescriptor(classOf[Object]) + ")V", onInterface = false)
           case _ =>
@@ -599,10 +597,11 @@ object CodeGenerator {
   def buildMethodDescriptor(closure : ClosureDefinition, withCaptures : Boolean): String = {
     val sb = new StringBuilder("(")
     val objectDescriptor = getDescriptor(classOf[Object])
+    val referenceCellDescriptor = getDescriptor(classOf[CTReferenceCell])
 
     if (withCaptures) {
       for (capture <- closure.environment) {
-        sb.append(objectDescriptor)
+        sb.append(referenceCellDescriptor)
       }
     }
 
@@ -690,7 +689,7 @@ object CodeGenerator {
     val methodDescriptor = buildMethodDescriptor(closure)
     val procedureObjectDescriptor = buildProcedureObjectDescriptor(closure)
     val implementedMethodDescriptor = buildMethodDescriptor(closure, withCaptures = false)
-    val captureDescriptors = closure.environment.map((_) => getDescriptor(classOf[Object])).mkString("")
+    val captureDescriptors = closure.environment.map((_) => getDescriptor(classOf[CTReferenceCell])).mkString("")
 
     for (capture <- closure.environment) {
       emitVariableReference(method, state, capture, rawReferences = true)
