@@ -364,7 +364,6 @@ object CodeGenerator {
   def emitVariableAssignment(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, expression: Expression): Unit = {
     val loader = (m : SimpleMethodVisitor, s : ProgramState) => pushExpressionResultToStack(m, s, expression)
     emitVariableAssignment(method, state, id, loader)
-    loadUndefined(method)
   }
 
   def generateExpression(method : SimpleMethodVisitor, state : ProgramState, expression : Expression, keepResultOnStack : Boolean): Unit = {
@@ -387,8 +386,14 @@ object CodeGenerator {
         loadUndefined(method)
     }
 
-    if (!keepResultOnStack)
-      method.popStack()
+    expression match {
+      case Assignment(_, _) =>
+        if (keepResultOnStack)
+          loadUndefined(method)
+      case _ =>
+        if (!keepResultOnStack)
+          method.popStack()
+    }
   }
 
   def pushExpressionResultToStack(method : SimpleMethodVisitor, state : ProgramState, expression : Expression): Unit = {
