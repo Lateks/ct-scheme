@@ -1,13 +1,12 @@
 package backend.codegen
 
+import backend.ast.{ClosureFormals, MultiArgFormals, SingleArgFormals}
 import org.objectweb.asm._
 import org.objectweb.asm.Opcodes._
 
-class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, name : String, signature : String, varargs : Boolean) extends MethodVisitor(ASM5) {
-  val methodVisitor = cv.visitMethod(visibilityFlags, name, signature, null, new Array[String](0))
-  val descriptor = signature
-  val isVarargs = varargs
-  val methodName = name
+class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, val methodName : String, val descriptor : String, val isVarargs: Boolean, val argCount : Int, val isTailRecursive : Boolean) extends MethodVisitor(ASM5) {
+  val methodVisitor = cv.visitMethod(visibilityFlags, methodName, descriptor, null, new Array[String](0))
+  val startLabel = new Label()
 
   def emitGetStatic(className : String, fieldName : String, fieldType : String): Unit = {
     methodVisitor.visitFieldInsn(GETSTATIC, className, fieldName, fieldType)

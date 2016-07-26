@@ -213,6 +213,15 @@ object CodeGenerator {
             if (optimizeTailCalls)
               emitTrampolineCall(method)
           }
+        } else if (optimizeTailCalls && tailCall && id.uniqueName == method.methodName) {
+          // This is a tail recursive call.
+          pushArgsForMethod(method, state, args, method)
+          val firstArg = method.argCount-args.length
+          val lastArg = method.argCount-1
+          for (i <- lastArg to firstArg by -1) {
+            method.emitStoreLocal(i)
+          }
+          method.visitJumpInsn(GOTO, method.startLabel)
         } else if (state.methods.get(id.uniqueName).isDefined) {
           val m = state.methods.get(id.uniqueName).get
 
@@ -321,9 +330,9 @@ object CodeGenerator {
           case StaticField(n) =>
             method.emitGetStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
           case LocalVariable(n, i) =>
-            method.visitVarInsn(ALOAD, i)
+            method.emitGetLocal(i)
           case LocalReferenceVariable(n, i) =>
-            method.visitVarInsn(ALOAD, i)
+            method.emitGetLocal(i)
             if (!rawReferences) {
               method.visitMethodInsn(INVOKEVIRTUAL, getInternalName(classOf[CTReferenceCell]), "get", makeObjectMethodDescriptor(0, isArray = false), onInterface = false)
             }
@@ -348,9 +357,9 @@ object CodeGenerator {
             method.emitPutStatic(state.mainClass.getName, n, getDescriptor(classOf[Object]))
           case LocalVariable(n, i) =>
             loadValue(method, state)
-            method.visitVarInsn(ASTORE, i)
+            method.emitStoreLocal(i)
           case LocalReferenceVariable(n, i) =>
-            method.visitVarInsn(ALOAD, i)
+            method.emitGetLocal(i)
             loadValue(method, state)
             method.visitMethodInsn(INVOKEVIRTUAL, getInternalName(classOf[CTReferenceCell]), "set", "(" + getDescriptor(classOf[Object]) + ")V", onInterface = false)
           case _ =>
@@ -417,6 +426,10 @@ object CodeGenerator {
 
       method.emitReturn()
     } else {
+      if (method.isTailRecursive) {
+        method.visitLabel(method.startLabel)
+      }
+
       for (expr <- expressions.init) {
         generateTopLevelExpression(method, state, expr)
       }
@@ -460,7 +473,7 @@ object CodeGenerator {
   def loadReferenceCellWithLocalVariableValue(method : SimpleMethodVisitor, localVarIndex : Int): Unit = {
     val classTypeName = getInternalName(classOf[CTReferenceCell])
     method.createAndDupObject(classTypeName)
-    method.visitVarInsn(ALOAD, localVarIndex)
+    method.emitGetLocal(localVarIndex)
     method.invokeConstructor(classTypeName, getDescriptor(classOf[Object]))
   }
 
@@ -488,11 +501,12 @@ object CodeGenerator {
   def generateProcedures(procedures : List[ClosureDefinition], state : ProgramState): ProgramState = {
     def generateProcedure(c : ClosureDefinition) = {
       val descriptor = buildMethodDescriptor(c)
-      val isVarargs = c.formals match {
+      val (isVarargs) = c.formals match {
         case SingleArgFormals(_) => true
         case MultiArgFormals(_) => false
       }
-      val m = new SimpleMethodVisitor(state.mainClass, ACC_PRIVATE + ACC_STATIC, c.functionName.uniqueName, descriptor, isVarargs)
+      val paramCount = getParameterCountWithCaptures(c)
+      val m = new SimpleMethodVisitor(state.mainClass, ACC_PRIVATE + ACC_STATIC, c.functionName.uniqueName, descriptor, isVarargs, paramCount, c.isTailRecursive)
       (c.functionName.uniqueName, m)
     }
 
@@ -564,7 +578,7 @@ object CodeGenerator {
                 loadEmptyReferenceCell(methodVisitor)
               }
 
-              methodVisitor.visitVarInsn(ASTORE, localVarIndex)
+              methodVisitor.emitStoreLocal(localVarIndex)
             }
 
             for (p <- localProcedureObjects) {
@@ -615,6 +629,15 @@ object CodeGenerator {
     }
 
     sb.append(")").append(objectDescriptor).toString
+  }
+
+  def getParameterCountWithCaptures(closure: ClosureDefinition): Int = {
+    val formalsCount =
+      closure.formals match {
+        case SingleArgFormals(_) => 1
+        case MultiArgFormals(ids) => ids.length
+      }
+    closure.environment.length + formalsCount
   }
 
   def buildMethodDescriptor(closure : ClosureDefinition): String = {
@@ -721,12 +744,12 @@ object CodeGenerator {
   }
 
   def makeInitializer(program : ProgramSyntaxTree, state : ProgramState) = {
-    val initializer = new SimpleMethodVisitor(state.mainClass, ACC_STATIC, "<clinit>", "()V", false)
+    val initializer = new SimpleMethodVisitor(state.mainClass, ACC_STATIC, "<clinit>", "()V", false, 0, false)
     initializer.visitCode()
 
-    val firstClassProcs = program.procedureDefinitions.filter(isUsedAsFirstClassProcedure)
+    val firstClassProcedures = program.procedureDefinitions.filter(isUsedAsFirstClassProcedure)
 
-    for (p <- firstClassProcs) {
+    for (p <- firstClassProcedures) {
       state.scope.get(p.id.uniqueName) match {
         case None => throw new CodeGenException("Internal error: field " + p.id.uniqueName + " has not been declared.")
         case Some(v) =>
@@ -760,7 +783,7 @@ object CodeGenerator {
     val newState = generateTopLevelProcedures(program, state)
 
     val mainMethodDescriptor = "([" + getDescriptor(classOf[String]) + ")" + Type.VOID_TYPE.getDescriptor
-    val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor, false)
+    val mainMethod = new SimpleMethodVisitor(mainClass, ACC_PUBLIC + ACC_STATIC, "main", mainMethodDescriptor, false, 0, false)
 
     addInnerClassReferences(mainClass)
 
