@@ -61,7 +61,12 @@ type ClosureHandleTypeInformation = { tb : Emit.TypeBuilder
 type TopLevelTypes = { mainClass : Emit.TypeBuilder
                        procedureHandleClass : ClosureHandleTypeInformation }
 
-let argCount c =
+type MethodGenInfo = { builder : Emit.MethodBuilder
+                       name : string
+                       formals : ClosureFormals
+                       methodStartLabel : Emit.Label option }
+
+let argCount (c : ClosureDefinition) =
     match c.formals with
     | MultiArgFormals ids -> List.length ids |> NumArgs
     | SingleArgFormals _ -> VarArgs
@@ -268,11 +273,24 @@ let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticCo
         else
             gen.Emit(Emit.OpCodes.Ldarg_S, (byte) index)
 
-let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : Emit.MethodBuilder) (scope: Scope) (pushOnStack : bool) (emitReturn : bool) (expr : Expression) =
-    let recurInScope = generateSubExpression topLevelTypes methodBuilder scope
+let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodInfo : MethodGenInfo) (scope: Scope) (pushOnStack : bool) (emitReturn : bool) (expr : Expression) =
+    let recurInScope = generateSubExpression topLevelTypes methodInfo scope
     let recurInNonTailContext push expr = recurInScope push false expr
     let pushExprResultToStack = recurInNonTailContext true
-    let gen = methodBuilder.GetILGenerator()
+    let gen = methodInfo.builder.GetILGenerator()
+
+    let returnUndefinedValue () =
+        if emitReturn then
+            loadUndefined gen
+            gen.Emit(Emit.OpCodes.Ret)
+        elif pushOnStack then
+            loadUndefined gen
+
+    let returnOrPopStack () =
+        if emitReturn then
+            gen.Emit(Emit.OpCodes.Ret)
+        elif not pushOnStack then
+            popStack gen
 
     let emitConditional condition thenExpression elseExpression =
         let elseLabel = gen.DefineLabel()
@@ -302,7 +320,7 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
                    let nonTailExprs = List.take (exprs.Length - 1) exprs
                    for expr in nonTailExprs do
                        recurInNonTailContext false expr
-                   generateSubExpression topLevelTypes methodBuilder scope pushOnStack emitReturn tailExpr
+                   generateSubExpression topLevelTypes methodInfo scope pushOnStack emitReturn tailExpr
 
     let emitBooleanCombinationExpression breakValue =
         function
@@ -348,8 +366,9 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
                 gen.Emit(Emit.OpCodes.Ret)
 
     let emitVariableLoad id =
-        emitVariableLoad gen scope id methodBuilder.IsStatic
+        emitVariableLoad gen scope id methodInfo.builder.IsStatic
 
+    let convertArgPosition n = if methodInfo.builder.IsStatic then n else n + 1
     let emitAssignment (id : Identifier) expr =
         let push () = pushExprResultToStack expr
 
@@ -369,11 +388,11 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
             match id.argIndex with
             | Some n ->
                 push ()
-                let index = if methodBuilder.IsStatic then n else n + 1
+                let index = convertArgPosition n
                 gen.Emit(Emit.OpCodes.Starg_S, (byte) index)
             | None -> sprintf "Attempting to set! unknown variable %A" id |> CodeGenException |> raise
 
-    let pushArgsAsArray args = emitArray gen args (generateSubExpression topLevelTypes methodBuilder scope true false)
+    let pushArgsAsArray args = emitArray gen args (generateSubExpression topLevelTypes methodInfo scope true false)
     let pushIndividualArgs args = for arg in args do pushExprResultToStack arg
     let emitCallToFirstClassProcedureOnStack args isTailCall =
         let methodInfo = match List.length args with
@@ -387,28 +406,53 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
         if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
         gen.Emit(Emit.OpCodes.Callvirt, methodInfo)
     let emitNamedProcedureCall id args isTailCall =
-        // Tail annotations are not emitted for built-in procedures because
-        // the built-in procedures currently defined in the library never
-        // result in recursion or other tail call continuations.
-        if List.contains id !builtIns then
-            if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
-                pushArgsAsArray args
-            else
-                pushIndividualArgs args
-
-            emitBuiltInFunctionCall gen id
-        elif scope.procedures.ContainsKey id.uniqueName then
-            let procedure = scope.procedures.Item(id.uniqueName)
-            match procedure.closure.formals with
-            | SingleArgFormals _ -> pushArgsAsArray args
-                                    convertArrayOnStackToList gen
-            | MultiArgFormals _ -> pushIndividualArgs args
-
-            if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
-            gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
+        if id.uniqueName = methodInfo.name && isTailCall then
+            // This is a tail recursive call, so we generate a branch op
+            // to the beginning of the method instead of a procedure call.
+            match methodInfo.methodStartLabel with
+            | None -> sprintf "Error while optimizing tail recursion in procedure %s" id.name
+                        |> CodeGenException
+                        |> raise
+            | Some label ->
+                match methodInfo.formals with
+                | SingleArgFormals _ ->
+                    pushArgsAsArray args
+                    gen.Emit(Emit.OpCodes.Starg_S, byte <| convertArgPosition 0)
+                | MultiArgFormals _ ->
+                    pushIndividualArgs args
+                    for index in seq{0..args.Length-1} |> Seq.rev do
+                        gen.Emit(Emit.OpCodes.Starg_S, byte <| convertArgPosition index)
+                gen.Emit(Emit.OpCodes.Br, label)
         else
-            emitVariableLoad id
-            emitCallToFirstClassProcedureOnStack args isTailCall
+            if List.contains id !builtIns then
+                // Tail annotations are not emitted for built-in procedures because
+                // the built-in procedures currently defined in the library never
+                // result in recursion or other tail call continuations.
+                if List.contains id.uniqueName builtInFunctionsTakingArrayParams then
+                    pushArgsAsArray args
+                else
+                    pushIndividualArgs args
+
+                emitBuiltInFunctionCall gen id                    
+            elif scope.procedures.ContainsKey id.uniqueName then
+                // This is a non-recursive or indirectly recursive call
+                // to a method.
+                let procedure = scope.procedures.Item(id.uniqueName)
+
+                match procedure.closure.formals with
+                | SingleArgFormals _ -> pushArgsAsArray args
+                                        convertArrayOnStackToList gen
+                | MultiArgFormals _ -> pushIndividualArgs args
+
+                if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
+                gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
+            else
+                // This is a first class procedure call to a closure
+                // stored in a variable.
+                emitVariableLoad id
+                emitCallToFirstClassProcedureOnStack args isTailCall
+
+            returnOrPopStack ()
 
     match expr with
     | ProcedureCall (proc, args, isTailCall)
@@ -416,8 +460,10 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
            | VariableReference id -> emitNamedProcedureCall id args isTailCall
            | e -> pushExprResultToStack e
                   emitCallToFirstClassProcedureOnStack args isTailCall
+                  returnOrPopStack ()
     | ValueExpression lit
         -> emitLiteral gen lit
+           returnOrPopStack ()
     | Conditional (cond, thenBranch, elseBranch)
         -> emitConditional cond thenBranch elseBranch
     | SequenceExpression (seqType, exprs)
@@ -427,29 +473,19 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodBuilder : E
            | OrSequence -> emitBooleanCombinationExpression true exprs
     | Assignment (id, expr)
         -> emitAssignment id expr
+           returnUndefinedValue ()
     | VariableReference id
         -> emitVariableLoad id
+           returnOrPopStack ()
     | Closure c
         -> let closureInfo = scope.closureInfo.Item(c.functionName.uniqueName)
            createProcedureObjectOnStack topLevelTypes gen c closureInfo
-    | UndefinedValue -> ()
+           returnOrPopStack ()
+    | UndefinedValue
+        -> returnUndefinedValue ()
 
-    match expr with
-    | Conditional _ | SequenceExpression _ -> ()
-    | Assignment _
-    | UndefinedValue _
-        -> if emitReturn then
-              loadUndefined gen
-              gen.Emit(Emit.OpCodes.Ret)
-           elif pushOnStack then
-              loadUndefined gen
-    | _ -> if emitReturn then
-              gen.Emit(Emit.OpCodes.Ret)
-           elif not pushOnStack then
-              popStack gen
-
-let generateExpression (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (expr : Expression) (scope : Scope) emitReturn =
-    generateSubExpression topLevelTypes mb scope false emitReturn expr
+let generateExpression (topLevelTypes : TopLevelTypes) (methodInfo : MethodGenInfo) (expr : Expression) (scope : Scope) emitReturn =
+    generateSubExpression topLevelTypes methodInfo scope false emitReturn expr
 
 let defineFrame (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (capturesFromCurrentScope : Identifier list) (captureParentFrame : bool) parentProcedureName =
     let frameClassName = sprintf "%s$frame" parentProcedureName
@@ -597,7 +633,8 @@ let mergeClosureMappings (mappings : ClosureMapping list) =
         mergeMappings (List.tail mappings) firstMap
         |> Map.toList
 
-// Helper functions for handling closure definitions.
+// Helper functions for handling closure definitions start here.
+
 let getFormals (c : ClosureDefinition) =
     match c.formals with
     | SingleArgFormals id -> [id]
@@ -611,6 +648,38 @@ let getLocalProcedureIds (c : ClosureDefinition) =
 
 let getVariableIdsInScope (c : ClosureDefinition) =
     List.append (getLocalVariableIds c) (getLocalProcedureIds c)
+
+// Helper functions for handling closure definitions end here.
+
+// Emits procedure body expressions and a possible starting label
+// (needed for tail recursive procedures).
+let emitProcedureBody (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (c : ClosureDefinition) (scope : Scope) =
+    let startLabelForTailRecursiveProc = mb.GetILGenerator().DefineLabel();
+    let methodInfo = {
+        builder = mb
+        name = c.functionName.uniqueName
+        formals = c.formals
+        methodStartLabel = if c.isTailRecursive then
+                               Some startLabelForTailRecursiveProc
+                           else
+                               None
+    }
+
+    // Populate (assign) the local variables that hold closures.
+    for ProcedureDefinition (id, proc) in c.procedureDefinitions do
+        generateExpression topLevelTypes methodInfo (Assignment (id, Closure proc)) scope false
+
+    // Generate procedure body.
+    if c.isTailRecursive then
+        mb.GetILGenerator().MarkLabel(startLabelForTailRecursiveProc)    
+
+    let body = List.take (c.body.Length - 1) c.body
+    let tailExpr = List.last c.body
+
+    for expr in body do
+        generateExpression topLevelTypes methodInfo expr scope false
+
+    generateExpression topLevelTypes methodInfo tailExpr scope true
 
 let rec generateProcedureBody (topLevelTypes : TopLevelTypes) (parentFrame : Frame) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let gen = mb.GetILGenerator()
@@ -637,19 +706,7 @@ let rec generateProcedureBody (topLevelTypes : TopLevelTypes) (parentFrame : Fra
                         |> Map.ofSeq
             closureInfo = frameInfo.closureInfo }
 
-    // Populate (assign) the local variables that hold closures.
-    for ProcedureDefinition (id, proc) in c.procedureDefinitions do
-        generateExpression topLevelTypes mb (Assignment (id, Closure proc)) scopeWithLocalFieldsAndClosures false
-
-    // Generate procedure body.
-    let body = List.take (c.body.Length - 1) c.body
-    let tailExpr = List.last c.body
-
-    for expr in body do
-        generateExpression topLevelTypes mb expr scopeWithLocalFieldsAndClosures false
-
-    generateExpression topLevelTypes mb tailExpr scopeWithLocalFieldsAndClosures true
-
+    emitProcedureBody topLevelTypes mb c scopeWithLocalFieldsAndClosures
     frameInfo.closureMappingForParentFrame
 
 and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (scope : Scope) (parentProcedure : ClosureDefinition option) (currentFrame : Frame) closures =
@@ -899,9 +956,13 @@ let generateMainMethod (topLevelTypes : TopLevelTypes) (mainMethod : Emit.Method
     let closures = findClosuresInScope program.expressions
     let frameInfo = generateClosures topLevelTypes mainMethod scope None topLevelFrame closures
     let scopeWithClosures = { scope with closureInfo = frameInfo.closureInfo }
+    let mainMethodInfo = { builder = mainMethod
+                           name = "main"
+                           formals = MultiArgFormals []
+                           methodStartLabel = None }
 
     for expr in program.expressions do
-        generateExpression topLevelTypes mainMethod expr scopeWithClosures false
+        generateExpression topLevelTypes mainMethodInfo expr scopeWithClosures false
 
     frameInfo.closureMappingForParentFrame
 
