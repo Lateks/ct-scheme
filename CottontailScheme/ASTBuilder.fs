@@ -32,7 +32,7 @@ type ASTBuildStatus = ASTBuildSuccess of Expression list
 
 let specialFunctions = ["define"; "if"; "lambda"; "set!"; "and"; "or"; "quote"; "begin"; "zero?"; "null?"; "+"; "-"; "*"; "/"; "<"; ">"; "eq?"; "list"; "display"; "car"; "cdr"; "cons"; "not"; "newline"]
 
-let argumentNumberLimit = 5
+let argumentNumberLimit = 128
 
 let isSpecialFunction name = List.contains name specialFunctions
 

@@ -685,6 +685,11 @@ namespace CottontailSchemeLib
             throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), 5);
         }
 
+        public virtual CTObject funcallN(CTObject[] args)
+        {
+            throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), args.Length);
+        }
+
         public virtual CTObject funcallVarargs(CTObject[] args)
         {
             throw new InvalidNumberOfArgsError(GetName(), arity.ToString(), args.Length);
@@ -770,7 +775,14 @@ namespace CottontailSchemeLib
 
         public override CTObject applyN(CTObject[] args)
         {
-            return funcallVarargs(args);
+            if (isVarargs)
+            {
+                return funcallVarargs(args);
+            }
+            else
+            {
+                return funcallN(args);
+            }
         }
     }
 
@@ -951,6 +963,7 @@ namespace CottontailSchemeLib
         public virtual CTObject funcall3(int index, CTObject a1, CTObject a2, CTObject a3) { throw new InternalError(); }
         public virtual CTObject funcall4(int index, CTObject a1, CTObject a2, CTObject a3, CTObject a4) { throw new InternalError(); }
         public virtual CTObject funcall5(int index, CTObject a1, CTObject a2, CTObject a3, CTObject a4, CTObject a5) { throw new InternalError(); }
+        public virtual CTObject funcallN(int index, CTObject[] args) { throw new InternalError(); }
         public virtual CTObject funcallVarargs(int index, CTObject args) { return Constants.Undefined; }
     }
 }

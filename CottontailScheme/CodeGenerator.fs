@@ -551,12 +551,19 @@ let rebindFrameFields frameVar scope captures =
 
 let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMapping) =
     let parentClass = typeof<ProcedureFrame>
+    let maxFixedParamCount = 5
 
     let loadArgs (gen : Emit.ILGenerator) argc =
         match argc with
         | NumArgs n ->
-            for i in seq{2..n+1} do
-                gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
+            if n <= maxFixedParamCount then
+                for i in seq{2..n+1} do
+                    gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
+            else
+                for i in seq{0..n-1} do
+                    gen.Emit(Emit.OpCodes.Ldarg_2)
+                    gen.Emit(Emit.OpCodes.Ldc_I4, i)
+                    gen.Emit(Emit.OpCodes.Ldelem_Ref)
         | VarArgs ->
             gen.Emit(Emit.OpCodes.Ldarg_2)
 
@@ -565,13 +572,23 @@ let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMap
         if List.isEmpty sortedClosures then
             ()
         else
-            let methodName = match argc with
-                             | NumArgs n -> sprintf "funcall%i" n
-                             | VarArgs -> "funcallVarargs"
+            let methodName, paramTypesWithoutIndex =
+                match argc with
+                | NumArgs n ->
+                    if n <= maxFixedParamCount then
+                        let name = sprintf "funcall%i" n
+                        let types = seq{1..n} |> List.ofSeq |> List.map (fun _ -> typeof<CTObject>)
+                        (name, types)
+                    else
+                        let name = "funcallN"
+                        let types = [typeof<CTObject array>]
+                        (name, types)
+                | VarArgs ->
+                    let name = "funcallVarargs"
+                    let types = [typeof<CTObject>]
+                    (name, types)
 
-            let paramTypes = match argc with
-                             | NumArgs n -> seq{1..n} |> List.ofSeq |> List.map (fun _ -> typeof<CTObject>)
-                             | VarArgs -> [typeof<CTObject>]
+            let paramTypes = paramTypesWithoutIndex
                              |> fun l -> typeof<int> :: l
                              |> List.toArray
 
@@ -599,7 +616,16 @@ let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMap
             gen.MarkLabel(failureLabel)
             gen.Emit(Emit.OpCodes.Ldarg_0)
             gen.Emit(Emit.OpCodes.Ldarg_1)
-            loadArgs gen argc
+
+            match argc with
+            | NumArgs n ->
+                if n <= maxFixedParamCount then
+                    loadArgs gen argc
+                else
+                    gen.Emit(Emit.OpCodes.Ldarg_2)
+            | VarArgs ->
+                loadArgs gen argc
+
             gen.Emit(Emit.OpCodes.Call, parentClass.GetMethod(methodName))
             gen.Emit(Emit.OpCodes.Ret)
 
@@ -1130,11 +1156,30 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
     overrideApplyMethod apply5 5
 
     let applyNGen = applyN.GetILGenerator()
+    // Load `this` parameter for call
     applyNGen.Emit(Emit.OpCodes.Ldarg_0)
     applyNGen.Emit(Emit.OpCodes.Ldfld, frameField)
+    // Load index
     applyNGen.Emit(Emit.OpCodes.Ldarg_0)
     applyNGen.Emit(Emit.OpCodes.Ldfld, indexField)
+    // Load argument array
     applyNGen.Emit(Emit.OpCodes.Ldarg_1)
+
+    let varargsCallLabel = applyNGen.DefineLabel()
+    applyNGen.Emit(Emit.OpCodes.Ldarg_0)
+    applyNGen.Emit(Emit.OpCodes.Callvirt, parentType.GetProperty("isVarargs").GetGetMethod())
+    applyNGen.Emit(Emit.OpCodes.Brtrue, varargsCallLabel)
+
+    // Check parameter count
+    applyNGen.Emit(Emit.OpCodes.Ldarg_0)
+    applyNGen.Emit(Emit.OpCodes.Ldarg_1)
+    applyNGen.Emit(Emit.OpCodes.Callvirt, typeof<CTObject array>.GetProperty("Length").GetGetMethod())
+    applyNGen.Emit(Emit.OpCodes.Call, parentType.GetMethod("matchNumArgs"))
+
+    applyNGen.Emit(Emit.OpCodes.Callvirt, typeof<ProcedureFrame>.GetMethod("funcallN"))
+    applyNGen.Emit(Emit.OpCodes.Ret)
+
+    applyNGen.MarkLabel(varargsCallLabel)
     convertArrayOnStackToList applyNGen
     applyNGen.Emit(Emit.OpCodes.Tailcall)
     applyNGen.Emit(Emit.OpCodes.Callvirt, typeof<ProcedureFrame>.GetMethod("funcallVarargs"))

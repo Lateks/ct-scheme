@@ -1,12 +1,5 @@
 ﻿module CottontailScheme.SemanticAnalysis
 
-// TODO in this phase:
-// - recognize references to undefined variables
-// - closure conversion?
-//   -> find and label variables that are referenced from the environment
-// - label tail calls
-// - find inlinable lambdas?
-
 // Notes:
 //
 // Lambda expressions compile into closure objects that are parameterised with
@@ -379,7 +372,6 @@ let buildScope parentScope exprs =
 let handleIdentifierExpression scope id =
     AnalysisVariableReference (IdentifierHelpers.bindingForVariableReference scope id)
 
-// TODO: source code positions for exceptions
 // First pass through AST:
 // - transforms AST into new format
 // - finds bindings for all variable references and definitions
