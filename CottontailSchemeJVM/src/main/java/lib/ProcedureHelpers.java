@@ -36,6 +36,11 @@ public class ProcedureHelpers {
         return proc.apply(args[0], args[1], args[2], args[3], args[4]);
     }
 
+    public static Object matchN(CTProcedure proc, int n, String procedureName, Object[] args) {
+        checkArgs(procedureName, n, args);
+        return proc.apply(args);
+    }
+
     public static Object matchVarargs(CTProcedure1 proc, Object[] args) {
         return proc.apply(BuiltIns.toList(args));
     }
@@ -62,6 +67,10 @@ public class ProcedureHelpers {
 
     public static CTProcedure match5(CTProcedure5 proc, String procedureName) {
         return (Object[] args) -> match5(proc, procedureName, args);
+    }
+
+    public static CTProcedure matchN(CTProcedure proc, int n, String procedureName) {
+        return (Object[] args) -> matchN(proc, n, procedureName, args);
     }
 
     public static CTProcedure matchVarargs(CTProcedure1 proc) {

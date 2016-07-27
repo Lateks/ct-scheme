@@ -65,6 +65,10 @@ class SimpleMethodVisitor(cv : ClassVisitor, visibilityFlags : Int, val methodNa
     methodVisitor.visitInsn(AASTORE)
   }
 
+  def loadFromArray(): Unit = {
+    methodVisitor.visitInsn(AALOAD)
+  }
+
   def dup(): Unit = {
     methodVisitor.visitInsn(DUP)
   }

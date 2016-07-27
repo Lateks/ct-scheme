@@ -22,6 +22,8 @@ object CodeGenerator {
   var optimizeTailCalls = true
   val stdout = new PrintWriter(System.out)
 
+  val maxFixedParamCount = 5
+
   def getInternalName(c : Class [_]): String = {
     Type.getType(c).getInternalName
   }
@@ -499,9 +501,9 @@ object CodeGenerator {
   }
 
   def generateProcedures(procedures : List[ClosureDefinition], state : ProgramState): ProgramState = {
-    def generateProcedure(c : ClosureDefinition) = {
+    def generateProcedure(c : ClosureDefinition): (String, SimpleMethodVisitor) = {
       val descriptor = buildMethodDescriptor(c)
-      val (isVarargs) = c.formals match {
+      val isVarargs = c.formals match {
         case SingleArgFormals(_) => true
         case MultiArgFormals(_) => false
       }
@@ -510,11 +512,55 @@ object CodeGenerator {
       (c.functionName.uniqueName, m)
     }
 
+    def generateHelperProcedure(c : ClosureDefinition): Option[(ClosureDefinition, SimpleMethodVisitor)] = {
+      c.formals match {
+        case SingleArgFormals(_) => None
+        case MultiArgFormals(ids) =>
+          if (ids.length <= maxFixedParamCount) {
+            None
+          } else {
+            val helperDescriptor = buildUnpackingHelperMethodDescriptor(c)
+            val m = new SimpleMethodVisitor(state.mainClass, ACC_PRIVATE + ACC_STATIC, c.functionName.uniqueName, helperDescriptor, false, 1, false)
+            Some (c, m)
+          }
+      }
+    }
+
     def makeLocalVariable(name : String, index : Int, storedAsReference : List[String]): Variable = {
       if (storedAsReference.contains(name)) {
         LocalReferenceVariable(name, index)
       } else {
         LocalVariable(name, index)
+      }
+    }
+
+    def unpackArrayArgument(atLocalIndex : Int, args : List[Identifier], mv : SimpleMethodVisitor): Unit = {
+      for (i <- args.indices) {
+        mv.emitGetLocal(atLocalIndex)
+        mv.loadConstant(i.asInstanceOf[java.lang.Integer])
+        mv.loadFromArray()
+      }
+    }
+
+    def helperProcedureBody(c : ClosureDefinition, mv : SimpleMethodVisitor, state : ProgramState): Unit = {
+      c.formals match {
+        case SingleArgFormals(_) =>
+          throw new CodeGenException("Internal error: unexpected helper method for varargs procedure")
+        case MultiArgFormals(ids) =>
+          if (ids.length <= maxFixedParamCount) {
+            throw new CodeGenException("Internal error: unexpected helper method for procedure with less than " + maxFixedParamCount + " parameters")
+          } else {
+            state.methods.get(c.functionName.uniqueName) match {
+              case None => throw new CodeGenException("Internal error: could not find parent procedure for helper " + c.functionName.uniqueName)
+              case Some(m) =>
+                mv.visitCode()
+                unpackArrayArgument(0, ids, mv)
+                mv.emitInvokeStatic(state.mainClass.getName, c.functionName.uniqueName, m.descriptor)
+                mv.emitObjectReturn()
+                mv.setMaxs()
+                mv.visitEnd()
+            }
+          }
       }
     }
 
@@ -599,6 +645,10 @@ object CodeGenerator {
       procedureBody(c, newState)
     }
 
+    for ((c, mv) <- procedures.flatMap(generateHelperProcedure)) {
+      helperProcedureBody(c, mv, newState)
+    }
+
     newState
   }
 
@@ -631,6 +681,21 @@ object CodeGenerator {
     sb.append(")").append(objectDescriptor).toString
   }
 
+  def buildUnpackingHelperMethodDescriptor(closure : ClosureDefinition, withCaptures : Boolean) = {
+    val sb = new StringBuilder("(")
+
+    if (withCaptures) {
+      for (capture <- closure.environment) {
+        sb.append(getDescriptor(classOf[CTReferenceCell]))
+      }
+    }
+
+    sb.append(getDescriptor(classOf[Array[Object]]))
+    sb.append(")")
+    sb.append(getDescriptor(classOf[Object]))
+    sb.toString
+  }
+
   def getParameterCountWithCaptures(closure: ClosureDefinition): Int = {
     val formalsCount =
       closure.formals match {
@@ -642,6 +707,18 @@ object CodeGenerator {
 
   def buildMethodDescriptor(closure : ClosureDefinition): String = {
     buildMethodDescriptor(closure, withCaptures = true)
+  }
+
+  def buildUnpackingHelperMethodDescriptor(closure : ClosureDefinition): String = {
+    buildUnpackingHelperMethodDescriptor(closure, withCaptures = true)
+  }
+
+  def lambdaMetafactoryHandle() = {
+    new Handle(H_INVOKESTATIC,
+      "java/lang/invoke/LambdaMetafactory",
+      "metafactory",
+      "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+      false)
   }
 
   def buildProcedureObjectDescriptor(closure : ClosureDefinition): String = {
@@ -663,17 +740,11 @@ object CodeGenerator {
           case 5 =>
             getDescriptor(classOf[CTProcedure5])
           case _ =>
-            throw new CodeGenException("Internal error: procedures with more than 5 parameters are not supported")
+            // If a procedure has more than 5 parameters, they are
+            // passed to the procedure object in an array.
+            getDescriptor(classOf[CTProcedure])
         }
     }
-  }
-
-  def lambdaMetafactoryHandle() = {
-    new Handle(H_INVOKESTATIC,
-      "java/lang/invoke/LambdaMetafactory",
-      "metafactory",
-      "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
-      false)
   }
 
   def loadProcedureObject(method : SimpleMethodVisitor,
@@ -709,9 +780,22 @@ object CodeGenerator {
   }
 
   def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodName : String, closure : ClosureDefinition): Unit = {
-    val methodDescriptor = buildMethodDescriptor(closure)
+    val usesHelperMethod = closure.formals match {
+      case MultiArgFormals(ids) => ids.length > maxFixedParamCount
+      case SingleArgFormals(_) => false
+    }
+
+    val methodDescriptor =
+      if (usesHelperMethod)
+        buildUnpackingHelperMethodDescriptor(closure)
+      else
+        buildMethodDescriptor(closure)
+    val implementedMethodDescriptor =
+      if (usesHelperMethod)
+        buildUnpackingHelperMethodDescriptor(closure, withCaptures = false)
+      else
+        buildMethodDescriptor(closure, withCaptures = false)
     val procedureObjectDescriptor = buildProcedureObjectDescriptor(closure)
-    val implementedMethodDescriptor = buildMethodDescriptor(closure, withCaptures = false)
     val captureDescriptors = closure.environment.map((_) => getDescriptor(classOf[CTReferenceCell])).mkString("")
 
     for (capture <- closure.environment) {
@@ -723,15 +807,21 @@ object CodeGenerator {
 
   def attachArgumentHandler(method : SimpleMethodVisitor, methodName : String, closure : ClosureDefinition): Unit = {
     val ctProcDescriptor = getDescriptor(classOf[CTProcedure])
-    val (matchMethodName, matchMethodType) = closure.formals match {
+    val (matchMethodName, matchMethodType, loadArgumentCount) = closure.formals match {
       case SingleArgFormals(_) =>
-        ("matchVarargs", "(" + getDescriptor(classOf[CTProcedure1]) + ")" + ctProcDescriptor)
+        ("matchVarargs", "(" + getDescriptor(classOf[CTProcedure1]) + ")" + ctProcDescriptor, false)
       case MultiArgFormals(ids) =>
         val procedureObjectDescriptor = buildProcedureObjectDescriptor(closure)
-        ("match" + ids.length, "(" +procedureObjectDescriptor + getDescriptor(classOf[String]) + ")" + ctProcDescriptor)
+        if (ids.length <= maxFixedParamCount) {
+          ("match" + ids.length, "(" + procedureObjectDescriptor + getDescriptor(classOf[String]) + ")" + ctProcDescriptor, false)
+        } else {
+          ("matchN", "(" + procedureObjectDescriptor + getDescriptor(classOf[Int]) + getDescriptor(classOf[String]) + ")" + ctProcDescriptor, true)
+        }
     }
     closure.formals match {
-      case MultiArgFormals(_) =>
+      case MultiArgFormals(ids) =>
+        if (loadArgumentCount)
+          method.visitLdcInsn(ids.length.asInstanceOf[Integer])
         method.visitLdcInsn(methodName)
       case _ => ()
     }
