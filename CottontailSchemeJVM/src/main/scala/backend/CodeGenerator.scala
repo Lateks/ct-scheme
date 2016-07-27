@@ -554,7 +554,14 @@ object CodeGenerator {
               case None => throw new CodeGenException("Internal error: could not find parent procedure for helper " + c.functionName.uniqueName)
               case Some(m) =>
                 mv.visitCode()
-                unpackArrayArgument(0, ids, mv)
+
+                // Pass captures to the actual procedure
+                for (i <- c.environment.indices) {
+                  mv.emitGetLocal(i.asInstanceOf[java.lang.Integer])
+                }
+
+                unpackArrayArgument(c.environment.length, ids, mv)
+
                 mv.emitInvokeStatic(state.mainClass.getName, c.functionName.uniqueName, m.descriptor)
                 mv.emitObjectReturn()
                 mv.setMaxs()
