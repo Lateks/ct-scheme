@@ -172,10 +172,6 @@ type ``Produces appropriate error messages when given a program with faulty sema
         testErrors "(begin)" [{ message = "Empty begin block"; position = { line = 1L; column = 2L }}]
 
     [<Test>]
-    member x.``number of arguments in user defined procedures is limited to 5`` () =
-        testErrors "(lambda (a b c d e f) #t)" [{ message = "Too many arguments in procedure definition: number of arguments is limited to 5"; position = { line = 1L; column = 9L }}]
-
-    [<Test>]
     member x.``produces an error when a definition is used in an unexpected context`` () =
         let exprContextError = { message = "Procedure define used in a context where an expression was expected";
                                  position = { line = 1L; column = 2L } }
