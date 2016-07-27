@@ -35,6 +35,7 @@ type Scope = { variables : Map<string, Variable>;
 
 type ArgCount = NumArgs of int
               | VarArgs
+              | ManyArgs
 
 type ClosureMapping = (ArgCount * (int * Procedure) list) list
 
@@ -67,8 +68,14 @@ type MethodGenInfo = { builder : Emit.MethodBuilder
                        methodStartLabel : Emit.Label option }
 
 let argCount (c : ClosureDefinition) =
+    let maxFixedParamCount = 5
     match c.formals with
-    | MultiArgFormals ids -> List.length ids |> NumArgs
+    | MultiArgFormals ids ->
+        let numArgs = List.length ids
+        if numArgs > maxFixedParamCount then
+            ManyArgs
+        else
+            NumArgs numArgs
     | SingleArgFormals _ -> VarArgs
 
 let indexList startIndex procs =
@@ -549,21 +556,24 @@ let rebindFrameFields frameVar scope captures =
 
         rebind scope captures
 
+let getNumberOfParameters (c : ClosureDefinition) =
+    match c.formals with
+    | SingleArgFormals(id) -> 1
+    | MultiArgFormals(ids) -> ids.Length
+
 let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMapping) =
     let parentClass = typeof<ProcedureFrame>
-    let maxFixedParamCount = 5
 
-    let loadArgs (gen : Emit.ILGenerator) argc =
+    let loadArgs (gen : Emit.ILGenerator) argc n =
         match argc with
-        | NumArgs n ->
-            if n <= maxFixedParamCount then
-                for i in seq{2..n+1} do
-                    gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
-            else
-                for i in seq{0..n-1} do
-                    gen.Emit(Emit.OpCodes.Ldarg_2)
-                    gen.Emit(Emit.OpCodes.Ldc_I4, i)
-                    gen.Emit(Emit.OpCodes.Ldelem_Ref)
+        | NumArgs _ ->
+            for i in seq{2..n+1} do
+                gen.Emit(Emit.OpCodes.Ldarg_S, (byte) i)
+        | ManyArgs ->
+            for i in seq{0..n-1} do
+                gen.Emit(Emit.OpCodes.Ldarg_2)
+                gen.Emit(Emit.OpCodes.Ldc_I4, i)
+                gen.Emit(Emit.OpCodes.Ldelem_Ref)
         | VarArgs ->
             gen.Emit(Emit.OpCodes.Ldarg_2)
 
@@ -575,14 +585,13 @@ let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMap
             let methodName, paramTypesWithoutIndex =
                 match argc with
                 | NumArgs n ->
-                    if n <= maxFixedParamCount then
-                        let name = sprintf "funcall%i" n
-                        let types = seq{1..n} |> List.ofSeq |> List.map (fun _ -> typeof<CTObject>)
-                        (name, types)
-                    else
-                        let name = "funcallN"
-                        let types = [typeof<CTObject array>]
-                        (name, types)
+                    let name = sprintf "funcall%i" n
+                    let types = seq{1..n} |> List.ofSeq |> List.map (fun _ -> typeof<CTObject>)
+                    (name, types)
+                | ManyArgs ->
+                    let name = "funcallN"
+                    let types = [typeof<CTObject array>]
+                    (name, types)
                 | VarArgs ->
                     let name = "funcallVarargs"
                     let types = [typeof<CTObject>]
@@ -607,7 +616,8 @@ let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMap
                 if not proc.methodBuilder.IsStatic then
                     gen.Emit(Emit.OpCodes.Ldarg_0)
 
-                loadArgs gen argc
+                let numArgs = getNumberOfParameters(proc.closure)
+                loadArgs gen argc numArgs
 
                 gen.Emit(Emit.OpCodes.Tailcall)
                 gen.Emit(Emit.OpCodes.Call, proc.methodBuilder)
@@ -618,13 +628,12 @@ let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMap
             gen.Emit(Emit.OpCodes.Ldarg_1)
 
             match argc with
+            | ManyArgs ->
+                gen.Emit(Emit.OpCodes.Ldarg_2)
             | NumArgs n ->
-                if n <= maxFixedParamCount then
-                    loadArgs gen argc
-                else
-                    gen.Emit(Emit.OpCodes.Ldarg_2)
+                loadArgs gen argc n
             | VarArgs ->
-                loadArgs gen argc
+                loadArgs gen argc 1
 
             gen.Emit(Emit.OpCodes.Call, parentClass.GetMethod(methodName))
             gen.Emit(Emit.OpCodes.Ret)
@@ -632,7 +641,7 @@ let generateFuncallMethods (frameClass : Emit.TypeBuilder) (mapping : ClosureMap
             frameClass.DefineMethodOverride(mb, parentClass.GetMethod(methodName))
 
     for (argc, procs) in mapping do
-        overrideFuncall argc procs
+        overrideFuncall argc procs     
 
 let mergeClosureMappings (mappings : ClosureMapping list) =
     let merge map (argc, procs) =
@@ -966,9 +975,11 @@ let generateClassInitializer (topLevelTypes : TopLevelTypes) (closureMapping : C
         match argCount with
         | VarArgs -> gen.Emit(Emit.OpCodes.Ldstr, procedureName)
                      gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.namedVarargsClosureConstructor)
-        | NumArgs n -> gen.Emit(Emit.OpCodes.Ldc_I4, n)
-                       gen.Emit(Emit.OpCodes.Ldstr, procedureName)
-                       gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.namedClosureConstructor)
+        | NumArgs _ | ManyArgs ->
+            let n = getNumberOfParameters(procedure.closure)
+            gen.Emit(Emit.OpCodes.Ldc_I4, n)
+            gen.Emit(Emit.OpCodes.Ldstr, procedureName)
+            gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.namedClosureConstructor)
 
         gen.Emit(Emit.OpCodes.Stsfld, var)
 
