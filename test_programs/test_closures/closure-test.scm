@@ -15,6 +15,36 @@
 	(perform-test)
 ))
 
+(define sum-of-nine
+  (lambda (a b c d e f g h i)
+    (+ a b c d e f g h i)))
+
+(test "parameter count > 5 #1: (sum-of-nine 1 2 3 4 5 6 7 8 9)"
+	  (lambda () (sum-of-nine 1 2 3 4 5 6 7 8 9))
+	  45)
+
+(define sum-of-nine-closure sum-of-nine)
+
+(test "parameter count > 5 #2: calling sum-of-nine as a first class procedure"
+	  (lambda () (sum-of-nine-closure 1 2 3 4 5 6 7 8 9))
+	  45)
+
+(define sum-of-six-closure
+  (lambda ()
+    (lambda (a b c d e f) (+ a b c d e f))))
+
+(test "parameter count > 5 #3: creating an anonymous procedure with > 5 parameters"
+      (lambda () ((sum-of-six-closure) 1 2 3 4 5 6))
+	  21)
+
+(define sum-of-six-closure-with-capture
+  (lambda (n)
+    (lambda (a b c d e f) (+ a b c d e f n))))
+
+(test "parameter count > 5 #4: creating a capturing anonymous procedure with > 5 parameters"
+      (lambda () ((sum-of-six-closure-with-capture 10) 1 2 3 4 5 6))
+	  31)
+
 (define add
   (lambda (x)
     (lambda (y)
