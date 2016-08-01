@@ -2,9 +2,11 @@ package backend
 
 import backend.ast._
 
+import java.nio.file.Paths
 import scala.io.Source
 import scala.language.postfixOps
 import scala.sys.process._
+import scala.sys
 
 object Program {
   def main(args: Array[String]): Unit = {
@@ -32,16 +34,18 @@ object Program {
       }
     }
 
+    val fileSeparator = sys.props("file.separator")
+    val jarPath = Paths.get(Program.getClass.getProtectionDomain.getCodeSource.getLocation.getPath.replaceFirst("^/([A-Z]:)", "$1").replace("/", fileSeparator)).getParent.toString
     val input = if (fileName == null) {
       Source.stdin.getLines.mkString("\n")
     } else {
       val dotnetPath =
         if (useMono) {
-            "mono CottontailScheme.exe"
+            "mono " + jarPath + "/CottontailScheme.exe"
         } else if (inDevelopmentEnvironment) {
             ".\\CottontailScheme\\bin\\Debug\\CottontailScheme.exe"
         } else {
-          "CottontailScheme.exe"
+          jarPath + "\\CottontailScheme.exe"
         }
       val command = dotnetPath + " -json " + fileName
       command !!
