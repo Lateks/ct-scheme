@@ -41,11 +41,11 @@ object Program {
     } else {
       val dotnetPath =
         if (useMono) {
-            "mono " + jarPath + "/CottontailScheme.exe"
+            "mono " + jarPath + fileSeparator + "CottontailScheme.exe"
         } else if (inDevelopmentEnvironment) {
             ".\\CottontailScheme\\bin\\Debug\\CottontailScheme.exe"
         } else {
-          jarPath + "\\CottontailScheme.exe"
+          jarPath + fileSeparator + "CottontailScheme.exe"
         }
       val command = dotnetPath + " -json " + fileName
       command !!
