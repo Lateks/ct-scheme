@@ -3,8 +3,8 @@ package lib;
 public class CTPair extends CTObject {
     public static final String typeName = "pair";
 
-    private Object car;
-    private Object cdr;
+    public final Object car;
+    public final Object cdr;
 
     public CTPair(Object car, Object cdr) {
         this.car = car;
@@ -48,13 +48,5 @@ public class CTPair extends CTObject {
 
     public String getTypeName() {
         return typeName;
-    }
-
-    public Object getCar() {
-        return car;
-    }
-
-    public Object getCdr() {
-        return cdr;
     }
 }

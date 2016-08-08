@@ -81,13 +81,13 @@ public class BuiltIns {
     public static Object car(Object a) {
         assertPair(procNameCar, a);
         CTPair p = (CTPair) a;
-        return p.getCar();
+        return p.car;
     }
 
     public static Object cdr(Object a) {
         assertPair(procNameCdr, a);
         CTPair p = (CTPair) a;
-        return p.getCdr();
+        return p.cdr;
     }
 
     public static boolean toBoolean(Object a) {
@@ -97,7 +97,7 @@ public class BuiltIns {
     public static Object isZero(Object a) {
         assertNumber(procNameZero, a);
         CTNumber n = (CTNumber)a;
-        return CTBool.toCTBool(n.getValue() == 0);
+        return CTBool.toCTBool(n.value == 0);
     }
 
     public static Object isNull(Object a) {
@@ -201,7 +201,7 @@ public class BuiltIns {
     }
 
     private static double getNumberValue(Object o) {
-        return ((CTNumber) o).getValue();
+        return ((CTNumber) o).value;
     }
 
 }

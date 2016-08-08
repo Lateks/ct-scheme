@@ -3,10 +3,10 @@ package lib;
 public class CTString extends CTObject {
     public static final String typeName = "string";
 
-    private String s = null;
+    public final String value;
 
-    public CTString(String s) {
-        this.s = s;
+    public CTString(String value) {
+        this.value = value;
     }
 
     public String getTypeName() {
@@ -15,7 +15,7 @@ public class CTString extends CTObject {
 
     @Override
     public String toString() {
-        return s;
+        return value;
     }
 
     @Override
@@ -24,7 +24,7 @@ public class CTString extends CTObject {
             return true;
         } else if (obj instanceof CTString) {
             CTString other = (CTString)obj;
-            return other.s.equals(this.s);
+            return other.value.equals(this.value);
         } else {
             return false;
         }

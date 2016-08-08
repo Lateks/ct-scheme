@@ -134,13 +134,13 @@ namespace CottontailSchemeLib
         public static CTObject Car(CTObject v)
         {
             AssertPair(CarFunctionName, v);
-            return ((CTPair)v).Car();
+            return ((CTPair)v).car;
         }
 
         public static CTObject Cdr(CTObject v)
         {
             AssertPair(CdrFunctionName, v);
-            return ((CTPair)v).Cdr();
+            return ((CTPair)v).cdr;
         }
 
         public static CTObject Cons(CTObject a, CTObject b)
@@ -409,7 +409,7 @@ namespace CottontailSchemeLib
     {
         internal static readonly string TypeName = "number";
 
-        public double value { get; private set; }
+        public readonly double value;
 
         public CTNumber(double value)
         {
@@ -444,8 +444,8 @@ namespace CottontailSchemeLib
     {
         internal static readonly string TypeName = "pair";
 
-        private CTObject car;
-        private CTObject cdr;
+        public readonly CTObject car;
+        public readonly CTObject cdr;
 
         public CTPair(CTObject v1, CTObject v2)
         {
@@ -464,7 +464,7 @@ namespace CottontailSchemeLib
                 {
                     CTPair rest = (CTPair)tail;
                     repr.Append(" ").Append(rest.DisplayValue());
-                    tail = rest.Cdr();
+                    tail = rest.cdr;
                 }
                 else
                 {
@@ -482,16 +482,6 @@ namespace CottontailSchemeLib
         public string DisplayValue()
         {
             return car.DisplayObject();
-        }
-
-        public CTObject Car()
-        {
-            return car;
-        }
-
-        public CTObject Cdr()
-        {
-            return cdr;
         }
 
         public override string DisplayType()
@@ -537,7 +527,7 @@ namespace CottontailSchemeLib
     {
         internal static readonly string TypeName = "string";
 
-        public string value { get; private set; }
+        public readonly string value;
 
         public CTString(string value)
         {
@@ -569,7 +559,7 @@ namespace CottontailSchemeLib
     {
         internal static readonly string TypeName = "symbol";
 
-        private readonly string name;
+        public readonly string name;
 
         public CTSymbol(string name)
         {
