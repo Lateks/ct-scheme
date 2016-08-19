@@ -3,4 +3,4 @@
 type CodeGenResult = CodeGenInternalError of string
                    | CodeGenSuccess of string
 
-val generateCodeFor : CottontailScheme.SemanticAnalysis.ProgramStructure -> CodeGenResult
+val generateCodeFor : CottontailScheme.SemanticAnalysis.ProgramStructure -> bool -> CodeGenResult

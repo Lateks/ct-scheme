@@ -85,6 +85,7 @@ let indexList startIndex procs =
 
 let mainMethodName = "Main"
 let builtIns = ref []
+let optimizeTailRecursion = ref true
 
 let setupAssembly name =
     let assemblyName = AssemblyName()
@@ -92,6 +93,8 @@ let setupAssembly name =
     let appDomain = AppDomain.CurrentDomain
     appDomain.DefineDynamicAssembly(assemblyName, Emit.AssemblyBuilderAccess.Save)
 
+// Copies the library dll to the location of the generated
+// exe file.
 let copyLibs () =
     let exePath = Assembly.GetExecutingAssembly().Location |> IO.Path.GetDirectoryName
     let csLib = "CottontailSchemeLib.dll"
@@ -100,6 +103,8 @@ let copyLibs () =
         if IO.File.Exists(target) then
             IO.File.Delete(target)
         IO.File.Copy(exePath + "/" + csLib, target)
+
+// Helper functions for loading literals start here.
 
 let loadStringObject (gen : Emit.ILGenerator) (s : string) =
     gen.Emit(Emit.OpCodes.Ldstr, s)
@@ -120,11 +125,17 @@ let loadSymbolObject (gen : Emit.ILGenerator) (s : string) =
 let loadUndefined (gen : Emit.ILGenerator) =
     gen.Emit(Emit.OpCodes.Ldsfld, typeof<Constants>.GetField("Undefined"))
 
+// Helper functions for loading literals end here.
+
 let builtInFunctionsTakingArrayParams = ["list"; "+"; "-"; "/"; "*"; "<"; ">"]
 
 let popStack (gen : Emit.ILGenerator) =
     gen.Emit(Emit.OpCodes.Pop)
 
+// Creates an array and stores each object specified
+// by the members list into it. The members in the list
+// are loaded using the function emitMember given as
+// a parameter.
 let emitArray (gen : Emit.ILGenerator) members emitMember =
     let memberCount = List.length members
     gen.Emit(Emit.OpCodes.Ldc_I4, memberCount)
@@ -141,6 +152,7 @@ let emitArray (gen : Emit.ILGenerator) members emitMember =
 let convertArrayOnStackToList (gen : Emit.ILGenerator) =
     gen.Emit(Emit.OpCodes.Call, typeof<BuiltIns>.GetMethod("List", [| typeof<CTObject array> |]))
 
+// Loads a literal value onto the stack.
 let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
     match lit with
     | String s -> loadStringObject gen s
@@ -206,6 +218,7 @@ let defineProcedure (parentClass : Emit.TypeBuilder) (c : ClosureDefinition) (is
                              typeof<CTObject>,
                              parameterTypes)
 
+// Creates a new closure object on the stack.
 let createProcedureObjectOnStack (topLevelTypes : TopLevelTypes) (gen : Emit.ILGenerator) (c : ClosureDefinition) (closureLoadInfo : ClosureLoadInfo) =
     // Load frame instance reference
     match closureLoadInfo.localFrameField with
@@ -224,6 +237,9 @@ let createProcedureObjectOnStack (topLevelTypes : TopLevelTypes) (gen : Emit.ILG
            gen.Emit(Emit.OpCodes.Ldc_I4_S, (byte) argCount)
            gen.Emit(Emit.OpCodes.Newobj, topLevelTypes.procedureHandleClass.anonymousClosureConstructor)
 
+// Recursively finds all closure definitions within
+// a list of expressions. Does not search for closures
+// within closures.
 let findClosuresInScope exprs =
     let rec findClosures =
         function
@@ -257,6 +273,9 @@ let rec loadVariableOrField (gen : Emit.ILGenerator) var =
 let loadVariableOrFieldWithName (gen : Emit.ILGenerator) scope name =
     scope.variables.Item(name) |> loadVariableOrField gen
 
+// Generates bytecode to perform a load from a variable.
+// The boolean isStaticContext specifies whether the method
+// being generated is static. This affects argument loads.
 let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticContext =
     if scope.variables.ContainsKey(id.uniqueName) then
         loadVariableOrFieldWithName gen scope id.uniqueName
@@ -280,6 +299,7 @@ let emitVariableLoad (gen : Emit.ILGenerator) scope (id : Identifier) isStaticCo
         else
             gen.Emit(Emit.OpCodes.Ldarg_S, (byte) index)
 
+// Generates bytecode for an expression
 let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodInfo : MethodGenInfo) (scope: Scope) (pushOnStack : bool) (emitReturn : bool) (expr : Expression) =
     let recurInScope = generateSubExpression topLevelTypes methodInfo scope
     let recurInNonTailContext push expr = recurInScope push false expr
@@ -413,7 +433,7 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodInfo : Meth
         if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
         gen.Emit(Emit.OpCodes.Callvirt, methodInfo)
     let emitNamedProcedureCall id args isTailCall =
-        if id.uniqueName = methodInfo.name && isTailCall then
+        if id.uniqueName = methodInfo.name && isTailCall && !optimizeTailRecursion then
             // This is a tail recursive call, so we generate a branch op
             // to the beginning of the method instead of a procedure call.
             match methodInfo.methodStartLabel with
@@ -494,6 +514,8 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodInfo : Meth
 let generateExpression (topLevelTypes : TopLevelTypes) (methodInfo : MethodGenInfo) (expr : Expression) (scope : Scope) emitReturn =
     generateSubExpression topLevelTypes methodInfo scope false emitReturn expr
 
+// Defines a frame class used for representing user defined
+// closures.
 let defineFrame (mainClass : Emit.TypeBuilder) (parentClass : Emit.TypeBuilder) (capturesFromCurrentScope : Identifier list) (captureParentFrame : bool) parentProcedureName =
     let frameClassName = sprintf "%s$frame" parentProcedureName
     let frameClass = mainClass.DefineNestedType(frameClassName, TypeAttributes.NestedAssembly, typeof<ProcedureFrame>)
@@ -545,6 +567,7 @@ let rebindFrameFields frameVar scope captures =
             else
                 let frameFieldReference = ObjectField (fb, frameVariable)
                 Map.add name frameFieldReference scope.variables
+
         let rec rebind newScope =
             function
             | [] -> newScope
@@ -670,6 +693,7 @@ let mergeClosureMappings (mappings : ClosureMapping list) =
 
 // Helper functions for handling closure definitions start here.
 
+// Extracts parameter ids from a ClosureDefinition.
 let getFormals (c : ClosureDefinition) =
     match c.formals with
     | SingleArgFormals id -> [id]
@@ -917,6 +941,8 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
               matchedCapturesFromCurrentScope = matchedCapturesInCurrentScope;
               closureMappingForParentFrame = [] }
 
+// Defined a static variable for each top level variable
+// in the Scheme program.
 let defineVariables (c : Emit.TypeBuilder)=
     List.map (fun (VariableDeclaration id) ->
                   (id.uniqueName, Field <| c.DefineField(id.uniqueName,
@@ -924,17 +950,28 @@ let defineVariables (c : Emit.TypeBuilder)=
                                                          FieldAttributes.Static ||| FieldAttributes.Private)))
     >> Map.ofList
 
+// Defines a method for each procedure and returns a
+// mapping (Map) from the unique name of the procedure
+// to the Procedure object.
 let defineProcedures (mainClass : Emit.TypeBuilder) =
     List.map (fun (ProcedureDefinition (id, clos)) ->
                   let procedure = defineProcedure mainClass clos false
                   (id.uniqueName, { methodBuilder = procedure; closure = clos }))
     >> Map.ofList
 
+// Generates bodies for all top level procedures.
+// The procedures must have been previously defined.
 let generateTopLevelProcedureBodies (topLevelTypes : TopLevelTypes) (topLevelFrame : Frame) (scope : Scope) =
     Map.toList scope.procedures
     |> List.map (fun (_, proc) ->
                      generateProcedureBody topLevelTypes topLevelFrame proc.methodBuilder proc.closure scope)
 
+// Creates a mapping used to generate the switch statements
+// used in the "delegate like" closure representations.
+// The mapping maps each parameter count (ArgCount) to a
+// list of numbered procedures represented. The integer
+// index is used as a case label in the generated switch
+// statements.
 let createTopLevelClosureMapping (procs : ProcedureDefinition list) (scope : Scope) =
     let usedAsFirstClassValueOrReassigned (ProcedureDefinition (_, c)) = c.isUsedAsFirstClassValue || c.isReassigned
     let argCount (ProcedureDefinition (_, c)) = argCount c
@@ -952,6 +989,11 @@ let createTopLevelClosureMapping (procs : ProcedureDefinition list) (scope : Sco
     |> List.map numberProcedureDefinitions
     |> List.map resolveProcedures
 
+// Generates the class initializer for the main class of the program.
+// The initializer sets up static variables to hold the closures
+// for the top level procedures that are used as first class values
+// or whose values are reassigned with set! during the course of
+// the program.
 let generateClassInitializer (topLevelTypes : TopLevelTypes) (closureMapping : ClosureMapping) (instanceField : Emit.FieldBuilder) (scope : Scope) =
     let classInitializer = topLevelTypes.mainClass.DefineConstructor(MethodAttributes.Static ||| MethodAttributes.Public,
                                                                         CallingConventions.Standard,
@@ -989,6 +1031,8 @@ let generateClassInitializer (topLevelTypes : TopLevelTypes) (closureMapping : C
 
     gen.Emit(Emit.OpCodes.Ret)
 
+// Generates main method body from the module level
+// statements in the AST.
 let generateMainMethod (topLevelTypes : TopLevelTypes) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) (topLevelFrame : Frame) scope =
     let closures = findClosuresInScope program.expressions
     let frameInfo = generateClosures topLevelTypes mainMethod scope None topLevelFrame closures
@@ -1003,6 +1047,8 @@ let generateMainMethod (topLevelTypes : TopLevelTypes) (mainMethod : Emit.Method
 
     frameInfo.closureMappingForParentFrame
 
+// Generates all methods (including the main method) as well
+// as the frame classes required to represent closures.
 let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.MethodBuilder) (program : ProgramStructure) =
     let mainClass = topLevelTypes.mainClass
     let gen = mainMethod.GetILGenerator()
@@ -1048,6 +1094,10 @@ let generateMainModule (topLevelTypes : TopLevelTypes) (mainMethod : Emit.Method
     let finalClosureMapping = [updatedFrame.closureMapping; closuresFromMainMethodBody] |> mergeClosureMappings
     generateFuncallMethods topLevelTypes.mainClass finalClosureMapping
 
+// This function generates the class used to represent user
+// defined closures that require tail call support.
+// The class is called CTTailCallProcedureHandle and it inherits
+// from CTProcedure.
 let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
     let parentType = typeof<CTProcedure>
 
@@ -1209,8 +1259,13 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
       fields = fieldMap
       methods = methodMap }
 
-let generateCodeFor (program : ProgramStructure) =
+// This is the main code generation function.
+// It sets up the assembly and the main class before generating
+// the main module code. The library dll is copied into same
+// location with the compiled program.
+let generateCodeFor (program : ProgramStructure) (optimizeTailRec : bool) =
     try
+        optimizeTailRecursion := optimizeTailRec
         let capitalizedName = SymbolGenerator.capitalizeWord program.programName
         let outputFileName = sprintf "%s.exe" capitalizedName
         let assemblyBuilder = setupAssembly capitalizedName

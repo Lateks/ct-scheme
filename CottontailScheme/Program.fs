@@ -14,8 +14,8 @@ type OutputType = Json
 type ValidOutput = { valid : bool; program : ProgramStructure }
 type ErrorOutput = { valid : bool; message : String }
 
-let generateCode p =
-    match generateCodeFor p with
+let generateCode p optimizeTailRecursion =
+    match generateCodeFor p optimizeTailRecursion with
     | CodeGenSuccess msg -> printfn "Success: %s" msg
     | CodeGenInternalError msg -> printfn "Internal error occurred: %s" msg
 
@@ -37,10 +37,12 @@ let main args =
         printfn "Error: no input file specified"
     else
         let outputType = ref Exe
+        let optimizeTailRecursion = ref true
         let fileNamePosition = args.Length - 1
         for flag in Array.take fileNamePosition args do
             match flag with
             | "-json" -> outputType := Json
+            | "-notailrec" -> optimizeTailRecursion := false
             | f -> printfn "Unrecognized flag %s" f
 
         let inputFileName = IO.Path.GetFileNameWithoutExtension args.[fileNamePosition]
@@ -68,7 +70,7 @@ let main args =
                            -> match analyse exprs programName rebindTopLevelNames with
                               | ValidProgram p -> match !outputType with
                                                   | Json -> outputJson p
-                                                  | Exe -> generateCode p
+                                                  | Exe -> generateCode p !optimizeTailRecursion
                               | ProgramAnalysisError err -> sprintf "Error: %s" err |> displayError
                         | ASTBuildFailure errs -> errs |> List.map (fun e -> sprintf "Error (line %i, column %i): %A" e.position.line e.position.column e.message)
                                                        |> String.concat "\n"
