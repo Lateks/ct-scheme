@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Collections.Generic;
 
 namespace CottontailSchemeLib
 {
@@ -72,6 +73,7 @@ namespace CottontailSchemeLib
         private static readonly string IsZeroFunctionName = "zero?";
         private static readonly string LessThanFunctionName = "<";
         private static readonly string GreaterThanFunctionName = ">";
+        private static readonly string MapFunctionName = "map";
 
         public static readonly CTObject ObjNewline = new CTDelegateProcedure0(Newline, NewlineFunctionName);
         public static readonly CTObject ObjDisplay = new CTDelegateProcedure1(Display, DisplayFunctionName);
@@ -121,12 +123,13 @@ namespace CottontailSchemeLib
             }
         }
 
-        public static CTObject List(CTObject[] vs)
+        public static CTObject List(IEnumerable<CTObject> vs)
         {
+            IEnumerable<CTObject> reversed = vs.Reverse();
             CTObject lst = new CTEmptyList();
-            for (int i = vs.Length - 1; i >= 0; --i)
+            foreach (CTObject obj in reversed)
             {
-                lst = Cons(vs[i], lst);
+                lst = Cons(obj, lst);
             }
             return lst;
         }
@@ -174,7 +177,7 @@ namespace CottontailSchemeLib
             return ((CTNumber)obj).value;
         }
 
-        private static void CheckArgs(string functionName, CTObject[] args)
+        private static void CheckAllArgsNumbers(string functionName, CTObject[] args)
         {
             foreach (var arg in args)
             {
@@ -184,7 +187,7 @@ namespace CottontailSchemeLib
 
         public static CTNumber Plus(CTObject[] args)
         {
-            CheckArgs(PlusFunctionName, args);
+            CheckAllArgsNumbers(PlusFunctionName, args);
 
             double sum = args.Select(getValue)
                              .Aggregate(0.0, (a, n) => a + n);
@@ -194,7 +197,7 @@ namespace CottontailSchemeLib
 
         public static CTNumber Minus(CTObject[] args)
         {
-            CheckArgs(MinusFunctionName, args);
+            CheckAllArgsNumbers(MinusFunctionName, args);
             AssertParameterCountAtLeast(MinusFunctionName, 1, args);
 
             double result = 0;
@@ -210,7 +213,7 @@ namespace CottontailSchemeLib
 
         public static CTNumber Div(CTObject[] args)
         {
-            CheckArgs(DivFunctionName, args);
+            CheckAllArgsNumbers(DivFunctionName, args);
             AssertParameterCountAtLeast(DivFunctionName, 1, args);
 
             double result = 0;
@@ -231,7 +234,7 @@ namespace CottontailSchemeLib
 
         public static CTNumber Mult(CTObject[] args)
         {
-            CheckArgs(MultFunctionName, args);
+            CheckAllArgsNumbers(MultFunctionName, args);
 
             var result = args.Select(getValue)
                              .Aggregate(1.0, (a, n) => a * n);
@@ -266,16 +269,80 @@ namespace CottontailSchemeLib
 
         public static CTObject LessThan(CTObject[] args)
         {
-            CheckArgs(LessThanFunctionName, args);
+            CheckAllArgsNumbers(LessThanFunctionName, args);
             AssertParameterCountAtLeast(LessThanFunctionName, 1, args);
             return ComparePairs(args, (a, b) => a < b);
         }
 
         public static CTObject GreaterThan(CTObject[] args)
         {
-            CheckArgs(GreaterThanFunctionName, args);
+            CheckAllArgsNumbers(GreaterThanFunctionName, args);
             AssertParameterCountAtLeast(GreaterThanFunctionName, 1, args);
             return ComparePairs(args, (a, b) => a > b);
+        }
+
+        public static CTObject Map(CTObject[] args)
+        {
+            AssertParameterCountAtLeast(MapFunctionName, 2, args);
+            CTProcedure proc = args[0] as CTProcedure;
+
+            if (proc == null)
+            {
+                throw new TypeError(MapFunctionName, CTProcedure.TypeName, args[0].DisplayType());
+            }
+            for (int i = 1; i < args.Length; ++i)
+            {
+                if (args[i].GetType() != typeof(CTPair))
+                {
+                    throw new TypeError(MapFunctionName, CTPair.TypeName, args[i].DisplayType());
+                }
+            }
+
+            List<CTObject> results = new List<CTObject>();
+            CTObject[] applyArgs = new CTObject[args.Length - 1];
+            bool firstListEnded = false;
+            while (!firstListEnded)
+            {
+                for (int i = 1; i < args.Length; ++i)
+                {
+                    if (args[i].GetType() == typeof(CTEmptyList))
+                    {
+                        firstListEnded = true;
+                        break;
+                    }
+                    else if (args[i].GetType() == typeof(CTPair))
+                    {
+                        CTPair arg = (CTPair)args[i];
+                        applyArgs[i - 1] = arg.car;
+                        args[i] = arg.cdr;
+                    }
+                    else
+                    {
+                        throw new TypeError(MapFunctionName, CTPair.TypeName, args[i].DisplayType());
+                    }
+                }
+
+                if (!firstListEnded)
+                {
+                    results.Add(Apply(proc, applyArgs));
+                }
+            }
+
+            return List(results);
+        }
+
+        private static CTObject Apply(CTProcedure proc, CTObject[] args)
+        {
+            switch (args.Length)
+            {
+                case 0: return proc.apply0();
+                case 1: return proc.apply1(args[0]);
+                case 2: return proc.apply2(args[0], args[1]);
+                case 3: return proc.apply3(args[0], args[1], args[2]);
+                case 4: return proc.apply4(args[0], args[1], args[2], args[3]);
+                case 5: return proc.apply5(args[0], args[1], args[2], args[3], args[4]);
+                default: return proc.applyN(args);
+            }
         }
     }
 

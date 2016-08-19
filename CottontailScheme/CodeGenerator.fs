@@ -127,7 +127,7 @@ let loadUndefined (gen : Emit.ILGenerator) =
 
 // Helper functions for loading literals end here.
 
-let builtInFunctionsTakingArrayParams = ["list"; "+"; "-"; "/"; "*"; "<"; ">"]
+let builtInFunctionsTakingArrayParams = ["list"; "+"; "-"; "/"; "*"; "<"; ">"; "map"]
 
 let popStack (gen : Emit.ILGenerator) =
     gen.Emit(Emit.OpCodes.Pop)
@@ -150,7 +150,7 @@ let emitArray (gen : Emit.ILGenerator) members emitMember =
         gen.Emit(Emit.OpCodes.Stelem_Ref)
 
 let convertArrayOnStackToList (gen : Emit.ILGenerator) =
-    gen.Emit(Emit.OpCodes.Call, typeof<BuiltIns>.GetMethod("List", [| typeof<CTObject array> |]))
+    gen.Emit(Emit.OpCodes.Call, typeof<BuiltIns>.GetMethod("List"))
 
 // Loads a literal value onto the stack.
 let rec emitLiteral (gen : Emit.ILGenerator) (lit : Literals.LiteralValue) =
@@ -176,7 +176,7 @@ let convertBuiltInName =
     | "<" -> "LessThan"
     | ">" -> "GreaterThan"
     | "eq?" -> "AreEq"
-    | "list" | "display" | "car" | "cdr" | "cons" | "not" | "newline" as n
+    | "list" | "display" | "car" | "cdr" | "cons" | "not" | "newline" | "map" as n
         -> SymbolGenerator.capitalizeWord n
     | e -> sprintf "Built-in function %s is not implemented!" e |> CodeGenException |> raise
 

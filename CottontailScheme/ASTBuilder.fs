@@ -30,7 +30,7 @@ and Binding = Binding of Identifier * Expression
 type ASTBuildStatus = ASTBuildSuccess of Expression list
                     | ASTBuildFailure of ASTError list
 
-let specialFunctions = ["define"; "if"; "lambda"; "set!"; "and"; "or"; "quote"; "begin"; "zero?"; "null?"; "+"; "-"; "*"; "/"; "<"; ">"; "eq?"; "list"; "display"; "car"; "cdr"; "cons"; "not"; "newline"]
+let specialFunctions = ["define"; "if"; "lambda"; "set!"; "and"; "or"; "quote"; "begin"; "zero?"; "null?"; "+"; "-"; "*"; "/"; "<"; ">"; "eq?"; "list"; "display"; "car"; "cdr"; "cons"; "not"; "newline"; "map"]
 
 let argumentNumberLimit = 128
 

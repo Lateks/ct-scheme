@@ -83,6 +83,9 @@
 (test "list #2" (lambda () (list 1 2 3)) '(1 2 3))
 (test "list #3" (lambda () (list 1 2 (list "foo" "bar" "baz"))) '(1 2 ("foo" "bar" "baz")))
 
+(test "map #1" (lambda () (map (lambda (x) (+ x x)) '(1 2 3))) '(2 4 6))
+(test "map #2" (lambda () (map (lambda (x y) (+ x y)) '(1 2 3) '(2 4 6))) '(3 6 9))
+
 (test "null? #1" (lambda () (null? '())) #t)
 (test "null? #2" (lambda () (null? (list))) #t)
 (test "null? #3" (lambda () (null? '(1 2 3))) #f)

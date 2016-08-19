@@ -116,7 +116,8 @@ module IdentifierHelpers =
              makeBuiltInId "eq?", SetNumberOfArgs 2
              makeBuiltInId "zero?", SetNumberOfArgs 1
              makeBuiltInId "not", SetNumberOfArgs 1
-             makeBuiltInId "newline", SetNumberOfArgs 0]
+             makeBuiltInId "newline", SetNumberOfArgs 0
+             makeBuiltInId "map", VarArgsAtLeast 2]
 
     let getIdentifierName =
         function
