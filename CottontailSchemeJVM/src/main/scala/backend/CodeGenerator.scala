@@ -20,6 +20,7 @@ object CodeGenerator {
 
   var debug = true
   var optimizeTailCalls = true
+  var optimizeTailRecursion = true
   val stdout = new PrintWriter(System.out)
 
   val maxFixedParamCount = 5
@@ -161,6 +162,11 @@ object CodeGenerator {
     }
   }
 
+  /*
+   * Emits bytecode to call the built-in callProcedure function
+   * that performs a function call to a closure object on stack,
+   * loading closure arguments in the process.
+   */
   def emitFirstClassProcedureCallToObjectOnStack(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression]): Unit = {
     pushArrayArgs(method, state, args)
     method.visitMethodInsn(INVOKESTATIC,
@@ -170,12 +176,15 @@ object CodeGenerator {
       onInterface = false)
   }
 
+  // Emits bytecode to call the built-in trampoline function.
   def emitTrampolineCall(method : SimpleMethodVisitor): Unit = {
     method.emitInvokeStatic(getInternalName(classOf[ProcedureHelpers]),
       "trampoline",
       "(" + getDescriptor(classOf[Object]) + ")" + getDescriptor(classOf[Object]))
   }
 
+  // Emits bytecode to load a CTTailContinuation object
+  // to wrap a closure object currently on stack.
   def makeTailCallToFirstClassObject(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression], loadProcedure : (SimpleMethodVisitor, ProgramState) => Unit): Unit = {
     method.createAndDupObject(getInternalName(classOf[CTTailContinuation]))
 
@@ -197,6 +206,8 @@ object CodeGenerator {
     }
   }
 
+  // Emits the bytecode for a procedure call. Handles tail calls and
+  // tail recursion.
   def emitProcedureCall(method : SimpleMethodVisitor, state : ProgramState, procedure : Expression, args : List[Expression], tailCall : Boolean): Unit = {
     procedure match {
       case VariableReference(id) =>
@@ -215,7 +226,7 @@ object CodeGenerator {
             if (optimizeTailCalls)
               emitTrampolineCall(method)
           }
-        } else if (optimizeTailCalls && tailCall && id.uniqueName == method.methodName) {
+        } else if (optimizeTailCalls && optimizeTailRecursion && tailCall && id.uniqueName == method.methodName) {
           // This is a tail recursive call.
           pushArgsForMethod(method, state, args, method)
           val firstArg = method.argCount-args.length
@@ -375,6 +386,7 @@ object CodeGenerator {
     emitVariableAssignment(method, state, id, loader)
   }
 
+  // Generates bytecode for an expression.
   def generateExpression(method : SimpleMethodVisitor, state : ProgramState, expression : Expression, keepResultOnStack : Boolean): Unit = {
     expression match {
       case ProcedureCall(proc, args, isTailCall) =>
@@ -479,6 +491,8 @@ object CodeGenerator {
     method.invokeConstructor(classTypeName, getDescriptor(classOf[Object]))
   }
 
+  // Finds closures in a list of expressions. Does not
+  // search for nested closures.
   def findClosuresInScope(expressions : List[Expression]): List[ClosureDefinition] = {
     def findClosuresInExpression(expr : Expression): List[ClosureDefinition] = {
       expr match {
@@ -688,6 +702,8 @@ object CodeGenerator {
     sb.append(")").append(objectDescriptor).toString
   }
 
+  // Builds descriptor for the array unpacking helper
+  // method generated for a function with > 5 parameters.
   def buildUnpackingHelperMethodDescriptor(closure : ClosureDefinition, withCaptures : Boolean) = {
     val sb = new StringBuilder("(")
 
@@ -812,6 +828,8 @@ object CodeGenerator {
     loadProcedureObject(method, state, methodName, methodDescriptor, implementedMethodDescriptor, procedureObjectDescriptor, captureDescriptors)
   }
 
+  // Wraps the procedure object currently on the stack
+  // into a match<n> argument checker closure.
   def attachArgumentHandler(method : SimpleMethodVisitor, methodName : String, closure : ClosureDefinition): Unit = {
     val ctProcDescriptor = getDescriptor(classOf[CTProcedure])
     val (matchMethodName, matchMethodType, loadArgumentCount) = closure.formals match {
@@ -835,11 +853,19 @@ object CodeGenerator {
     method.emitInvokeStatic(getInternalName(classOf[ProcedureHelpers]), matchMethodName, matchMethodType)
   }
 
+  // Loads a first class procedure wrapped in the
+  // match<n> argument checker.
   def loadFirstClassProcedure(method : SimpleMethodVisitor, state : ProgramState, c : ClosureDefinition): Unit = {
     loadProcedureObject(method, state, c.functionName.uniqueName, c)
     attachArgumentHandler(method, c.functionName.name, c)
   }
 
+  /*
+   * Creates a class initializer that populates the static
+   * fields that hold closures for top level procedures
+   * that are used as first class values or whose values
+   * are reassigned using set! during the course of the program.
+   */
   def makeInitializer(program : ProgramSyntaxTree, state : ProgramState) = {
     val initializer = new SimpleMethodVisitor(state.mainClass, ACC_STATIC, "<clinit>", "()V", false, 0, false)
     initializer.visitCode()
@@ -869,9 +895,18 @@ object CodeGenerator {
     mainClass.visitInnerClass("java/lang/invoke/MethodHandles$Lookup", "java/lang/invoke/MethodHandles", "Lookup", ACC_PUBLIC + ACC_FINAL + ACC_STATIC);
   }
 
-  def generateCodeFor(program : ProgramSyntaxTree, debugMode : Boolean, optimizeTC : Boolean) : Unit = {
+  /*
+   * The main code generation function.
+   * - debugMode flag enables ASM logging
+   *   (prints out the bytecode instructions being generated etc.)
+   * - optimizeTC flag enables/disables general tail call optimization
+   * - optimizeTailRec flag enables/disables tail recursion optimization
+   *   into loops (only available when optimizeTC is true)
+   */
+  def generateCodeFor(program : ProgramSyntaxTree, debugMode : Boolean, optimizeTC : Boolean, optimizeTailRec : Boolean) : Unit = {
     debug = debugMode
     optimizeTailCalls = optimizeTC
+    optimizeTailRecursion = optimizeTailRec
 
     val mainClass = declareClass(program.programName, getInternalName(classOf[Object]))
     val scope = introduceVariables(program, mainClass)

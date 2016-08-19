@@ -12,6 +12,7 @@ object Program {
   def main(args: Array[String]): Unit = {
     var debug = false
     var optimizeTailCalls = true
+    var optimizeTailRecursion = true
     var fileName: String = null
     var inDevelopmentEnvironment = false
     var useMono = false
@@ -25,6 +26,8 @@ object Program {
           inDevelopmentEnvironment = true
         case "--mono" =>
           useMono = true
+        case "--notailrec" =>
+          optimizeTailRecursion = false
         case s =>
           if (fileName == null) {
             fileName = s
@@ -53,7 +56,7 @@ object Program {
 
     Reader.readAST(input) match {
       case ReadSuccess(program) =>
-        CodeGenerator.generateCodeFor(program, debug, optimizeTailCalls)
+        CodeGenerator.generateCodeFor(program, debug, optimizeTailCalls, optimizeTailRecursion)
       case ReadFailure(message) => println("AST parsing failed: " + message)
       case ReadError(errMsg) => println(errMsg)
     }
