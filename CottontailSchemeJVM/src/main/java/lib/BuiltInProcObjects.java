@@ -17,6 +17,7 @@ public class BuiltInProcObjects {
     public static final CTProcedure div;
     public static final CTProcedure lessThan;
     public static final CTProcedure greaterThan;
+    public static final CTProcedure map;
 
     static {
         car = (Object[] args) -> ProcedureHelpers.match1(BuiltIns::car, BuiltIns.procNameCar, args);
@@ -35,5 +36,6 @@ public class BuiltInProcObjects {
         div = BuiltIns::div;
         lessThan = BuiltIns::lessThan;
         greaterThan = BuiltIns::greaterThan;
+        map = BuiltIns::map;
     }
 }

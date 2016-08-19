@@ -95,8 +95,8 @@ object CodeGenerator {
     }
   }
 
-  val builtInProcedures = List("car", "cdr", "cons", "display", "eq?", "list", "newline", "not", "null?", "zero?", "+", "-", "*", "/", "<", ">")
-  val builtInProceduresTakingArrayParam = List("list", "+", "-", "*", "/", "<", ">")
+  val builtInProcedures = List("car", "cdr", "cons", "display", "eq?", "list", "newline", "not", "null?", "zero?", "map", "+", "-", "*", "/", "<", ">")
+  val builtInProceduresTakingArrayParam = List("list", "+", "-", "*", "/", "<", ">", "map")
 
   def makeObjectMethodDescriptor(numParams : Int, isArray : Boolean): String = {
     val objectDescriptor = getDescriptor(classOf[Object])
@@ -122,7 +122,7 @@ object CodeGenerator {
       case "/" => "div"
       case "<" => "lessThan"
       case ">" => "greaterThan"
-      case "car" | "cdr" | "cons" | "display" | "newline" | "not" => procedureName
+      case "car" | "cdr" | "cons" | "display" | "newline" | "not" | "map" => procedureName
       case _ => throw new CodeGenException("Unknown built-in procedure '" + procedureName + "'")
     }
   }

@@ -91,6 +91,7 @@ namespace CottontailSchemeLib
         public static readonly CTObject ObjIsZero = new CTDelegateProcedure1(IsZero, IsZeroFunctionName);
         public static readonly CTObject ObjLessThan = new CTDelegateProcedureVarargsArray(LessThan, LessThanFunctionName);
         public static readonly CTObject ObjGreaterThan = new CTDelegateProcedureVarargsArray(GreaterThan, GreaterThanFunctionName);
+        public static readonly CTObject ObjMap = new CTDelegateProcedureVarargsArray(Map, MapFunctionName);
 
         public static CTObject AreEq(CTObject a, CTObject b)
         {

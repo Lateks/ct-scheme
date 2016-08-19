@@ -1,8 +1,10 @@
 package lib;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 
 public class BuiltIns {
+    public static final String procedureTypeName = "procedure";
     public static final String procNameCar = "car";
     public static final String procNameCdr = "cdr";
     public static final String procNameCons = "cons";
@@ -19,6 +21,7 @@ public class BuiltIns {
     public static final String procNameDiv = "/";
     public static final String procNameLessThan = "<";
     public static final String procNameGreaterThan = ">";
+    public static final String procNameMap = "map";
 
     private static String getTypeName(Object n) {
         if (n instanceof CTObject) {
@@ -27,7 +30,7 @@ public class BuiltIns {
         } else if (n == null) {
             return CTUndefined.typeName;
         } else {
-            return "procedure";
+            return procedureTypeName;
         }
     }
 
@@ -185,6 +188,44 @@ public class BuiltIns {
         assertParameterCountAtLeast(procNameGreaterThan, 1, args);
 
         return comparePairs(args, Comparator.reverseOrder());
+    }
+
+    public static Object map(Object[] args) {
+        assertParameterCountAtLeast(procNameMap, 2, args);
+        if (!(args[0] instanceof CTProcedure)) {
+            throw new TypeError(procNameMap, procedureTypeName, getTypeName(args[0]));
+        }
+
+        for (int i = 1; i < args.length; ++i) {
+            if (!(args[i] instanceof CTPair)) {
+                throw new TypeError(procNameMap, CTPair.typeName, getTypeName(args[i]));
+            }
+        }
+
+        CTProcedure proc = (CTProcedure)args[0];
+        ArrayList<Object> results = new ArrayList<>();
+        Object[] callArgs = new Object[args.length-1];
+        boolean firstListEnded = false;
+        while (!firstListEnded) {
+            for (int i = 1; i < args.length; ++i) {
+                if (args[i] instanceof CTEmptyList) {
+                    firstListEnded = true;
+                    break;
+                } else if (args[i] instanceof CTPair) {
+                    CTPair p = (CTPair)args[i];
+                    callArgs[i-1] = p.car;
+                    args[i] = p.cdr;
+                } else {
+                    throw new TypeError(procNameMap, CTPair.typeName, getTypeName(args[i]));
+                }
+            }
+
+            if (!firstListEnded) {
+                results.add(proc.apply(callArgs));
+            }
+        }
+
+        return toList(results.toArray());
     }
 
     private static Object comparePairs(Object[] args, Comparator<Double> comp) {
