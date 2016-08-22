@@ -740,6 +740,26 @@ let emitProcedureBody (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) 
 
     generateExpression topLevelTypes methodInfo tailExpr scope true
 
+// This function is called to compile the expressions in the body
+// of a procedure into bytecode.
+//
+// Parameters:
+// * topLevelTypes: type information for the program main class
+//                  and the CTTailCallProcedureHandle class
+// * parentFrame: the frame (i.e. escaping variable record)
+//                of the surrounding scope
+// * mb: the MethodBuilder for the method we are about to
+//       generate code for
+// * c: the ClosureDefinition of the procedure this method
+//      is generated from
+// * scope: the current scope
+//
+// This function descends recursively into the closures defined
+// inside the generated procedure's scope and generates frame classes
+// methods to represent those closures. This process is implemented
+// through mutual recursion between generateProcedureBody (the code
+// generator function for the procedure body) and generateClosures
+// (the frame/escaping variable record class generator function).
 let rec generateProcedureBody (topLevelTypes : TopLevelTypes) (parentFrame : Frame) (mb : Emit.MethodBuilder) (c : ClosureDefinition) scope =
     let gen = mb.GetILGenerator()
     let closures = let namedProcedures = c.procedureDefinitions
@@ -776,10 +796,13 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
         | None -> [], [], "Main"
     let parentClass = currentFrame.frameClass
 
+    // Defines methods for a list of closures.
     let makeBuilders lambdaParentClass asInstanceMethods =
         List.map (fun nestedClosure -> { methodBuilder = defineProcedure lambdaParentClass nestedClosure asInstanceMethods
                                          closure = nestedClosure })
 
+    // Generate procedure bodies by calling generateProcedureBody
+    // in mutual recursion.
     let generateBodies builders frame scope =
         builders
         |> List.map (fun proc ->
@@ -892,17 +915,25 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
                                                  |> fun x -> x + 1
                          (argc, indexList startingIndex procs))
 
+    // If there were no closures in this scope, we end recursion.
     if List.isEmpty closures then
         { closureInfo = Map.empty;
           frameVariable = currentFrame.frameVariable;
           matchedCapturesFromCurrentScope = []
           closureMappingForParentFrame = [] }
     else
+        // The fields required by the escaping variable record are
+        // computed as the union of the environments of the closures
+        // found in this scope.
         let captures = closures
                        |> List.map (fun clos -> clos.environment)
                        |> List.concat
                        |> List.distinct
+
         if captures.IsEmpty then
+            // There were no new captures, so we can just use the
+            // frame class of the surrounding scope to represent
+            // these closures.
             let isInsideMainClass = parentClass = topLevelTypes.mainClass
             let builders = makeBuilders parentClass (not isInsideMainClass) closures
 
@@ -917,6 +948,7 @@ and generateClosures (topLevelTypes : TopLevelTypes) (mb : Emit.MethodBuilder) (
               matchedCapturesFromCurrentScope = [];
               closureMappingForParentFrame = closureMapping }
         else
+            // There were captures, we need to define a new frame class.
             let newFrame, matchedCapturesInCurrentScope = createFrame captures
 
             let isNonLocalCapture = let captureIds = matchedCapturesInCurrentScope |> List.map (fun (id, _) -> id)

@@ -197,6 +197,8 @@ object CodeGenerator {
     method.invokeConstructor(getInternalName(classOf[CTTailContinuation]), getDescriptor(classOf[CTProcedure0]))
   }
 
+  // Pushes the expressions in args as arguments to calledMethod,
+  // taking calling convention into account (varargs or fixed).
   def pushArgsForMethod(method : SimpleMethodVisitor, state : ProgramState, args : List[Expression], calledMethod : SimpleMethodVisitor): Unit = {
     if (calledMethod.isVarargs) {
       pushArrayArgs(method, state, args)
@@ -264,11 +266,14 @@ object CodeGenerator {
     }
   }
 
+  // Converts the object currently on stack into a native
+  // boolean value.
   def emitBooleanConversion(method : SimpleMethodVisitor): Unit = {
     val booleanConverterDescriptor = "(" + getDescriptor(classOf[Object]) + ")" + getDescriptor(classOf[Boolean])
     method.emitInvokeStatic(getInternalName(classOf[BuiltIns]), "toBoolean", booleanConverterDescriptor)
   }
 
+  // Emits code for an `if` expression.
   def emitConditional(method : SimpleMethodVisitor, state : ProgramState, cond : Expression, thenBranch : Expression, elseBranch : Expression): Unit = {
     val thenLabel = new Label()
     val exitLabel = new Label()
@@ -287,6 +292,7 @@ object CodeGenerator {
     method.visitLabel(exitLabel)
   }
 
+  // Emits code for a `begin` expression.
   def emitBeginSequence(method : SimpleMethodVisitor, state : ProgramState, exprs : List[Expression]): Unit = {
     val nonTailExprs = exprs.init
     val tailExpr = exprs.last
@@ -296,6 +302,7 @@ object CodeGenerator {
     generateExpression(method, state, tailExpr, keepResultOnStack = true)
   }
 
+  // Emits code for `and` and `or` expressions.
   def emitBooleanSequence(method : SimpleMethodVisitor, state : ProgramState, exprs : List[Expression], breakValue : Boolean): Unit = {
     if (exprs.isEmpty) {
       loadBoolean(method, !breakValue)
@@ -321,6 +328,8 @@ object CodeGenerator {
     }
   }
 
+  // Calls the correct methods to emit code for `begin`, `and`
+  // and `or` expressions.
   def emitSequenceExpression(method : SimpleMethodVisitor, state : ProgramState, seqType : SequenceType, exprs : List[Expression]): Unit = {
     seqType match {
       case SequenceType.BeginSequence => emitBeginSequence(method, state, exprs)
@@ -329,6 +338,14 @@ object CodeGenerator {
     }
   }
 
+  /*
+   * Loads a referenced variable onto the stack.
+   * If rawReferences is false, variable references that
+   * point to CTReferenceCell variables use the get method
+   * to get the actual value held by the CTReferenceCell.
+   * If rawReferences is true, the CTReferenceCell is loaded
+   * as is.
+   */
   def emitVariableReference(method : SimpleMethodVisitor, state : ProgramState, id : Identifier, rawReferences : Boolean): Unit = {
     state.scope.get(id.uniqueName) match {
       case None =>
@@ -417,14 +434,27 @@ object CodeGenerator {
     }
   }
 
+  // Generates code for an expression, leaving its result value
+  // on the stack.
   def pushExpressionResultToStack(method : SimpleMethodVisitor, state : ProgramState, expression : Expression): Unit = {
     generateExpression(method, state, expression, keepResultOnStack = true)
   }
 
+  /*
+   * Generates code for a top level expression (i.e. code inside the main method),
+   * popping the return value of each expression from the stack
+   * before the next expression.
+   */
   def generateTopLevelExpression(method : SimpleMethodVisitor, state : ProgramState, expression: Expression): Unit = {
     generateExpression(method, state, expression, keepResultOnStack = false)
   }
 
+  /*
+   * Generates code for a procedure body.
+   * The emitPreamble parameter allows the caller to specify
+   * code to generate at the beginning of the method before
+   * the actual procedure body expressions are generated.
+   */
   def generateProcedureBody(method : SimpleMethodVisitor, state : ProgramState, expressions : List[Expression], isMainMethod : Boolean, emitPreamble : Option[SimpleMethodVisitor => Unit]): Unit = {
     method.visitCode()
 
@@ -526,6 +556,12 @@ object CodeGenerator {
       (c.functionName.uniqueName, m)
     }
 
+    /*
+     * Defines a helper method that takes its parameters in an
+     * array and unpacks the array to call another method.
+     * Used for implementing function values for functions with
+     * > 5 parameters.
+     */
     def generateHelperProcedure(c : ClosureDefinition): Option[(ClosureDefinition, SimpleMethodVisitor)] = {
       c.formals match {
         case SingleArgFormals(_) => None
@@ -556,6 +592,7 @@ object CodeGenerator {
       }
     }
 
+    // Generates the body of a helper procedure (as defined above).
     def helperProcedureBody(c : ClosureDefinition, mv : SimpleMethodVisitor, state : ProgramState): Unit = {
       c.formals match {
         case SingleArgFormals(_) =>
@@ -585,6 +622,7 @@ object CodeGenerator {
       }
     }
 
+    // Generates code for a procedure body.
     def procedureBody(c : ClosureDefinition, state : ProgramState) = {
       val procName = c.functionName.uniqueName
       state.methods.get(procName) match {
@@ -770,6 +808,11 @@ object CodeGenerator {
     }
   }
 
+  /*
+   * Loads a procedure object using the Lambdametafactory.
+   * This is never called directly, see the two convenience
+   * functions below.
+   */
   def loadProcedureObject(method : SimpleMethodVisitor,
                           state : ProgramState,
                           methodName : String,
@@ -791,6 +834,11 @@ object CodeGenerator {
       Type.getType(implementedMethodDescriptor))
   }
 
+  /*
+   * Loads a procedure object as specified by methodToLoad
+   * and binds the arguments given by the args list.
+   * Used when performing tail calls through the trampoline.
+   */
   def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodToLoad : SimpleMethodVisitor, args : List[Expression]): Unit = {
     val methodDescriptor = methodToLoad.descriptor
     val procedureObjectDescriptor = getDescriptor(classOf[CTProcedure0])
@@ -802,6 +850,13 @@ object CodeGenerator {
     loadProcedureObject(method, state, methodToLoad.methodName, methodDescriptor, implementedMethodDescriptor, procedureObjectDescriptor, captureDescriptors)
   }
 
+  /*
+   * Loads a procedure object given its ClosureDefinition
+   * and the name of the method that implements the
+   * closure body. Captures are loaded by name reference
+   * (as listed in the ClosureDefinition's environment
+   * field).
+   */
   def loadProcedureObject(method : SimpleMethodVisitor, state : ProgramState, methodName : String, closure : ClosureDefinition): Unit = {
     val usesHelperMethod = closure.formals match {
       case MultiArgFormals(ids) => ids.length > maxFixedParamCount
