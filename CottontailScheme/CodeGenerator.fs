@@ -85,6 +85,7 @@ let indexList startIndex procs =
 
 let mainMethodName = "Main"
 let builtIns = ref []
+let optimizeTailCalls = ref true
 let optimizeTailRecursion = ref true
 
 let setupAssembly name =
@@ -430,7 +431,7 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodInfo : Meth
                              -> pushArgsAsArray args
                                 typeof<CTObject>.GetMethod("applyN")
 
-        if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
+        if isTailCall && !optimizeTailCalls then gen.Emit(Emit.OpCodes.Tailcall)
         gen.Emit(Emit.OpCodes.Callvirt, methodInfo)
     let emitNamedProcedureCall id args isTailCall =
         if id.uniqueName = methodInfo.name && isTailCall && !optimizeTailRecursion then
@@ -471,7 +472,7 @@ let rec generateSubExpression (topLevelTypes : TopLevelTypes) (methodInfo : Meth
                                         convertArrayOnStackToList gen
                 | MultiArgFormals _ -> pushIndividualArgs args
 
-                if isTailCall then gen.Emit(Emit.OpCodes.Tailcall)
+                if isTailCall && !optimizeTailCalls then gen.Emit(Emit.OpCodes.Tailcall)
                 gen.Emit(Emit.OpCodes.Call, procedure.methodBuilder)
             else
                 // This is a first class procedure call to a closure
@@ -1295,8 +1296,9 @@ let generateProcedureParentClass (moduleBuilder : Emit.ModuleBuilder) =
 // It sets up the assembly and the main class before generating
 // the main module code. The library dll is copied into same
 // location with the compiled program.
-let generateCodeFor (program : ProgramStructure) (optimizeTailRec : bool) =
+let generateCodeFor (program : ProgramStructure) (optimizeTC : bool) (optimizeTailRec : bool) =
     try
+        optimizeTailCalls := optimizeTC
         optimizeTailRecursion := optimizeTailRec
         let capitalizedName = SymbolGenerator.capitalizeWord program.programName
         let outputFileName = sprintf "%s.exe" capitalizedName

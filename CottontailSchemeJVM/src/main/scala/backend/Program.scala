@@ -50,7 +50,7 @@ object Program {
         } else {
           jarPath + fileSeparator + "CottontailScheme.exe"
         }
-      val command = dotnetPath + " -json " + fileName
+      val command = dotnetPath + " --json " + fileName
       command !!
     }
 

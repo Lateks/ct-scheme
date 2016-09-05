@@ -228,7 +228,7 @@ object CodeGenerator {
             if (optimizeTailCalls)
               emitTrampolineCall(method)
           }
-        } else if (optimizeTailCalls && optimizeTailRecursion && tailCall && id.uniqueName == method.methodName) {
+        } else if (optimizeTailRecursion && tailCall && id.uniqueName == method.methodName) {
           // This is a tail recursive call.
           pushArgsForMethod(method, state, args, method)
           val firstArg = method.argCount-args.length
